@@ -1,0 +1,46 @@
+const Settlement = require('../models/Settlement');
+const asyncHandler = require('../utils/asyncHandler');
+
+// POST /api/groups/:id/settlements
+const recordSettlement = asyncHandler(async (req, res) => {
+  const { fromUserId, toUserId, amount, date, notes } = req.body;
+  const group = req.group;
+
+  if (!fromUserId || !toUserId || !amount || !date)
+    return res.status(400).json({ success: false, message: 'fromUserId, toUserId, amount, and date are required' });
+
+  const memberIds = group.members.map(m => m.toString());
+  if (!memberIds.includes(fromUserId.toString()))
+    return res.status(400).json({ success: false, message: 'Payer must be a group member' });
+  if (!memberIds.includes(toUserId.toString()))
+    return res.status(400).json({ success: false, message: 'Receiver must be a group member' });
+  if (fromUserId.toString() === toUserId.toString())
+    return res.status(400).json({ success: false, message: 'Payer and receiver cannot be the same person' });
+
+  const amt = parseFloat(amount);
+  if (isNaN(amt) || amt < 0.01)
+    return res.status(400).json({ success: false, message: 'Amount must be greater than 0' });
+
+  const settlement = await Settlement.create({
+    groupId: group._id, fromUserId, toUserId,
+    amount: amt, date: new Date(date), notes: notes || '',
+  });
+
+  await settlement.populate([
+    { path: 'fromUserId', select: 'name email' },
+    { path: 'toUserId',   select: 'name email' },
+  ]);
+
+  res.status(201).json({ success: true, settlement });
+});
+
+// GET /api/groups/:id/settlements
+const getSettlements = asyncHandler(async (req, res) => {
+  const settlements = await Settlement.find({ groupId: req.params.id })
+    .populate('fromUserId', 'name email')
+    .populate('toUserId',   'name email')
+    .sort({ date: -1 });
+  res.json({ success: true, count: settlements.length, settlements });
+});
+
+module.exports = { recordSettlement, getSettlements };
