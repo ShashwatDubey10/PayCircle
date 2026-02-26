@@ -8,7 +8,8 @@
       "Bash(cd \"D:/Coding Workspace/projects/PayCircle/landing\" && npx vite build 2>&1)",
       "Bash(ls:*)",
       "mcp__ide__getDiagnostics",
-      "Bash(cd D:\\\\Coding Workspace\\\\projects\\\\PayCircle\\\\frontend:*)"
+      "Bash(cd D:\\\\Coding Workspace\\\\projects\\\\PayCircle\\\\frontend:*)",
+      "Bash(ls D:\\\\Coding Workspace\\\\projects\\\\PayCircle:*)"
     ]
   }
 }
