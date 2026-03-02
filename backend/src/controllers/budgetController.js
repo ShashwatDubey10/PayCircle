@@ -3,6 +3,7 @@ const Expense             = require('../models/Expense');
 const PersonalTransaction = require('../models/PersonalTransaction');
 const Group               = require('../models/Group');
 const asyncHandler        = require('../utils/asyncHandler');
+const logger              = require('../utils/logger');
 
 const getMonthStr = () => {
   const d = new Date();
@@ -22,6 +23,7 @@ const setBudget = asyncHandler(async (req, res) => {
     { upsert: true, new: true }
   );
 
+  logger.info('BUDGET', `Budget set: ₹${amt} for ${getMonthStr()}`, { userId: req.user._id });
   res.json({ success: true, budget });
 });
 
@@ -35,7 +37,6 @@ const getBudget = asyncHandler(async (req, res) => {
 
   const budget = await Budget.findOne({ userId, month });
 
-  // Compute total spend (group shares + personal expenses)
   const groups   = await Group.find({ members: userId });
   const groupIds = groups.map(g => g._id);
 
@@ -54,6 +55,13 @@ const getBudget = asyncHandler(async (req, res) => {
   const remaining     = parseFloat((budgetAmount - spent).toFixed(2));
   const usagePct      = budgetAmount > 0 ? parseFloat(((spent / budgetAmount) * 100).toFixed(1)) : 0;
   const status        = usagePct >= 100 ? 'over' : usagePct >= 90 ? 'critical' : usagePct >= 70 ? 'warning' : 'healthy';
+
+  logger.debug('BUDGET', `Budget fetched: ${status} (${usagePct}% used)`, {
+    userId,
+    month,
+    budget: budgetAmount,
+    spent,
+  });
 
   res.json({ success: true, month, budget: budgetAmount, spent, remaining, usagePercentage: usagePct, status });
 });

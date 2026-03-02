@@ -8,24 +8,72 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
 import { PC } from '@/constants/theme';
+import { useAuth } from '@/context/AuthContext';
+
+const EMAIL_RE  = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PASS_RE   = /^(?=.*[a-zA-Z])(?=.*\d).{8,}$/;
 
 export default function RegisterScreen() {
   const router = useRouter();
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const { register } = useAuth();
 
-  function handleRegister() {
-    // TODO: connect to POST /api/auth/register
-    router.replace('/(tabs)');
+  const [name, setName]                   = useState('');
+  const [email, setEmail]                 = useState('');
+  const [password, setPassword]           = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword]   = useState(false);
+  const [loading, setLoading]             = useState(false);
+  const [error, setError]                 = useState('');
+
+  function validate() {
+    if (!name.trim() || !email.trim() || !password || !confirmPassword) {
+      return 'All fields are required.';
+    }
+    if (name.trim().length < 2) {
+      return 'Name must be at least 2 characters.';
+    }
+    if (!EMAIL_RE.test(email.trim())) {
+      return 'Enter a valid email address.';
+    }
+    if (!PASS_RE.test(password)) {
+      return 'Password must be 8+ characters with letters and numbers.';
+    }
+    if (password !== confirmPassword) {
+      return 'Passwords do not match.';
+    }
+    return null;
+  }
+
+  async function handleRegister() {
+    setError('');
+
+    const validationError = validate();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await register(name.trim(), email.trim().toLowerCase(), password);
+      // RootGuard in _layout.jsx detects the new user state and
+      // redirects to /(tabs) automatically — no router.replace needed here.
+    } catch (err) {
+      setError(err?.message || String(err) || 'Registration failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function clearError() {
+    setError('');
   }
 
   return (
@@ -38,8 +86,8 @@ export default function RegisterScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
 
-          {/* ── Back Button + Header ── */}
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          {/* ── Back Button ── */}
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} disabled={loading}>
             <Ionicons name="arrow-back" size={20} color={PC.textPrimary} />
           </TouchableOpacity>
 
@@ -51,6 +99,14 @@ export default function RegisterScreen() {
           {/* ── Form ── */}
           <View style={styles.form}>
 
+            {/* ── Error banner ── */}
+            {error ? (
+              <View style={styles.errorBox}>
+                <Ionicons name="alert-circle-outline" size={15} color={PC.negative} />
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : null}
+
             {/* Full Name */}
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Full Name</Text>
@@ -61,8 +117,9 @@ export default function RegisterScreen() {
                   placeholder="Arjun Sharma"
                   placeholderTextColor={PC.textMuted}
                   value={name}
-                  onChangeText={setName}
+                  onChangeText={(v) => { setName(v); clearError(); }}
                   autoCapitalize="words"
+                  editable={!loading}
                 />
               </View>
             </View>
@@ -77,10 +134,11 @@ export default function RegisterScreen() {
                   placeholder="you@example.com"
                   placeholderTextColor={PC.textMuted}
                   value={email}
-                  onChangeText={setEmail}
+                  onChangeText={(v) => { setEmail(v); clearError(); }}
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
+                  editable={!loading}
                 />
               </View>
             </View>
@@ -95,9 +153,10 @@ export default function RegisterScreen() {
                   placeholder="Create a password"
                   placeholderTextColor={PC.textMuted}
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={(v) => { setPassword(v); clearError(); }}
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
+                  editable={!loading}
                 />
                 <TouchableOpacity
                   onPress={() => setShowPassword(!showPassword)}
@@ -114,21 +173,28 @@ export default function RegisterScreen() {
             {/* Confirm Password */}
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Confirm Password</Text>
-              <View style={styles.inputBox}>
+              <View style={[
+                styles.inputBox,
+                confirmPassword && password !== confirmPassword ? styles.inputError : null,
+              ]}>
                 <Ionicons name="lock-closed-outline" size={17} color={PC.textMuted} style={styles.inputIcon} />
                 <TextInput
                   style={styles.input}
                   placeholder="Repeat your password"
                   placeholderTextColor={PC.textMuted}
                   value={confirmPassword}
-                  onChangeText={setConfirmPassword}
+                  onChangeText={(v) => { setConfirmPassword(v); clearError(); }}
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
+                  editable={!loading}
                 />
               </View>
+              {confirmPassword && password !== confirmPassword ? (
+                <Text style={styles.fieldError}>Passwords do not match</Text>
+              ) : null}
             </View>
 
-            {/* Password strength hint */}
+            {/* Password hint */}
             <View style={styles.hintRow}>
               <Ionicons name="information-circle-outline" size={13} color={PC.textMuted} />
               <Text style={styles.hintText}>
@@ -137,17 +203,21 @@ export default function RegisterScreen() {
             </View>
 
             <TouchableOpacity
-              style={styles.primaryBtn}
+              style={[styles.primaryBtn, loading && styles.primaryBtnDisabled]}
               onPress={handleRegister}
-              activeOpacity={0.85}>
-              <Text style={styles.primaryBtnText}>Create Account</Text>
+              activeOpacity={0.85}
+              disabled={loading}>
+              {loading
+                ? <ActivityIndicator color={PC.bg} size="small" />
+                : <Text style={styles.primaryBtnText}>Create Account</Text>
+              }
             </TouchableOpacity>
           </View>
 
           {/* ── Sign in link ── */}
           <View style={styles.signinRow}>
             <Text style={styles.signinText}>Already have an account?</Text>
-            <TouchableOpacity onPress={() => router.back()}>
+            <TouchableOpacity onPress={() => router.back()} disabled={loading}>
               <Text style={styles.signinLink}> Sign In</Text>
             </TouchableOpacity>
           </View>
@@ -192,6 +262,21 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
 
+  // Error banner
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(224,90,90,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(224,90,90,0.30)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 16,
+  },
+  errorText: { flex: 1, color: PC.negative, fontSize: 13 },
+
   inputGroup: { marginBottom: 14 },
   inputLabel: { color: PC.textSecondary, fontSize: 12, fontWeight: '500', marginBottom: 7 },
   inputBox: {
@@ -204,6 +289,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     height: 50,
   },
+  inputError: { borderColor: PC.negative },
+  fieldError: { color: PC.negative, fontSize: 11, marginTop: 5 },
   inputIcon: { marginRight: 10 },
   input: {
     flex: 1,
@@ -229,6 +316,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  primaryBtnDisabled: { opacity: 0.6 },
   primaryBtnText: { color: PC.bg, fontSize: 15, fontWeight: '700' },
 
   signinRow: {

@@ -12,7 +12,7 @@ All `.ts` / `.tsx` files converted to `.js` / `.jsx`. Type annotations removed. 
 
 ---
 
-## Phase 1: API Infrastructure
+## Phase 1: API Infrastructure ✅ DONE
 
 **Files to create:**
 - `frontend/services/api.js` — axios instance with base URL + auth interceptor
@@ -36,7 +36,7 @@ All `.ts` / `.tsx` files converted to `.js` / `.jsx`. Type annotations removed. 
 
 ---
 
-## Phase 2: Auth Context
+## Phase 2: Auth Context ✅ DONE
 
 **File to create:** `frontend/context/AuthContext.jsx`
 
@@ -57,7 +57,7 @@ All `.ts` / `.tsx` files converted to `.js` / `.jsx`. Type annotations removed. 
 
 ---
 
-## Phase 3: Login Screen
+## Phase 3: Login Screen ✅ DONE
 
 **File:** `app/auth/login.jsx`
 
@@ -75,7 +75,7 @@ All `.ts` / `.tsx` files converted to `.js` / `.jsx`. Type annotations removed. 
 
 ---
 
-## Phase 4: Register Screen
+## Phase 4: Register Screen ✅ DONE
 
 **File:** `app/auth/register.jsx`
 
@@ -91,7 +91,7 @@ All `.ts` / `.tsx` files converted to `.js` / `.jsx`. Type annotations removed. 
 
 ---
 
-## Phase 5: Dashboard Screen
+## Phase 5: Dashboard Screen ✅ DONE
 
 **File:** `app/(tabs)/index.jsx`
 
@@ -111,7 +111,7 @@ Returns combined summary: group balances + personal transaction totals + recent 
 
 ---
 
-## Phase 6: Groups Screen
+## Phase 6: Groups Screen ✅ DONE
 
 **File:** `app/(tabs)/groups.jsx`
 
@@ -135,7 +135,7 @@ Returns combined summary: group balances + personal transaction totals + recent 
 
 ---
 
-## Phase 7: Transactions Screen
+## Phase 7: Transactions Screen ✅ DONE
 
 **File:** `app/(tabs)/transactions.jsx`
 
@@ -154,7 +154,7 @@ Returns combined summary: group balances + personal transaction totals + recent 
 
 ---
 
-## Phase 8: Profile Screen
+## Phase 8: Profile Screen ✅ DONE
 
 **File:** `app/(tabs)/profile.jsx`
 

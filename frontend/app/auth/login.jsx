@@ -8,22 +8,44 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
 import { PC } from '@/constants/theme';
+import { useAuth } from '@/context/AuthContext';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const { login } = useAuth();
 
-  function handleLogin() {
-    // TODO: connect to POST /api/auth/login
-    router.replace('/(tabs)');
+  const [email, setEmail]             = useState('');
+  const [password, setPassword]       = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading]         = useState(false);
+  const [error, setError]             = useState('');
+
+  async function handleLogin() {
+    setError('');
+
+    // ── Basic client-side checks ──────────────────────────────
+    if (!email.trim() || !password) {
+      setError('Please enter your email and password.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await login(email.trim().toLowerCase(), password);
+      // RootGuard in _layout.jsx detects the new user state and
+      // redirects to /(tabs) automatically — no router.replace needed here.
+    } catch (err) {
+      setError(err?.message || String(err) || 'Login failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -50,35 +72,45 @@ export default function LoginScreen() {
             <Text style={styles.formTitle}>Welcome Back</Text>
             <Text style={styles.formSubtitle}>Sign in to your account</Text>
 
+            {/* ── Error banner ── */}
+            {error ? (
+              <View style={styles.errorBox}>
+                <Ionicons name="alert-circle-outline" size={15} color={PC.negative} />
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : null}
+
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Email</Text>
-              <View style={styles.inputBox}>
+              <View style={[styles.inputBox, error && !email.trim() ? styles.inputError : null]}>
                 <Ionicons name="mail-outline" size={17} color={PC.textMuted} style={styles.inputIcon} />
                 <TextInput
                   style={styles.input}
                   placeholder="you@example.com"
                   placeholderTextColor={PC.textMuted}
                   value={email}
-                  onChangeText={setEmail}
+                  onChangeText={(v) => { setEmail(v); setError(''); }}
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
+                  editable={!loading}
                 />
               </View>
             </View>
 
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Password</Text>
-              <View style={styles.inputBox}>
+              <View style={[styles.inputBox, error && !password ? styles.inputError : null]}>
                 <Ionicons name="lock-closed-outline" size={17} color={PC.textMuted} style={styles.inputIcon} />
                 <TextInput
                   style={[styles.input, { flex: 1 }]}
                   placeholder="Your password"
                   placeholderTextColor={PC.textMuted}
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={(v) => { setPassword(v); setError(''); }}
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
+                  editable={!loading}
                 />
                 <TouchableOpacity
                   onPress={() => setShowPassword(!showPassword)}
@@ -96,8 +128,15 @@ export default function LoginScreen() {
               <Text style={styles.forgotText}>Forgot password?</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.primaryBtn} onPress={handleLogin} activeOpacity={0.85}>
-              <Text style={styles.primaryBtnText}>Sign In</Text>
+            <TouchableOpacity
+              style={[styles.primaryBtn, loading && styles.primaryBtnDisabled]}
+              onPress={handleLogin}
+              activeOpacity={0.85}
+              disabled={loading}>
+              {loading
+                ? <ActivityIndicator color={PC.bg} size="small" />
+                : <Text style={styles.primaryBtnText}>Sign In</Text>
+              }
             </TouchableOpacity>
 
             <View style={styles.dividerRow}>
@@ -109,7 +148,8 @@ export default function LoginScreen() {
             <TouchableOpacity
               style={styles.secondaryBtn}
               onPress={() => router.push('/auth/register')}
-              activeOpacity={0.75}>
+              activeOpacity={0.75}
+              disabled={loading}>
               <Text style={styles.secondaryBtnText}>Create Account</Text>
             </TouchableOpacity>
           </View>
@@ -167,6 +207,21 @@ const styles = StyleSheet.create({
   formTitle: { color: PC.textPrimary, fontSize: 20, fontWeight: '700', marginBottom: 4 },
   formSubtitle: { color: PC.textSecondary, fontSize: 14, marginBottom: 24 },
 
+  // Error banner
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(224,90,90,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(224,90,90,0.30)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 16,
+  },
+  errorText: { flex: 1, color: PC.negative, fontSize: 13 },
+
   inputGroup: { marginBottom: 14 },
   inputLabel: { color: PC.textSecondary, fontSize: 12, fontWeight: '500', marginBottom: 7 },
   inputBox: {
@@ -179,6 +234,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     height: 50,
   },
+  inputError: { borderColor: PC.negative },
   inputIcon: { marginRight: 10 },
   input: {
     flex: 1,
@@ -199,6 +255,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 20,
   },
+  primaryBtnDisabled: { opacity: 0.6 },
   primaryBtnText: { color: PC.bg, fontSize: 15, fontWeight: '700' },
 
   dividerRow: {

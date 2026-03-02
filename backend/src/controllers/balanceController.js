@@ -1,9 +1,11 @@
-const Group                             = require('../models/Group');
-const { calculateGroupBalances }        = require('../services/balanceService');
-const asyncHandler                      = require('../utils/asyncHandler');
+const Group                      = require('../models/Group');
+const { calculateGroupBalances } = require('../services/balanceService');
+const asyncHandler               = require('../utils/asyncHandler');
+const logger                     = require('../utils/logger');
 
 // GET /api/groups/:id/balances
 const getGroupBalances = asyncHandler(async (req, res) => {
+  logger.debug('BALANCE', `Computing balances for group`, { groupId: req.params.id, userId: req.user._id });
   const result = await calculateGroupBalances(req.params.id);
   res.json({ success: true, ...result });
 });
@@ -30,6 +32,13 @@ const getUserSummary = asyncHandler(async (req, res) => {
       netBalance: mine.netBalance,
     });
   }
+
+  logger.debug('BALANCE', `User summary computed`, {
+    userId,
+    totalOwed: totalOwed.toFixed(2),
+    totalToReceive: totalToReceive.toFixed(2),
+    groupCount: groups.length,
+  });
 
   res.json({
     success: true,

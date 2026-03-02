@@ -1,5 +1,6 @@
-const Expense    = require('../models/Expense');
+const Expense      = require('../models/Expense');
 const asyncHandler = require('../utils/asyncHandler');
+const logger       = require('../utils/logger');
 
 const VALID_CATS = ['Food', 'Travel', 'Utilities', 'Miscellaneous'];
 
@@ -66,6 +67,13 @@ const addExpense = asyncHandler(async (req, res) => {
     { path: 'splits.userId',  select: 'name email' },
   ]);
 
+  logger.info('EXPENSE', `Expense added: ₹${amt} (${category}, ${splitType})`, {
+    groupId: group._id,
+    expenseId: expense._id,
+    payerId,
+    addedBy: req.user._id,
+  });
+
   res.status(201).json({ success: true, expense });
 });
 
@@ -88,6 +96,11 @@ const getExpenses = asyncHandler(async (req, res) => {
     .populate('payerId',       'name email')
     .populate('splits.userId', 'name email')
     .sort({ date: -1 });
+
+  logger.debug('EXPENSE', `Fetched ${expenses.length} expenses for group`, {
+    groupId: req.params.id,
+    filters: { date, category },
+  });
 
   res.json({ success: true, count: expenses.length, expenses });
 });

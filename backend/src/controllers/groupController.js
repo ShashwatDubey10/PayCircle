@@ -1,6 +1,8 @@
 const Group      = require('../models/Group');
 const User       = require('../models/User');
 const asyncHandler = require('../utils/asyncHandler');
+const logger       = require('../utils/logger');
+const { calculateGroupBalances } = require('../services/balanceService');
 
 const VALID_TYPES = ['Roommates', 'Trip', 'Mess', 'Miscellaneous'];
 
@@ -19,6 +21,11 @@ const createGroup = asyncHandler(async (req, res) => {
     members: [req.user._id],
   });
 
+  logger.info('GROUP', `Group created: "${group.name}" (${type})`, {
+    groupId: group._id,
+    adminId: req.user._id,
+  });
+
   res.status(201).json({ success: true, group });
 });
 
@@ -28,6 +35,25 @@ const getUserGroups = asyncHandler(async (req, res) => {
     .populate('adminId', 'name email')
     .populate('members', 'name email')
     .sort({ createdAt: -1 });
+
+  logger.debug('GROUP', `Fetched ${groups.length} groups for user`, { userId: req.user._id });
+
+  if (req.query.includeBalances === 'true') {
+    const userId = req.user._id.toString();
+    const enriched = await Promise.all(
+      groups.map(async (g) => {
+        try {
+          const { members } = await calculateGroupBalances(g._id);
+          const mine = members.find(m => m.user.id === userId);
+          return { ...g.toObject(), myBalance: mine?.netBalance ?? 0 };
+        } catch {
+          return { ...g.toObject(), myBalance: 0 };
+        }
+      })
+    );
+    return res.json({ success: true, count: enriched.length, groups: enriched });
+  }
+
   res.json({ success: true, count: groups.length, groups });
 });
 
@@ -39,8 +65,12 @@ const getGroup = asyncHandler(async (req, res) => {
   if (!group) return res.status(404).json({ success: false, message: 'Group not found' });
 
   const isMember = group.members.some(m => m._id.toString() === req.user._id.toString());
-  if (!isMember) return res.status(403).json({ success: false, message: 'Not a group member' });
+  if (!isMember) {
+    logger.warn('GROUP', `Access denied — user not a member`, { groupId: req.params.id, userId: req.user._id });
+    return res.status(403).json({ success: false, message: 'Not a group member' });
+  }
 
+  logger.debug('GROUP', `Group fetched: "${group.name}"`, { groupId: group._id, userId: req.user._id });
   res.json({ success: true, group });
 });
 
@@ -56,6 +86,7 @@ const getMembers = asyncHandler(async (req, res) => {
     role:  m._id.toString() === group.adminId.toString() ? 'Admin' : 'Member',
   }));
 
+  logger.debug('GROUP', `Members fetched for group "${group.name}"`, { count: members.length });
   res.json({ success: true, members });
 });
 
@@ -65,8 +96,10 @@ const addMember = asyncHandler(async (req, res) => {
   if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
 
   const group = req.group;
-  if (group.adminId.toString() !== req.user._id.toString())
+  if (group.adminId.toString() !== req.user._id.toString()) {
+    logger.warn('GROUP', `Add member denied — not admin`, { groupId: group._id, userId: req.user._id });
     return res.status(403).json({ success: false, message: 'Only the admin can add members' });
+  }
 
   const userToAdd = await User.findOne({ email: email.toLowerCase() });
   if (!userToAdd) return res.status(404).json({ success: false, message: 'No registered user found with that email' });
@@ -76,6 +109,11 @@ const addMember = asyncHandler(async (req, res) => {
 
   group.members.push(userToAdd._id);
   await group.save();
+
+  logger.info('GROUP', `Member added: ${userToAdd.email} → group "${group.name}"`, {
+    groupId: group._id,
+    addedUserId: userToAdd._id,
+  });
 
   res.json({
     success: true,
@@ -87,8 +125,10 @@ const addMember = asyncHandler(async (req, res) => {
 // DELETE /api/groups/:id/members/:userId
 const removeMember = asyncHandler(async (req, res) => {
   const group = req.group;
-  if (group.adminId.toString() !== req.user._id.toString())
+  if (group.adminId.toString() !== req.user._id.toString()) {
+    logger.warn('GROUP', `Remove member denied — not admin`, { groupId: group._id, userId: req.user._id });
     return res.status(403).json({ success: false, message: 'Only the admin can remove members' });
+  }
 
   const { userId } = req.params;
   if (userId === group.adminId.toString())
@@ -100,6 +140,7 @@ const removeMember = asyncHandler(async (req, res) => {
   group.members.splice(idx, 1);
   await group.save();
 
+  logger.info('GROUP', `Member removed from group "${group.name}"`, { groupId: group._id, removedUserId: userId });
   res.json({ success: true, message: 'Member removed' });
 });
 

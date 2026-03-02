@@ -1,6 +1,7 @@
-const jwt        = require('jsonwebtoken');
-const User       = require('../models/User');
+const jwt          = require('jsonwebtoken');
+const User         = require('../models/User');
 const asyncHandler = require('../utils/asyncHandler');
+const logger       = require('../utils/logger');
 
 const generateToken = (id) =>
   jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '7d' });
@@ -12,6 +13,8 @@ const isValidPassword = (p) => /^(?=.*[a-zA-Z])(?=.*\d).{8,}$/.test(p);
 const register = asyncHandler(async (req, res) => {
   const { name, email, password } = req.body;
 
+  logger.info('AUTH', `Register attempt: ${email}`);
+
   if (!name || !email || !password)
     return res.status(400).json({ success: false, message: 'Name, email, and password are required' });
   if (name.trim().length < 2 || name.trim().length > 50)
@@ -21,10 +24,13 @@ const register = asyncHandler(async (req, res) => {
   if (!isValidPassword(password))
     return res.status(400).json({ success: false, message: 'Password must be 8+ characters and contain both letters and numbers' });
 
-  if (await User.findOne({ email: email.toLowerCase() }))
+  if (await User.findOne({ email: email.toLowerCase() })) {
+    logger.warn('AUTH', `Register rejected — email already exists: ${email}`);
     return res.status(409).json({ success: false, message: 'Email already registered' });
+  }
 
   const user = await User.create({ name: name.trim(), email: email.toLowerCase(), password });
+  logger.info('AUTH', `User registered: ${user.email}`, { userId: user._id });
 
   res.status(201).json({
     success: true,
@@ -37,12 +43,25 @@ const register = asyncHandler(async (req, res) => {
 const login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
+  logger.info('AUTH', `Login attempt: ${email}`, { ip: req.ip });
+
   if (!email || !password)
     return res.status(400).json({ success: false, message: 'Email and password are required' });
 
   const user = await User.findOne({ email: email.toLowerCase() });
-  if (!user || !(await user.matchPassword(password)))
+
+  if (!user) {
+    logger.warn('AUTH', `Login failed — email not found: ${email}`, { ip: req.ip });
     return res.status(401).json({ success: false, message: 'Invalid email or password' });
+  }
+
+  const passwordMatch = await user.matchPassword(password);
+  if (!passwordMatch) {
+    logger.warn('AUTH', `Login failed — wrong password: ${email}`, { ip: req.ip });
+    return res.status(401).json({ success: false, message: 'Invalid email or password' });
+  }
+
+  logger.info('AUTH', `Login success: ${user.email}`, { userId: user._id });
 
   res.json({
     success: true,
@@ -53,6 +72,7 @@ const login = asyncHandler(async (req, res) => {
 
 // GET /api/auth/me
 const getMe = asyncHandler(async (req, res) => {
+  logger.debug('AUTH', `getMe: ${req.user.email}`, { userId: req.user._id });
   res.json({ success: true, user: req.user });
 });
 

@@ -9,7 +9,15 @@
       "Bash(ls:*)",
       "mcp__ide__getDiagnostics",
       "Bash(cd D:\\\\Coding Workspace\\\\projects\\\\PayCircle\\\\frontend:*)",
-      "Bash(ls D:\\\\Coding Workspace\\\\projects\\\\PayCircle:*)"
+      "Bash(ls D:\\\\Coding Workspace\\\\projects\\\\PayCircle:*)",
+      "Bash(echo EXIT: $?:*)",
+      "Bash(npx expo:*)",
+      "Bash(node:*)",
+      "Bash(where adb:*)",
+      "Bash(reg query:*)",
+      "Bash(ipconfig:*)",
+      "Bash(python:*)",
+      "Bash(git rm:*)"
     ]
   }
 }

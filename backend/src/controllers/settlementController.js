@@ -1,5 +1,6 @@
-const Settlement = require('../models/Settlement');
+const Settlement   = require('../models/Settlement');
 const asyncHandler = require('../utils/asyncHandler');
+const logger       = require('../utils/logger');
 
 // POST /api/groups/:id/settlements
 const recordSettlement = asyncHandler(async (req, res) => {
@@ -31,6 +32,13 @@ const recordSettlement = asyncHandler(async (req, res) => {
     { path: 'toUserId',   select: 'name email' },
   ]);
 
+  logger.info('SETTLE', `Settlement recorded: ₹${amt} in group "${group.name}"`, {
+    groupId: group._id,
+    settlementId: settlement._id,
+    fromUserId,
+    toUserId,
+  });
+
   res.status(201).json({ success: true, settlement });
 });
 
@@ -40,6 +48,8 @@ const getSettlements = asyncHandler(async (req, res) => {
     .populate('fromUserId', 'name email')
     .populate('toUserId',   'name email')
     .sort({ date: -1 });
+
+  logger.debug('SETTLE', `Fetched ${settlements.length} settlements`, { groupId: req.params.id });
   res.json({ success: true, count: settlements.length, settlements });
 });
 

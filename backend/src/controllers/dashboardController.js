@@ -3,6 +3,7 @@ const Expense             = require('../models/Expense');
 const PersonalTransaction = require('../models/PersonalTransaction');
 const { calculateGroupBalances } = require('../services/balanceService');
 const asyncHandler        = require('../utils/asyncHandler');
+const logger              = require('../utils/logger');
 
 // GET /api/users/me/dashboard
 const getDashboard = asyncHandler(async (req, res) => {
@@ -10,6 +11,8 @@ const getDashboard = asyncHandler(async (req, res) => {
   const now    = new Date();
   const start  = new Date(now.getFullYear(), now.getMonth(), 1);
   const end    = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+  logger.debug('DASH', `Building dashboard for user`, { userId, month: `${now.getFullYear()}-${now.getMonth() + 1}` });
 
   // User's groups
   const groups   = await Group.find({ members: userId });
@@ -72,6 +75,12 @@ const getDashboard = asyncHandler(async (req, res) => {
     if (mine.netBalance < 0) totalOwed        += Math.abs(mine.netBalance);
     if (mine.netBalance > 0) totalToReceive   += mine.netBalance;
   }));
+
+  logger.debug('DASH', `Dashboard computed`, {
+    userId,
+    totalSpend: totalSpend.toFixed(2),
+    groupCount: groups.length,
+  });
 
   res.json({
     success: true,

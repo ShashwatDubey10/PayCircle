@@ -2,7 +2,6 @@ import { Tabs } from 'expo-router';
 import React from 'react';
 import { Ionicons } from '@expo/vector-icons';
 
-import { HapticTab } from '@/components/haptic-tab';
 import { PC } from '@/constants/theme';
 
 function TabIcon({ name, color, size }) {
@@ -14,7 +13,6 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarButton: HapticTab,
         tabBarActiveTintColor: PC.textPrimary,
         tabBarInactiveTintColor: PC.textMuted,
         tabBarStyle: {
