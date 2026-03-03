@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   View,
   Text,
+  Image,
   TextInput,
   TouchableOpacity,
   StyleSheet,
@@ -92,6 +93,11 @@ export default function RegisterScreen() {
           </TouchableOpacity>
 
           <View style={styles.headBlock}>
+            <Image
+              source={require('../../assets/images/PayCircleIcon.png')}
+              style={styles.logoSmall}
+              resizeMode="contain"
+            />
             <Text style={styles.heading}>Create Account</Text>
             <Text style={styles.subheading}>Join PayCircle and split smarter</Text>
           </View>
@@ -250,6 +256,7 @@ const styles = StyleSheet.create({
   },
 
   headBlock: { marginBottom: 28 },
+  logoSmall: { width: 52, height: 52, marginBottom: 14 },
   heading: { color: PC.textPrimary, fontSize: 26, fontWeight: '700', marginBottom: 6 },
   subheading: { color: PC.textSecondary, fontSize: 14 },
 

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   View,
   Text,
+  Image,
   TextInput,
   TouchableOpacity,
   StyleSheet,
@@ -60,10 +61,11 @@ export default function LoginScreen() {
 
           {/* ── Logo ── */}
           <View style={styles.logoBlock}>
-            <View style={styles.logoIcon}>
-              <Ionicons name="swap-horizontal" size={28} color={PC.textPrimary} />
-            </View>
-            <Text style={styles.appName}>PayCircle</Text>
+            <Image
+              source={require('../../assets/images/PayCircleLogo.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
             <Text style={styles.tagline}>Split smarter together</Text>
           </View>
 
@@ -176,24 +178,7 @@ const styles = StyleSheet.create({
   },
 
   logoBlock: { alignItems: 'center', marginBottom: 48 },
-  logoIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
-    backgroundColor: PC.bgCard,
-    borderWidth: 1,
-    borderColor: PC.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 14,
-  },
-  appName: {
-    color: PC.textPrimary,
-    fontSize: 28,
-    fontWeight: '700',
-    letterSpacing: -0.5,
-    marginBottom: 4,
-  },
+  logoImage: { width: 210, height: 72, marginBottom: 8 },
   tagline: { color: PC.textSecondary, fontSize: 14 },
 
   form: {

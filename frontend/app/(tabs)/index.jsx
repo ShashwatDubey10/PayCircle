@@ -2,11 +2,16 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
+  Modal,
+  TextInput,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -122,12 +127,15 @@ export default function DashboardScreen() {
   const router       = useRouter();
   const { user }     = useAuth();
 
-  const [dash,       setDash]       = useState(null);
-  const [budget,     setBudget]     = useState(null);
-  const [recent,     setRecent]     = useState([]);
-  const [loading,    setLoading]    = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error,      setError]      = useState('');
+  const [dash,               setDash]               = useState(null);
+  const [budget,             setBudget]             = useState(null);
+  const [recent,             setRecent]             = useState([]);
+  const [loading,            setLoading]            = useState(true);
+  const [refreshing,         setRefreshing]         = useState(false);
+  const [error,              setError]              = useState('');
+  const [budgetModalVisible, setBudgetModalVisible] = useState(false);
+  const [budgetInput,        setBudgetInput]        = useState('');
+  const [budgetSaving,       setBudgetSaving]       = useState(false);
 
   const fetchAll = useCallback(async () => {
     try {
@@ -153,6 +161,30 @@ export default function DashboardScreen() {
   function onRefresh() {
     setRefreshing(true);
     fetchAll();
+  }
+
+  function openBudgetModal() {
+    setBudgetInput(budget?.budget > 0 ? String(budget.budget) : '');
+    setBudgetModalVisible(true);
+  }
+
+  async function saveBudget() {
+    const amount = parseFloat(budgetInput);
+    if (!budgetInput.trim() || isNaN(amount) || amount < 1) {
+      Alert.alert('Invalid Amount', 'Please enter a valid budget amount (minimum ₹1).');
+      return;
+    }
+    setBudgetSaving(true);
+    try {
+      await api.post('/api/users/me/budget', { amount });
+      setBudgetModalVisible(false);
+      setBudgetInput('');
+      fetchAll();
+    } catch (err) {
+      Alert.alert('Error', err.message || 'Could not save budget. Please try again.');
+    } finally {
+      setBudgetSaving(false);
+    }
   }
 
   // ── Derived values ──────────────────────────────────────────────────────────
@@ -277,7 +309,14 @@ export default function DashboardScreen() {
 
         {/* ── Budget Progress ── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Monthly Budget</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Monthly Budget</Text>
+            {budget?.budget > 0 && (
+              <TouchableOpacity onPress={openBudgetModal}>
+                <Text style={styles.seeAll}>Edit</Text>
+              </TouchableOpacity>
+            )}
+          </View>
           {budget?.budget > 0 ? (
             <View style={styles.budgetCard}>
               <View style={styles.budgetInfo}>
@@ -303,7 +342,7 @@ export default function DashboardScreen() {
               <BudgetRing percent={budgetPct} status={budgetStatus} />
             </View>
           ) : (
-            <TouchableOpacity style={styles.budgetEmpty}>
+            <TouchableOpacity style={styles.budgetEmpty} onPress={openBudgetModal}>
               <Ionicons name="add-circle-outline" size={20} color={PC.textSecondary} />
               <Text style={styles.budgetEmptyText}>Set a monthly budget</Text>
             </TouchableOpacity>
@@ -332,6 +371,57 @@ export default function DashboardScreen() {
         </View>
 
       </ScrollView>
+
+      {/* ── Budget Modal ── */}
+      <Modal
+        visible={budgetModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setBudgetModalVisible(false)}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>
+              {budget?.budget > 0 ? 'Edit Monthly Budget' : 'Set Monthly Budget'}
+            </Text>
+            <Text style={styles.modalSubtitle}>
+              {formatMonth(budget?.month || new Date().toISOString().slice(0, 7))}
+            </Text>
+            <View style={styles.modalInputBox}>
+              <Text style={styles.modalCurrencySymbol}>₹</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="e.g. 10000"
+                placeholderTextColor={PC.textMuted}
+                value={budgetInput}
+                onChangeText={setBudgetInput}
+                keyboardType="numeric"
+                autoFocus
+                editable={!budgetSaving}
+              />
+            </View>
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setBudgetModalVisible(false)}
+                disabled={budgetSaving}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalSaveBtn, budgetSaving && { opacity: 0.6 }]}
+                onPress={saveBudget}
+                disabled={budgetSaving}>
+                {budgetSaving
+                  ? <ActivityIndicator size="small" color={PC.bg} />
+                  : <Text style={styles.modalSaveText}>Save</Text>
+                }
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -477,4 +567,38 @@ const styles = StyleSheet.create({
     padding: 32, alignItems: 'center',
   },
   emptyText: { color: PC.textMuted, fontSize: 14 },
+
+  // Budget modal
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center', alignItems: 'center', padding: 24,
+  },
+  modalCard: {
+    width: '100%', backgroundColor: PC.bgCard,
+    borderRadius: 20, borderWidth: 1, borderColor: PC.border,
+    padding: 24,
+  },
+  modalTitle:    { color: PC.textPrimary, fontSize: 18, fontWeight: '700', marginBottom: 4 },
+  modalSubtitle: { color: PC.textSecondary, fontSize: 13, marginBottom: 20 },
+  modalInputBox: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: PC.bgInput, borderRadius: 12,
+    borderWidth: 1, borderColor: PC.border,
+    paddingHorizontal: 14, height: 52, marginBottom: 20,
+  },
+  modalCurrencySymbol: { color: PC.textSecondary, fontSize: 18, fontWeight: '600', marginRight: 8 },
+  modalInput: { flex: 1, color: PC.textPrimary, fontSize: 18, fontWeight: '500' },
+  modalBtnRow: { flexDirection: 'row', gap: 12 },
+  modalCancelBtn: {
+    flex: 1, height: 48, borderRadius: 12,
+    borderWidth: 1, borderColor: PC.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  modalCancelText: { color: PC.textSecondary, fontSize: 14, fontWeight: '500' },
+  modalSaveBtn: {
+    flex: 1, height: 48, borderRadius: 12,
+    backgroundColor: PC.textPrimary,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  modalSaveText: { color: PC.bg, fontSize: 14, fontWeight: '700' },
 });

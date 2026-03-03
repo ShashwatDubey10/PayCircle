@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
+  Modal,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
@@ -46,25 +47,131 @@ const SETTINGS = [
   {
     group: 'Account',
     items: [
-      { label: 'Notifications',      icon: 'notifications-outline' },
-      { label: 'Privacy & Security', icon: 'shield-outline' },
+      { id: 'notifications',  label: 'Notifications',      icon: 'notifications-outline' },
+      { id: 'privacy',        label: 'Privacy & Security', icon: 'shield-outline' },
     ],
   },
   {
     group: 'Preferences',
     items: [
-      { label: 'Currency (INR)', icon: 'cash-outline' },
-      { label: 'Appearance',     icon: 'moon-outline' },
+      { id: 'currency',   label: 'Currency (INR)', icon: 'cash-outline' },
+      { id: 'appearance', label: 'Appearance',     icon: 'moon-outline' },
     ],
   },
   {
     group: 'Support',
     items: [
-      { label: 'Help & FAQ',           icon: 'help-circle-outline' },
-      { label: 'About PayCircle',      icon: 'information-circle-outline' },
+      { id: 'help',  label: 'Help & FAQ',      icon: 'help-circle-outline' },
+      { id: 'about', label: 'About PayCircle', icon: 'information-circle-outline' },
     ],
   },
 ];
+
+// ─── Modal content ────────────────────────────────────────────────────────────
+
+const MODAL_CONTENT = {
+  privacy: {
+    title: 'Privacy & Security',
+    items: [
+      { heading: 'Data Storage', body: 'Your data is stored securely on MongoDB Atlas with encrypted connections.' },
+      { heading: 'Passwords',    body: 'Passwords are never stored in plain text — they are hashed using bcrypt before saving.' },
+      { heading: 'Authentication', body: 'Sessions use JSON Web Tokens (JWT) that expire after 7 days. Tokens are stored locally on your device.' },
+      { heading: 'Data Sharing', body: 'PayCircle does not sell or share your personal data with third parties.' },
+    ],
+  },
+  help: {
+    title: 'Help & FAQ',
+    items: [
+      { heading: 'How do I create a group?', body: 'Go to the Groups tab and tap the + button. Enter a name and select a type (Roommates, Trip, Mess, or Miscellaneous).' },
+      { heading: 'How are expenses split?', body: 'Group expenses are split equally among all members by default. Each member\'s share is calculated automatically.' },
+      { heading: 'How do I record a settlement?', body: 'Open a group, go to the Balances tab, and use the Settlements section to record who paid whom.' },
+      { heading: 'What is Monthly Budget?', body: 'Set a monthly spending limit from the Dashboard. It tracks your group expense shares + personal expenses combined.' },
+      { heading: 'How do I track personal spending?', body: 'Use the Transactions tab to add personal income or expenses independently from group activity.' },
+      { heading: 'How do I add a member to a group?', body: 'Open the group, go to Members tab, and tap Add Member. The person must already have a PayCircle account.' },
+    ],
+  },
+  about: {
+    title: 'About PayCircle',
+    items: [
+      { heading: 'Version',     body: '1.0.0 (MVP Release)' },
+      { heading: 'Description', body: 'PayCircle is a group expense management app designed for college students sharing living expenses.' },
+      { heading: 'Tech Stack',  body: 'React Native (Expo) · Node.js · Express · MongoDB Atlas' },
+      { heading: 'Currency',    body: 'Indian Rupee (₹) — INR only' },
+      { heading: 'Support',     body: 'For issues or feedback, contact your group admin or the development team.' },
+    ],
+  },
+};
+
+// ─── InfoModal ────────────────────────────────────────────────────────────────
+
+function InfoModal({ content, onClose }) {
+  if (!content) return null;
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <View style={modalStyles.overlay}>
+        <View style={modalStyles.sheet}>
+          <View style={modalStyles.handle} />
+          <Text style={modalStyles.title}>{content.title}</Text>
+          <ScrollView style={modalStyles.body} showsVerticalScrollIndicator={false}>
+            {content.items.map((item, i) => (
+              <View key={i} style={modalStyles.item}>
+                <Text style={modalStyles.itemHeading}>{item.heading}</Text>
+                <Text style={modalStyles.itemBody}>{item.body}</Text>
+              </View>
+            ))}
+            <View style={{ height: 24 }} />
+          </ScrollView>
+          <TouchableOpacity style={modalStyles.closeBtn} onPress={onClose} activeOpacity={0.8}>
+            <Text style={modalStyles.closeBtnText}>Close</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const modalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: PC.bgCard,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    borderColor: PC.border,
+    padding: 24,
+    maxHeight: '80%',
+  },
+  handle: {
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: PC.border,
+    alignSelf: 'center',
+    marginBottom: 20,
+  },
+  title: { color: PC.textPrimary, fontSize: 18, fontWeight: '700', marginBottom: 20 },
+  body:  { flex: 0 },
+  item: {
+    backgroundColor: PC.bgCardElevated,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+  },
+  itemHeading: { color: PC.textPrimary,    fontSize: 13, fontWeight: '600', marginBottom: 4 },
+  itemBody:    { color: PC.textSecondary,  fontSize: 13, lineHeight: 19 },
+  closeBtn: {
+    marginTop: 16,
+    backgroundColor: PC.textPrimary,
+    borderRadius: 14,
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeBtnText: { color: PC.bg, fontSize: 15, fontWeight: '700' },
+});
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
@@ -76,6 +183,7 @@ export default function ProfileScreen() {
   const [netSaved,     setNetSaved]     = useState(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [signingOut,   setSigningOut]   = useState(false);
+  const [activeModal,  setActiveModal]  = useState(null); // 'privacy' | 'help' | 'about'
 
   // ── Fetch stats ───────────────────────────────────────────────────────────
   const fetchStats = useCallback(async () => {
@@ -101,6 +209,42 @@ export default function ProfileScreen() {
   }, []);
 
   useEffect(() => { fetchStats(); }, [fetchStats]);
+
+  // ── Settings press handler ────────────────────────────────────────────────
+  function handleSettingsPress(id) {
+    switch (id) {
+      case 'notifications':
+        Alert.alert(
+          'Notifications',
+          'Push notification preferences will be available in a future update.\n\nYou\'ll be able to get alerts for new expenses, settlement reminders, and budget warnings.',
+          [{ text: 'OK' }]
+        );
+        break;
+      case 'privacy':
+        setActiveModal('privacy');
+        break;
+      case 'currency':
+        Alert.alert(
+          'Currency',
+          'PayCircle uses Indian Rupee (₹) as the default currency.\n\nMulti-currency support is planned for a future release.',
+          [{ text: 'Got it' }]
+        );
+        break;
+      case 'appearance':
+        Alert.alert(
+          'Appearance',
+          'PayCircle currently uses Dark mode.\n\nLight mode and custom themes are planned for a future update.',
+          [{ text: 'OK' }]
+        );
+        break;
+      case 'help':
+        setActiveModal('help');
+        break;
+      case 'about':
+        setActiveModal('about');
+        break;
+    }
+  }
 
   // ── Sign out ──────────────────────────────────────────────────────────────
   function handleSignOut() {
@@ -196,8 +340,11 @@ export default function ProfileScreen() {
             <Text style={styles.groupLabel}>{group.group}</Text>
             <View style={styles.settingsCard}>
               {group.items.map((item, ii) => (
-                <View key={item.label}>
-                  <TouchableOpacity style={styles.settingsRow} activeOpacity={0.7}>
+                <View key={item.id}>
+                  <TouchableOpacity
+                    style={styles.settingsRow}
+                    activeOpacity={0.7}
+                    onPress={() => handleSettingsPress(item.id)}>
                     <View style={styles.settingsIconBox}>
                       <Ionicons name={item.icon} size={18} color={PC.textSecondary} />
                     </View>
@@ -232,6 +379,12 @@ export default function ProfileScreen() {
 
         <Text style={styles.version}>PayCircle v1.0.0 · MVP</Text>
       </ScrollView>
+
+      {/* ── Info Modal ── */}
+      <InfoModal
+        content={activeModal ? MODAL_CONTENT[activeModal] : null}
+        onClose={() => setActiveModal(null)}
+      />
     </SafeAreaView>
   );
 }
