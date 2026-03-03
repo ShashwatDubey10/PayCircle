@@ -51,6 +51,7 @@ export default function RootLayout() {
           <Stack.Screen name="auth/login" />
           <Stack.Screen name="auth/register" />
           <Stack.Screen name="groups/[id]" />
+          <Stack.Screen name="budget" />
         </Stack>
         <RootGuard />
         <StatusBar style="light" />

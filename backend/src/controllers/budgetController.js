@@ -19,12 +19,43 @@ const setBudget = asyncHandler(async (req, res) => {
 
   const budget = await Budget.findOneAndUpdate(
     { userId: req.user._id, month: getMonthStr() },
-    { amount: amt },
+    { $set: { amount: amt } },
     { upsert: true, new: true }
   );
 
-  logger.info('BUDGET', `Budget set: ₹${amt} for ${getMonthStr()}`, { userId: req.user._id });
+  logger.info('BUDGET', `Overall budget set: ₹${amt} for ${getMonthStr()}`, { userId: req.user._id });
   res.json({ success: true, budget });
+});
+
+// POST /api/users/me/budget/categories
+const setCategoryBudgets = asyncHandler(async (req, res) => {
+  const { categories } = req.body;
+
+  if (!Array.isArray(categories))
+    return res.status(400).json({ success: false, message: 'categories must be an array' });
+
+  // Validate: non-empty name (≤50 chars), amount ≥ 1. Deduplicate by lowercase name — last entry wins.
+  const catMap = {};
+  for (const item of categories) {
+    const name = typeof item.category === 'string' ? item.category.trim() : '';
+    const amt  = parseFloat(item.amount);
+    if (!name || name.length > 50) continue;
+    if (isNaN(amt) || amt < 1) continue;
+    catMap[name.toLowerCase()] = { category: name, amount: amt };
+  }
+  const cleanCategories = Object.values(catMap);
+
+  await Budget.findOneAndUpdate(
+    { userId: req.user._id, month: getMonthStr() },
+    { $set: { categories: cleanCategories } },
+    { upsert: true, new: true }
+  );
+
+  logger.info('BUDGET', `Category budgets set for ${getMonthStr()}`, {
+    userId: req.user._id,
+    count: cleanCategories.length,
+  });
+  res.json({ success: true, categories: cleanCategories });
 });
 
 // GET /api/users/me/budget
@@ -40,30 +71,55 @@ const getBudget = asyncHandler(async (req, res) => {
   const groups   = await Group.find({ members: userId });
   const groupIds = groups.map(g => g._id);
 
-  const groupExpenses = await Expense.find({ groupId: { $in: groupIds }, date: { $gte: start, $lte: end } });
-  let groupSpend = 0;
+  const groupExpenses    = await Expense.find({ groupId: { $in: groupIds }, date: { $gte: start, $lte: end } });
+  const personalExpenses = await PersonalTransaction.find({ userId, type: 'expense', date: { $gte: start, $lte: end } });
+
+  // Accumulate total and per-category spend (case-insensitive keys)
+  let groupSpend    = 0;
+  let personalSpend = 0;
+  const catSpend    = {}; // lowercase key → amount
+
   for (const exp of groupExpenses) {
     const split = exp.splits.find(s => s.userId.toString() === userId.toString());
-    if (split) groupSpend += split.amount;
+    if (split) {
+      groupSpend += split.amount;
+      const key = (exp.category || '').toLowerCase();
+      catSpend[key] = (catSpend[key] || 0) + split.amount;
+    }
   }
 
-  const personalExpenses = await PersonalTransaction.find({ userId, type: 'expense', date: { $gte: start, $lte: end } });
-  const personalSpend = personalExpenses.reduce((s, t) => s + t.amount, 0);
+  for (const tx of personalExpenses) {
+    personalSpend += tx.amount;
+    const key = (tx.category || '').toLowerCase();
+    catSpend[key] = (catSpend[key] || 0) + tx.amount;
+  }
 
-  const spent         = parseFloat((groupSpend + personalSpend).toFixed(2));
-  const budgetAmount  = budget?.amount || 0;
-  const remaining     = parseFloat((budgetAmount - spent).toFixed(2));
-  const usagePct      = budgetAmount > 0 ? parseFloat(((spent / budgetAmount) * 100).toFixed(1)) : 0;
-  const status        = usagePct >= 100 ? 'over' : usagePct >= 90 ? 'critical' : usagePct >= 70 ? 'warning' : 'healthy';
+  const spent        = parseFloat((groupSpend + personalSpend).toFixed(2));
+  const budgetAmount = budget?.amount || 0;
+  const remaining    = parseFloat((budgetAmount - spent).toFixed(2));
+  const usagePct     = budgetAmount > 0 ? parseFloat(((spent / budgetAmount) * 100).toFixed(1)) : 0;
+  const status       = budgetAmount > 0
+    ? (usagePct >= 100 ? 'over' : usagePct >= 90 ? 'critical' : usagePct >= 70 ? 'warning' : 'healthy')
+    : null;
 
-  logger.debug('BUDGET', `Budget fetched: ${status} (${usagePct}% used)`, {
-    userId,
-    month,
-    budget: budgetAmount,
-    spent,
+  // Build per-category breakdown — only user-defined categories
+  const categories = (budget?.categories || []).map(({ category, amount: limit }) => {
+    const catSpentAmt  = parseFloat((catSpend[category.toLowerCase()] || 0).toFixed(2));
+    const catRemaining = parseFloat((limit - catSpentAmt).toFixed(2));
+    const catUsagePct  = parseFloat(((catSpentAmt / limit) * 100).toFixed(1));
+    const catStatus    = catUsagePct >= 100 ? 'over' : catUsagePct >= 90 ? 'critical' : catUsagePct >= 70 ? 'warning' : 'healthy';
+    return { category, spent: catSpentAmt, limit, remaining: catRemaining, usagePercentage: catUsagePct, status: catStatus };
   });
 
-  res.json({ success: true, month, budget: budgetAmount, spent, remaining, usagePercentage: usagePct, status });
+  logger.debug('BUDGET', `Budget fetched: overall ${status || 'unset'} (${usagePct}% used)`, {
+    userId, month, budget: budgetAmount, spent,
+  });
+
+  res.json({
+    success: true, month,
+    budget: budgetAmount, spent, remaining, usagePercentage: usagePct, status,
+    categories,
+  });
 });
 
-module.exports = { setBudget, getBudget };
+module.exports = { setBudget, setCategoryBudgets, getBudget };

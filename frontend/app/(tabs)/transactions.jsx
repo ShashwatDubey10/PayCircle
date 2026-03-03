@@ -237,7 +237,7 @@ function AddTransactionModal({ visible, onClose, onAdded }) {
           <Text style={styles.modalLabel}>Notes (optional)</Text>
           <View style={[styles.modalInputBox, { height: 72, alignItems: 'flex-start', paddingTop: 12 }]}>
             <TextInput
-              style={[styles.modalInput, { height: '100%' }]}
+              style={[styles.modalInput, { flex: 1, height: '100%' }]}
               placeholder="What was this for?"
               placeholderTextColor={PC.textMuted}
               value={notes}

@@ -311,14 +311,15 @@ export default function DashboardScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Monthly Budget</Text>
-            {budget?.budget > 0 && (
-              <TouchableOpacity onPress={openBudgetModal}>
-                <Text style={styles.seeAll}>Edit</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity onPress={() => router.push('/budget')}>
+              <Text style={styles.seeAll}>Manage →</Text>
+            </TouchableOpacity>
           </View>
           {budget?.budget > 0 ? (
-            <View style={styles.budgetCard}>
+            <TouchableOpacity
+              style={styles.budgetCard}
+              activeOpacity={0.85}
+              onPress={() => router.push('/budget')}>
               <View style={styles.budgetInfo}>
                 <Text style={styles.budgetPlan}>Plan · {currentMonth}</Text>
                 <Text style={styles.budgetNumbers}>
@@ -340,7 +341,7 @@ export default function DashboardScreen() {
                 </Text>
               </View>
               <BudgetRing percent={budgetPct} status={budgetStatus} />
-            </View>
+            </TouchableOpacity>
           ) : (
             <TouchableOpacity style={styles.budgetEmpty} onPress={openBudgetModal}>
               <Ionicons name="add-circle-outline" size={20} color={PC.textSecondary} />

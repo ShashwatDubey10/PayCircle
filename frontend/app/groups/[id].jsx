@@ -11,6 +11,7 @@ import {
   RefreshControl,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -181,7 +182,7 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
           <Text style={styles.modalLabel}>Notes (optional)</Text>
           <View style={[styles.modalInputBox, { height: 80, alignItems: 'flex-start', paddingTop: 12 }]}>
             <TextInput
-              style={[styles.modalInput, { height: '100%' }]}
+              style={[styles.modalInput, { flex: 1, height: '100%' }]}
               placeholder="What was this for?"
               placeholderTextColor={PC.textMuted}
               value={notes}
@@ -297,6 +298,172 @@ function AddMemberModal({ visible, onClose, groupId, onAdded }) {
   );
 }
 
+// ─── Record Settlement Modal ──────────────────────────────────────────────────
+
+function RecordSettlementModal({ visible, onClose, groupId, members, currentUserId, onRecorded }) {
+  const [fromId,  setFromId]  = useState(currentUserId ?? '');
+  const [toId,    setToId]    = useState('');
+  const [amount,  setAmount]  = useState('');
+  const [notes,   setNotes]   = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState('');
+
+  // Auto-reset toId if it collides with fromId
+  function handleFromChange(id) {
+    setFromId(id);
+    if (toId === id) setToId('');
+  }
+  function handleToChange(id) {
+    setToId(id);
+    if (fromId === id) setFromId('');
+  }
+
+  async function handleSubmit() {
+    if (!fromId)       { setError('Select who is paying.');    return; }
+    if (!toId)         { setError('Select who is receiving.'); return; }
+    if (fromId === toId) { setError('Payer and receiver must be different.'); return; }
+    const amt = parseFloat(amount);
+    if (!amount || isNaN(amt) || amt <= 0) { setError('Enter a valid amount.'); return; }
+
+    setLoading(true);
+    setError('');
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const { data } = await api.post(`/api/groups/${groupId}/settlements`, {
+        fromUserId: fromId, toUserId: toId, amount: amt,
+        date: today, notes: notes.trim(),
+      });
+      onRecorded(data.settlement);
+      resetAndClose();
+    } catch (err) {
+      setError(err.message || 'Failed to record settlement.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function resetAndClose() {
+    setFromId(currentUserId ?? '');
+    setToId('');
+    setAmount('');
+    setNotes('');
+    setError('');
+    onClose();
+  }
+
+  function handleClose() { if (!loading) resetAndClose(); }
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+      <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
+        <ScrollView style={styles.modalSheet} bounces={false} keyboardShouldPersistTaps="handled">
+          <View style={styles.modalHandle} />
+          <Text style={styles.modalTitle}>Record Settlement</Text>
+
+          {error ? (
+            <View style={styles.errorBox}>
+              <Ionicons name="alert-circle-outline" size={15} color={PC.negative} />
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          ) : null}
+
+          {/* Who paid */}
+          <Text style={styles.modalLabel}>Who paid</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+            {members.map((m) => {
+              const selected = fromId === m.id;
+              return (
+                <TouchableOpacity
+                  key={m.id}
+                  style={[styles.payerChip, selected && styles.payerChipActive]}
+                  onPress={() => handleFromChange(m.id)}
+                  disabled={loading}>
+                  <View style={[styles.payerAvatar, selected && styles.payerAvatarActive]}>
+                    <Text style={[styles.payerInitials, selected && { color: PC.bg }]}>
+                      {initials(m.name)}
+                    </Text>
+                  </View>
+                  <Text style={[styles.payerName, selected && styles.payerNameActive]}>
+                    {m.id === currentUserId ? 'You' : m.name.split(' ')[0]}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
+          {/* Who received */}
+          <Text style={styles.modalLabel}>Paid to</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+            {members.filter(m => m.id !== fromId).map((m) => {
+              const selected = toId === m.id;
+              return (
+                <TouchableOpacity
+                  key={m.id}
+                  style={[styles.payerChip, selected && styles.payerChipActive]}
+                  onPress={() => handleToChange(m.id)}
+                  disabled={loading}>
+                  <View style={[styles.payerAvatar, selected && styles.payerAvatarActive]}>
+                    <Text style={[styles.payerInitials, selected && { color: PC.bg }]}>
+                      {initials(m.name)}
+                    </Text>
+                  </View>
+                  <Text style={[styles.payerName, selected && styles.payerNameActive]}>
+                    {m.id === currentUserId ? 'You' : m.name.split(' ')[0]}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
+          {/* Amount */}
+          <Text style={styles.modalLabel}>Amount (₹)</Text>
+          <View style={styles.modalInputBox}>
+            <Text style={styles.rupeePrefix}>₹</Text>
+            <TextInput
+              style={[styles.modalInput, { flex: 1 }]}
+              placeholder="0.00"
+              placeholderTextColor={PC.textMuted}
+              value={amount}
+              onChangeText={(v) => { setAmount(v); setError(''); }}
+              keyboardType="decimal-pad"
+              editable={!loading}
+            />
+          </View>
+
+          {/* Notes */}
+          <Text style={styles.modalLabel}>Notes (optional)</Text>
+          <View style={[styles.modalInputBox, { height: 72, alignItems: 'flex-start', paddingTop: 12 }]}>
+            <TextInput
+              style={[styles.modalInput, { flex: 1, height: '100%' }]}
+              placeholder="e.g. Paid via UPI"
+              placeholderTextColor={PC.textMuted}
+              value={notes}
+              onChangeText={setNotes}
+              multiline
+              editable={!loading}
+            />
+          </View>
+
+          <TouchableOpacity
+            style={[styles.createBtn, loading && styles.createBtnDisabled]}
+            onPress={handleSubmit}
+            disabled={loading}
+            activeOpacity={0.85}>
+            {loading
+              ? <ActivityIndicator color={PC.bg} size="small" />
+              : <Text style={styles.createBtnText}>Record Settlement</Text>
+            }
+          </TouchableOpacity>
+          <View style={{ height: 20 }} />
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function GroupDetailScreen() {
@@ -313,8 +480,9 @@ export default function GroupDetailScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error,      setError]      = useState('');
 
-  const [showAddExpense, setShowAddExpense] = useState(false);
-  const [showAddMember,  setShowAddMember]  = useState(false);
+  const [showAddExpense,    setShowAddExpense]    = useState(false);
+  const [showAddMember,     setShowAddMember]     = useState(false);
+  const [showSettlement,    setShowSettlement]    = useState(false);
 
   // ── Fetch all group data ──────────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
@@ -373,6 +541,11 @@ export default function GroupDetailScreen() {
   function handleMemberAdded(member) {
     setMembers(prev => [...prev, member]);
     // Refresh balances since member count changed
+    api.get(`/api/groups/${id}/balances`).then(r => setBalances(r.data)).catch(() => {});
+  }
+
+  function handleSettlementRecorded() {
+    // Refresh balances after a settlement
     api.get(`/api/groups/${id}/balances`).then(r => setBalances(r.data)).catch(() => {});
   }
 
@@ -523,6 +696,14 @@ export default function GroupDetailScreen() {
         {/* ── Balances Tab ── */}
         {tab === 'balances' && (
           <>
+            <TouchableOpacity
+              style={styles.settleBtn}
+              onPress={() => setShowSettlement(true)}
+              activeOpacity={0.85}>
+              <Ionicons name="checkmark-done-outline" size={17} color={PC.bg} style={{ marginRight: 7 }} />
+              <Text style={styles.settleBtnText}>Record Settlement</Text>
+            </TouchableOpacity>
+
             {balances.debts?.length > 0 ? (
               <>
                 <Text style={styles.sectionLabel}>Simplified Debts</Text>
@@ -635,6 +816,14 @@ export default function GroupDetailScreen() {
         groupId={id}
         onAdded={handleMemberAdded}
       />
+      <RecordSettlementModal
+        visible={showSettlement}
+        onClose={() => setShowSettlement(false)}
+        groupId={id}
+        members={members}
+        currentUserId={user._id}
+        onRecorded={handleSettlementRecorded}
+      />
     </SafeAreaView>
   );
 }
@@ -714,6 +903,17 @@ const styles = StyleSheet.create({
   emptyText:  { color: PC.textMuted, fontSize: 13 },
 
   sectionLabel: { color: PC.textSecondary, fontSize: 12, fontWeight: '600', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 },
+
+  settleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: PC.textPrimary,
+    borderRadius: 14,
+    paddingVertical: 13,
+    marginBottom: 20,
+  },
+  settleBtnText: { color: PC.bg, fontSize: 14, fontWeight: '700' },
 
   // Expense card
   expenseCard: {
