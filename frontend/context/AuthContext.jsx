@@ -42,8 +42,8 @@ export function AuthProvider({ children }) {
     setUser(data.user);
   };
 
-  const register = async (name, email, password) => {
-    const { data } = await api.post('/api/auth/register', { name, email, password });
+  const register = async (name, username, email, password) => {
+    const { data } = await api.post('/api/auth/register', { name, username, email, password });
     await saveToken(data.token);
     await saveUser(data.user);
     setToken(data.token);
@@ -56,8 +56,27 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  const updateUser = async (updatedUser) => {
+    // Use functional form so we always merge against the latest state, not a stale closure
+    let merged;
+    setUser(prev => {
+      merged = { ...prev, ...updatedUser };
+      return merged;
+    });
+    try {
+      await saveUser(merged);
+    } catch {
+      // Rollback to previous state if persistence fails
+      setUser(prev => {
+        const rolled = { ...prev };
+        Object.keys(updatedUser).forEach(k => { delete rolled[k]; });
+        return rolled;
+      });
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, login, register, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

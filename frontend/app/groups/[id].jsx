@@ -20,6 +20,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { PC } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
+import { getFriends } from '@/services/friends';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -216,43 +217,47 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
 
 // ─── Add Member Modal ─────────────────────────────────────────────────────────
 
-function AddMemberModal({ visible, onClose, groupId, onAdded }) {
-  const [email,   setEmail]   = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState('');
+function AddMemberModal({ visible, onClose, groupId, existingMemberIds, onAdded }) {
+  const [friends,     setFriends]     = useState([]);
+  const [loadingList, setLoadingList] = useState(false);
+  const [addingId,    setAddingId]    = useState(null);
+  const [error,       setError]       = useState('');
 
-  async function handleAdd() {
-    if (!email.trim()) { setError('Enter an email address.'); return; }
-    setLoading(true);
+  useEffect(() => {
+    if (!visible) return;
+    setError('');
+    setLoadingList(true);
+    getFriends()
+      .then(frs => setFriends((frs || []).filter(f => !existingMemberIds.includes(f.id))))
+      .catch(() => setError('Could not load friends list.'))
+      .finally(() => setLoadingList(false));
+  }, [visible]);
+
+  async function handleAdd(friend) {
+    setAddingId(friend.id);
     setError('');
     try {
-      const { data } = await api.post(`/api/groups/${groupId}/members`, {
-        email: email.trim().toLowerCase(),
-      });
+      const { data } = await api.post(`/api/groups/${groupId}/members`, { userId: friend.id });
       onAdded(data.member);
-      setEmail('');
       onClose();
     } catch (err) {
       setError(err.message);
     } finally {
-      setLoading(false);
+      setAddingId(null);
     }
   }
 
   function handleClose() {
-    if (loading) return;
-    setEmail('');
+    if (addingId) return;
     setError('');
     onClose();
   }
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
-      <KeyboardAvoidingView
-        style={styles.modalOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={styles.modalOverlay}>
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
-        <View style={styles.modalSheet}>
+        <View style={[styles.modalSheet, { maxHeight: '70%' }]}>
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Add Member</Text>
 
@@ -263,37 +268,46 @@ function AddMemberModal({ visible, onClose, groupId, onAdded }) {
             </View>
           ) : null}
 
-          <Text style={styles.modalLabel}>Member's Email</Text>
-          <View style={styles.modalInputBox}>
-            <Ionicons name="mail-outline" size={17} color={PC.textMuted} style={{ marginRight: 10 }} />
-            <TextInput
-              style={[styles.modalInput, { flex: 1 }]}
-              placeholder="friend@example.com"
-              placeholderTextColor={PC.textMuted}
-              value={email}
-              onChangeText={(v) => { setEmail(v); setError(''); }}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              editable={!loading}
-            />
-          </View>
-          <Text style={styles.splitNote}>
-            The person must already have a PayCircle account.
-          </Text>
-
-          <TouchableOpacity
-            style={[styles.createBtn, loading && styles.createBtnDisabled]}
-            onPress={handleAdd}
-            disabled={loading}
-            activeOpacity={0.85}>
-            {loading
-              ? <ActivityIndicator color={PC.bg} size="small" />
-              : <Text style={styles.createBtnText}>Add Member</Text>
-            }
-          </TouchableOpacity>
+          {loadingList ? (
+            <ActivityIndicator color={PC.textMuted} style={{ marginVertical: 24 }} />
+          ) : friends.length === 0 ? (
+            <View style={{ alignItems: 'center', paddingVertical: 28 }}>
+              <Ionicons name="people-outline" size={32} color={PC.textMuted} style={{ marginBottom: 10 }} />
+              <Text style={[styles.splitNote, { textAlign: 'center' }]}>
+                No friends available to add.{'\n'}Add friends first from your Profile.
+              </Text>
+            </View>
+          ) : (
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {friends.map((f, i) => (
+                <View key={f.id}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 12 }}>
+                    <View style={styles.memberAvatar}>
+                      <Text style={styles.memberInitials}>{initials(f.name)}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: PC.textPrimary, fontSize: 14, fontWeight: '600' }}>{f.name}</Text>
+                      {f.username ? <Text style={{ color: PC.textMuted, fontSize: 12 }}>@{f.username}</Text> : null}
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.createBtn, { paddingHorizontal: 16, height: 36, borderRadius: 10, width: 'auto' }, addingId === f.id && styles.createBtnDisabled]}
+                      onPress={() => handleAdd(f)}
+                      disabled={!!addingId}
+                      activeOpacity={0.85}>
+                      {addingId === f.id
+                        ? <ActivityIndicator color={PC.bg} size="small" />
+                        : <Text style={styles.createBtnText}>Add</Text>
+                      }
+                    </TouchableOpacity>
+                  </View>
+                  {i < friends.length - 1 && <View style={{ height: 1, backgroundColor: PC.border }} />}
+                </View>
+              ))}
+              <View style={{ height: 16 }} />
+            </ScrollView>
+          )}
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
@@ -814,6 +828,7 @@ export default function GroupDetailScreen() {
         visible={showAddMember}
         onClose={() => setShowAddMember(false)}
         groupId={id}
+        existingMemberIds={members.map(m => m.id)}
         onAdded={handleMemberAdded}
       />
       <RecordSettlementModal

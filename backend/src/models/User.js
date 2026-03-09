@@ -36,6 +36,18 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    username: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      sparse: true,
+      unique: true,
+      match: [/^[a-z0-9_]{3,20}$/, 'Username must be 3–20 chars, letters/numbers/underscore only'],
+    },
+    expoPushToken: {
+      type: String,
+      default: null,
+    },
   },
   { timestamps: true }
 );

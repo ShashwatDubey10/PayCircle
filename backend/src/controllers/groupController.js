@@ -3,6 +3,7 @@ const User       = require('../models/User');
 const asyncHandler = require('../utils/asyncHandler');
 const logger       = require('../utils/logger');
 const { calculateGroupBalances } = require('../services/balanceService');
+const { areFriends } = require('./friendController');
 
 const VALID_TYPES = ['Roommates', 'Trip', 'Mess', 'Miscellaneous'];
 
@@ -92,8 +93,8 @@ const getMembers = asyncHandler(async (req, res) => {
 
 // POST /api/groups/:id/members
 const addMember = asyncHandler(async (req, res) => {
-  const { email } = req.body;
-  if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
+  const { userId } = req.body;
+  if (!userId) return res.status(400).json({ success: false, message: 'userId is required' });
 
   const group = req.group;
   if (group.adminId.toString() !== req.user._id.toString()) {
@@ -101,11 +102,17 @@ const addMember = asyncHandler(async (req, res) => {
     return res.status(403).json({ success: false, message: 'Only the admin can add members' });
   }
 
-  const userToAdd = await User.findOne({ email: email.toLowerCase() });
-  if (!userToAdd) return res.status(404).json({ success: false, message: 'No registered user found with that email' });
+  const userToAdd = await User.findById(userId);
+  if (!userToAdd) return res.status(404).json({ success: false, message: 'User not found' });
 
   if (group.members.some(m => m.toString() === userToAdd._id.toString()))
     return res.status(409).json({ success: false, message: 'User is already a member' });
+
+  const friends = await areFriends(req.user._id, userToAdd._id);
+  if (!friends) {
+    logger.warn('GROUP', `Add member denied — not friends`, { groupId: group._id, targetUserId: userToAdd._id });
+    return res.status(403).json({ success: false, message: 'User must be your friend to be added to a group' });
+  }
 
   group.members.push(userToAdd._id);
   await group.save();
