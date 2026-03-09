@@ -40,9 +40,9 @@ export default function TabLayout() {
       <Tabs.Screen
         name="groups"
         options={{
-          title: 'Groups',
+          title: 'Split',
           tabBarIcon: ({ color, size }) => (
-            <TabIcon name="people-outline" color={color} size={size} />
+            <TabIcon name="git-branch-outline" color={color} size={size} />
           ),
         }}
       />

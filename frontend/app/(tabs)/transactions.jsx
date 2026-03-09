@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { PC } from '@/constants/theme';
 import api from '@/services/api';
+import { useAuth } from '@/context/AuthContext';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -55,7 +56,6 @@ function shortDate(dateStr) {
   return `${months[d.getMonth()]} ${d.getDate()}`;
 }
 
-// Group a flat transaction list into { "Feb 2026": [...], ... } ordered by recency
 function groupByMonth(txns) {
   const map = {};
   for (const tx of txns) {
@@ -66,30 +66,64 @@ function groupByMonth(txns) {
   return map;
 }
 
+// Normalize a group settlement into a display-compatible object
+function normalizeSettlement(s, myId) {
+  const fromId = s.fromUserId?._id ?? s.fromUserId?.id ?? s.fromUserId;
+  const isPaid = fromId?.toString() === myId?.toString();
+  const counterpart = isPaid
+    ? (s.toUserId?.name ?? 'Someone')
+    : (s.fromUserId?.name ?? 'Someone');
+  return {
+    _id:           s._id,
+    _isSettlement: true,
+    _direction:    isPaid ? 'paid' : 'received',
+    _groupName:    s.groupName,
+    type:          isPaid ? 'expense' : 'income',
+    amount:        s.amount,
+    category:      'Settlement',
+    notes:         isPaid ? `You paid ${counterpart}` : `${counterpart} paid you`,
+    date:          s.date,
+  };
+}
+
 // ─── Transaction Row ──────────────────────────────────────────────────────────
 
 function TxRow({ tx, onLongPress, last }) {
   const isIncome = tx.type === 'income';
-  const icon     = CATEGORY_ICONS[tx.category] || 'swap-horizontal-outline';
+
+  let icon, metaLine;
+  if (tx._isSettlement) {
+    icon     = 'swap-horizontal-outline';
+    metaLine = `${tx._groupName} · ${shortDate(tx.date)}`;
+  } else {
+    icon     = CATEGORY_ICONS[tx.category] || 'swap-horizontal-outline';
+    metaLine = `${tx.category} · ${shortDate(tx.date)}`;
+  }
+
   return (
     <>
       <TouchableOpacity
         style={styles.txRow}
-        onLongPress={() => onLongPress(tx)}
+        onLongPress={() => !tx._isSettlement && onLongPress(tx)}
         delayLongPress={400}
         activeOpacity={0.7}>
-        <View style={styles.txIconBox}>
+        <View style={[styles.txIconBox, tx._isSettlement && styles.txIconBoxSettlement]}>
           <Ionicons name={icon} size={18} color={PC.textSecondary} />
         </View>
         <View style={styles.txInfo}>
           <Text style={styles.txLabel} numberOfLines={1}>
             {tx.notes || tx.category}
           </Text>
-          <Text style={styles.txMeta}>{tx.category} · {shortDate(tx.date)}</Text>
+          <Text style={styles.txMeta}>{metaLine}</Text>
         </View>
-        <Text style={[styles.txAmount, isIncome ? styles.amtPos : styles.amtNeg]}>
-          {isIncome ? '+' : '-'}₹{(tx.amount ?? 0).toLocaleString('en-IN')}
-        </Text>
+        <View style={styles.txAmountCol}>
+          <Text style={[styles.txAmount, isIncome ? styles.amtPos : styles.amtNeg]}>
+            {isIncome ? '+' : '-'}₹{(tx.amount ?? 0).toLocaleString('en-IN')}
+          </Text>
+          {tx._isSettlement && (
+            <Text style={styles.settlementBadge}>settlement</Text>
+          )}
+        </View>
       </TouchableOpacity>
       {!last && <View style={styles.txDivider} />}
     </>
@@ -108,7 +142,6 @@ function AddTransactionModal({ visible, onClose, onAdded }) {
 
   const cats = type === 'income' ? INCOME_CATS : EXPENSE_CATS;
 
-  // Reset category when type changes if current category isn't valid
   useEffect(() => {
     if (!cats.includes(category)) setCategory(cats[0]);
   }, [type]);
@@ -267,51 +300,77 @@ function AddTransactionModal({ visible, onClose, onAdded }) {
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function TransactionsScreen() {
-  const [transactions, setTransactions] = useState([]);
-  const [activeTab,    setActiveTab]    = useState('all');
-  const [loading,      setLoading]      = useState(true);
-  const [refreshing,   setRefreshing]   = useState(false);
-  const [error,        setError]        = useState('');
-  const [showModal,    setShowModal]    = useState(false);
+  const { user }     = useAuth();
+  const [transactions,  setTransactions]  = useState([]);
+  const [settlements,   setSettlements]   = useState([]); // normalized
+  const [activeTab,     setActiveTab]     = useState('all');
+  const [loading,       setLoading]       = useState(true);
+  const [refreshing,    setRefreshing]    = useState(false);
+  const [error,         setError]         = useState('');
+  const [showModal,     setShowModal]     = useState(false);
 
-  // ── Fetch (always fetch all, filter client-side) ─────────────────────────
+  // ── Fetch personal transactions ──────────────────────────────────────────
   const fetchTransactions = useCallback(async () => {
-    try {
-      const { data } = await api.get('/api/users/me/transactions');
-      setTransactions(data.transactions || []);
-      setError('');
-    } catch (err) {
-      setError(err?.message || 'Failed to load transactions.');
-    }
+    const { data } = await api.get('/api/users/me/transactions');
+    setTransactions(data.transactions || []);
   }, []);
 
+  // ── Fetch group settlements (across all groups) ──────────────────────────
+  const fetchSettlements = useCallback(async () => {
+    try {
+      const { data: gData } = await api.get('/api/groups');
+      const groups = gData.groups || [];
+      if (!groups.length) return;
+
+      const results = await Promise.all(
+        groups.map(async (g) => {
+          const { data } = await api.get(`/api/groups/${g._id}/settlements`);
+          return (data.settlements || []).map(s => ({ ...s, groupName: g.name }));
+        })
+      );
+      const flat = results.flat().sort((a, b) => new Date(b.date) - new Date(a.date));
+      setSettlements(flat.map(s => normalizeSettlement(s, user?._id)));
+    } catch {
+      // non-critical — settlements missing is OK
+    }
+  }, [user?._id]);
+
+  // ── Initial load ─────────────────────────────────────────────────────────
   useEffect(() => {
     async function init() {
       setLoading(true);
-      await fetchTransactions();
-      setLoading(false);
+      try {
+        await Promise.all([fetchTransactions(), fetchSettlements()]);
+        setError('');
+      } catch (err) {
+        setError(err?.message || 'Failed to load transactions.');
+      } finally {
+        setLoading(false);
+      }
     }
     init();
-  }, [fetchTransactions]);
+  }, [fetchTransactions, fetchSettlements]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchTransactions();
-    setRefreshing(false);
-  }, [fetchTransactions]);
+    try {
+      await Promise.all([fetchTransactions(), fetchSettlements()]);
+      setError('');
+    } catch {
+      // keep showing existing data
+    } finally {
+      setRefreshing(false);
+    }
+  }, [fetchTransactions, fetchSettlements]);
 
-  // ── Delete ───────────────────────────────────────────────────────────────
+  // ── Delete personal transaction ───────────────────────────────────────────
   function confirmDelete(tx) {
     Alert.alert(
       'Delete Transaction',
       `Delete "${tx.notes || tx.category}" of ₹${(tx.amount ?? 0).toLocaleString('en-IN')}?`,
       [
         { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => handleDelete(tx._id),
-        },
+        { text: 'Delete', style: 'destructive', onPress: () => handleDelete(tx._id) },
       ]
     );
   }
@@ -325,18 +384,29 @@ export default function TransactionsScreen() {
     }
   }
 
-  // ── Derived values ───────────────────────────────────────────────────────
-  const filtered = activeTab === 'all'
-    ? transactions
-    : transactions.filter(t => t.type === activeTab);
-
+  // ── Derived values ────────────────────────────────────────────────────────
+  // Summary is based on personal transactions only
   const totalIncome  = transactions.filter(t => t.type === 'income').reduce((s, t) => s + (t.amount ?? 0), 0);
   const totalExpense = transactions.filter(t => t.type === 'expense').reduce((s, t) => s + (t.amount ?? 0), 0);
   const net          = totalIncome - totalExpense;
 
+  // Merge personal + settlements, sorted by date descending
+  const allItems = [...transactions, ...settlements].sort(
+    (a, b) => new Date(b.date) - new Date(a.date)
+  );
+
+  const filtered = (() => {
+    switch (activeTab) {
+      case 'income':      return transactions.filter(t => t.type === 'income');
+      case 'expense':     return transactions.filter(t => t.type === 'expense');
+      case 'settlements': return settlements;
+      default:            return allItems;
+    }
+  })();
+
   const grouped = groupByMonth(filtered);
 
-  // ── Render ───────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* ── Header ── */}
@@ -382,13 +452,18 @@ export default function TransactionsScreen() {
 
       {/* ── Filter Toggle ── */}
       <View style={styles.toggleRow}>
-        {['all', 'income', 'expense'].map((t) => (
+        {[
+          { key: 'all',         label: 'All' },
+          { key: 'income',      label: 'Income' },
+          { key: 'expense',     label: 'Expense' },
+          { key: 'settlements', label: 'Settled' },
+        ].map(({ key, label }) => (
           <TouchableOpacity
-            key={t}
-            style={[styles.toggleBtn, activeTab === t && styles.toggleActive]}
-            onPress={() => setActiveTab(t)}>
-            <Text style={[styles.toggleText, activeTab === t && styles.toggleTextActive]}>
-              {t.charAt(0).toUpperCase() + t.slice(1)}
+            key={key}
+            style={[styles.toggleBtn, activeTab === key && styles.toggleActive]}
+            onPress={() => setActiveTab(key)}>
+            <Text style={[styles.toggleText, activeTab === key && styles.toggleTextActive]}>
+              {label}
             </Text>
           </TouchableOpacity>
         ))}
@@ -405,7 +480,13 @@ export default function TransactionsScreen() {
           <Text style={styles.errorMsg}>Something went wrong. Please try again.</Text>
           <TouchableOpacity
             style={styles.retryBtn}
-            onPress={() => { setLoading(true); fetchTransactions().finally(() => setLoading(false)); }}>
+            onPress={() => {
+              setError('');
+              setLoading(true);
+              Promise.all([fetchTransactions(), fetchSettlements()])
+                .catch(() => {})
+                .finally(() => setLoading(false));
+            }}>
             <Text style={styles.retryText}>Retry</Text>
           </TouchableOpacity>
         </View>
@@ -420,13 +501,23 @@ export default function TransactionsScreen() {
           {Object.keys(grouped).length === 0 ? (
             <View style={styles.emptyState}>
               <View style={styles.emptyIcon}>
-                <Ionicons name="receipt-outline" size={28} color={PC.textMuted} />
+                <Ionicons
+                  name={activeTab === 'settlements' ? 'swap-horizontal-outline' : 'receipt-outline'}
+                  size={28}
+                  color={PC.textMuted}
+                />
               </View>
               <Text style={styles.emptyTitle}>
-                {activeTab === 'all' ? 'No transactions yet' : `No ${activeTab} transactions`}
+                {activeTab === 'all'         ? 'No transactions yet'
+                 : activeTab === 'settlements' ? 'No settlements yet'
+                 : `No ${activeTab} transactions`}
               </Text>
               <Text style={styles.emptyText}>
-                {activeTab === 'all' ? 'Tap + to add your first transaction' : `Switch to All to see everything`}
+                {activeTab === 'all'
+                  ? 'Tap + to add your first transaction'
+                  : activeTab === 'settlements'
+                    ? 'Settle up in a group to see history here'
+                    : 'Switch to All to see everything'}
               </Text>
             </View>
           ) : (
@@ -447,8 +538,8 @@ export default function TransactionsScreen() {
             ))
           )}
 
-          {transactions.length > 0 && (
-            <Text style={styles.hint}>Long-press a transaction to delete it</Text>
+          {allItems.length > 0 && activeTab !== 'settlements' && (
+            <Text style={styles.hint}>Long-press a personal transaction to delete it</Text>
           )}
         </ScrollView>
       )}
@@ -498,11 +589,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     marginBottom: 14,
   },
-  summaryItem:   { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  summaryDot:    { width: 8, height: 8, borderRadius: 4, backgroundColor: PC.positive },
-  summaryLabel:  { color: PC.textSecondary, fontSize: 11, marginBottom: 3 },
-  summaryAmount: { fontSize: 13, fontWeight: '600' },
-  summaryDivider:{ width: 1, backgroundColor: PC.border, marginHorizontal: 4 },
+  summaryItem:    { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  summaryDot:     { width: 8, height: 8, borderRadius: 4, backgroundColor: PC.positive },
+  summaryLabel:   { color: PC.textSecondary, fontSize: 11, marginBottom: 3 },
+  summaryAmount:  { fontSize: 13, fontWeight: '600' },
+  summaryDivider: { width: 1, backgroundColor: PC.border, marginHorizontal: 4 },
 
   toggleRow: {
     flexDirection: 'row',
@@ -516,7 +607,7 @@ const styles = StyleSheet.create({
   },
   toggleBtn:        { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 9 },
   toggleActive:     { backgroundColor: PC.bgCardElevated },
-  toggleText:       { color: PC.textMuted, fontSize: 13, fontWeight: '500' },
+  toggleText:       { color: PC.textMuted, fontSize: 12, fontWeight: '500' },
   toggleTextActive: { color: PC.textPrimary },
 
   scroll:        { flex: 1 },
@@ -530,7 +621,7 @@ const styles = StyleSheet.create({
   emptyState: { alignItems: 'center', paddingTop: 60 },
   emptyIcon:  { width: 64, height: 64, borderRadius: 20, backgroundColor: PC.bgCard, borderWidth: 1, borderColor: PC.border, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
   emptyTitle: { color: PC.textPrimary, fontSize: 16, fontWeight: '600', marginBottom: 6 },
-  emptyText:  { color: PC.textMuted, fontSize: 13 },
+  emptyText:  { color: PC.textMuted, fontSize: 13, textAlign: 'center', paddingHorizontal: 24 },
 
   dateHeader: {
     color: PC.textSecondary,
@@ -565,13 +656,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 13,
   },
-  txInfo:   { flex: 1 },
-  txLabel:  { color: PC.textPrimary, fontSize: 14, fontWeight: '500', marginBottom: 3 },
-  txMeta:   { color: PC.textSecondary, fontSize: 12 },
-  txAmount: { fontSize: 14, fontWeight: '600' },
-  amtPos:   { color: PC.positive },
-  amtNeg:   { color: PC.negative },
-  txDivider:{ height: 1, backgroundColor: PC.border, marginHorizontal: 16 },
+  txIconBoxSettlement: {
+    borderWidth: 1,
+    borderColor: PC.border,
+    borderStyle: 'dashed',
+  },
+  txInfo:      { flex: 1 },
+  txLabel:     { color: PC.textPrimary, fontSize: 14, fontWeight: '500', marginBottom: 3 },
+  txMeta:      { color: PC.textSecondary, fontSize: 12 },
+  txAmountCol: { alignItems: 'flex-end' },
+  txAmount:    { fontSize: 14, fontWeight: '600' },
+  amtPos:      { color: PC.positive },
+  amtNeg:      { color: PC.negative },
+  txDivider:   { height: 1, backgroundColor: PC.border, marginHorizontal: 16 },
+
+  settlementBadge: {
+    color: PC.textMuted,
+    fontSize: 10,
+    fontWeight: '500',
+    marginTop: 3,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
 
   hint: { color: PC.textMuted, fontSize: 12, textAlign: 'center', marginBottom: 8 },
 

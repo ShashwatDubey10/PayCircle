@@ -19,6 +19,7 @@ import { useRouter } from 'expo-router';
 import { PC } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
+import { getFriends } from '@/services/friends';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -46,6 +47,31 @@ function timeAgo(dateStr) {
   if (days  === 1) return 'Yesterday';
   if (days  < 7)  return `${days}d ago`;
   return new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+}
+
+function getInitials(name) {
+  if (!name) return '?';
+  return name.trim().split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
+}
+
+// ─── Friend Card ──────────────────────────────────────────────────────────────
+
+function FriendCard({ friend, onPress }) {
+  return (
+    <TouchableOpacity style={styles.groupCard} activeOpacity={0.75} onPress={onPress}>
+      <View style={styles.friendAvatar}>
+        <Text style={styles.friendAvatarText}>{getInitials(friend.name)}</Text>
+      </View>
+      <View style={styles.groupInfo}>
+        <Text style={styles.groupName}>{friend.name}</Text>
+        <Text style={styles.groupMetaText}>@{friend.username || '—'}</Text>
+      </View>
+      <View style={styles.groupBalance}>
+        <Text style={styles.balanceLabel}>View splits</Text>
+        <Ionicons name="chevron-forward" size={14} color={PC.textMuted} style={{ marginTop: 4 }} />
+      </View>
+    </TouchableOpacity>
+  );
 }
 
 // ─── Group Card ───────────────────────────────────────────────────────────────
@@ -206,13 +232,17 @@ export default function GroupsScreen() {
 
   const [groups,             setGroups]             = useState([]);
   const [settlements,        setSettlements]        = useState([]);
-  const [tab,                setTab]                = useState('groups');
+  const [friends,            setFriends]            = useState([]);
+  const [tab,                setTab]                = useState('friends');
   const [loading,            setLoading]            = useState(true);
   const [loadingSettlements, setLoadingSettlements] = useState(false);
+  const [friendsLoading,     setFriendsLoading]     = useState(false);
   const [settlementsFetched, setSettlementsFetched] = useState(false);
+  const [friendsFetched,     setFriendsFetched]     = useState(false);
   const [refreshing,         setRefreshing]         = useState(false);
   const [error,              setError]              = useState('');
-  const [showModal,          setShowModal]          = useState(false);
+  const [showGroupModal,     setShowGroupModal]     = useState(false);
+  const [showActionSheet,    setShowActionSheet]    = useState(false);
 
   // ── Fetch groups enriched with each group's balance in one request ──────────
   const fetchGroups = useCallback(async () => {
@@ -250,15 +280,29 @@ export default function GroupsScreen() {
     }
   }, []);
 
-  // Initial load
+  // ── Fetch friends (lazy) ─────────────────────────────────────────────────
+  const fetchFriends = useCallback(async () => {
+    setFriendsLoading(true);
+    try {
+      const list = await getFriends();
+      setFriends(list || []);
+    } catch {
+      // non-critical
+    } finally {
+      setFriendsLoading(false);
+    }
+  }, []);
+
+  // Initial load — fetch groups and friends in parallel (friends is default tab)
   useEffect(() => {
     async function init() {
       setLoading(true);
-      await fetchGroups();
+      await Promise.all([fetchGroups(), fetchFriends()]);
+      setFriendsFetched(true);
       setLoading(false);
     }
     init();
-  }, [fetchGroups]);
+  }, [fetchGroups, fetchFriends]);
 
   // Lazy-load settlements when tab switches and not already loaded
   useEffect(() => {
@@ -271,10 +315,10 @@ export default function GroupsScreen() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     setSettlements([]);
-    setSettlementsFetched(false); // reset so they reload on next tab switch
-    await fetchGroups();
+    setSettlementsFetched(false);
+    await Promise.all([fetchGroups(), fetchFriends()]);
     setRefreshing(false);
-  }, [fetchGroups]);
+  }, [fetchGroups, fetchFriends]);
 
   function handleGroupCreated(newGroup) {
     setGroups(prev => [{ ...newGroup, myBalance: 0, loadingBalance: false }, ...prev]);
@@ -301,8 +345,8 @@ export default function GroupsScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* ── Header ── */}
       <View style={styles.header}>
-        <Text style={styles.title}>Groups</Text>
-        <TouchableOpacity style={styles.addBtn} onPress={() => setShowModal(true)}>
+        <Text style={styles.title}>Split</Text>
+        <TouchableOpacity style={styles.addBtn} onPress={() => setShowActionSheet(true)}>
           <Ionicons name="add" size={22} color={PC.textPrimary} />
         </TouchableOpacity>
       </View>
@@ -324,6 +368,11 @@ export default function GroupsScreen() {
 
       {/* ── Toggle ── */}
       <View style={styles.toggleRow}>
+        <TouchableOpacity
+          style={[styles.toggleBtn, tab === 'friends' && styles.toggleActive]}
+          onPress={() => setTab('friends')}>
+          <Text style={[styles.toggleText, tab === 'friends' && styles.toggleTextActive]}>Friends</Text>
+        </TouchableOpacity>
         <TouchableOpacity
           style={[styles.toggleBtn, tab === 'groups' && styles.toggleActive]}
           onPress={() => setTab('groups')}>
@@ -359,7 +408,7 @@ export default function GroupsScreen() {
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={PC.textPrimary} />
           }>
-          {tab === 'groups' ? (
+          {tab === 'groups' && (
             groups.length === 0 ? (
               <View style={styles.emptyState}>
                 <View style={styles.emptyIcon}>
@@ -377,7 +426,33 @@ export default function GroupsScreen() {
                 />
               ))
             )
-          ) : (
+          )}
+
+          {tab === 'friends' && (
+            friendsLoading ? (
+              <View style={styles.centered}>
+                <ActivityIndicator color={PC.textPrimary} />
+              </View>
+            ) : friends.length === 0 ? (
+              <View style={styles.emptyState}>
+                <View style={styles.emptyIcon}>
+                  <Ionicons name="person-outline" size={28} color={PC.textMuted} />
+                </View>
+                <Text style={styles.emptyTitle}>No friends yet</Text>
+                <Text style={styles.emptyText}>Go to Profile → Friends to add people</Text>
+              </View>
+            ) : (
+              friends.map((f) => (
+                <FriendCard
+                  key={f._id ?? f.id}
+                  friend={f}
+                  onPress={() => router.push(`/direct/${f._id ?? f.id}`)}
+                />
+              ))
+            )
+          )}
+
+          {tab === 'settlements' && (
             loadingSettlements ? (
               <View style={styles.centered}>
                 <ActivityIndicator color={PC.textPrimary} />
@@ -412,9 +487,57 @@ export default function GroupsScreen() {
         </ScrollView>
       )}
 
+      {/* ── Action Sheet Modal ── */}
+      <Modal
+        visible={showActionSheet}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowActionSheet(false)}>
+        <TouchableOpacity
+          style={styles.actionOverlay}
+          activeOpacity={1}
+          onPress={() => setShowActionSheet(false)}>
+          <TouchableOpacity activeOpacity={1} onPress={() => {}}>
+            <View style={styles.actionSheet}>
+              <View style={styles.actionHandle} />
+
+              <TouchableOpacity
+                style={styles.actionRow}
+                activeOpacity={0.75}
+                onPress={() => { setShowActionSheet(false); setShowGroupModal(true); }}>
+                <View style={styles.actionIconBox}>
+                  <Ionicons name="people-outline" size={22} color={PC.textSecondary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.actionTitle}>New Group</Text>
+                  <Text style={styles.actionSub}>Track shared group expenses</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={PC.textMuted} />
+              </TouchableOpacity>
+
+              <View style={styles.actionDivider} />
+
+              <TouchableOpacity
+                style={styles.actionRow}
+                activeOpacity={0.75}
+                onPress={() => { setShowActionSheet(false); router.push('/friends'); }}>
+                <View style={styles.actionIconBox}>
+                  <Ionicons name="git-branch-outline" size={22} color={PC.textSecondary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.actionTitle}>Split with Friend</Text>
+                  <Text style={styles.actionSub}>Track 1-on-1 expenses</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={PC.textMuted} />
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
       <AddGroupModal
-        visible={showModal}
-        onClose={() => setShowModal(false)}
+        visible={showGroupModal}
+        onClose={() => setShowGroupModal(false)}
         onCreated={handleGroupCreated}
       />
     </SafeAreaView>
@@ -473,7 +596,7 @@ const styles = StyleSheet.create({
   },
   toggleBtn:        { flex: 1, paddingVertical: 9, alignItems: 'center', borderRadius: 9 },
   toggleActive:     { backgroundColor: PC.bgCardElevated },
-  toggleText:       { color: PC.textMuted, fontSize: 14, fontWeight: '500' },
+  toggleText:       { color: PC.textMuted, fontSize: 13, fontWeight: '500' },
   toggleTextActive: { color: PC.textPrimary },
 
   scroll:        { flex: 1 },
@@ -488,6 +611,10 @@ const styles = StyleSheet.create({
   emptyIcon:  { width: 64, height: 64, borderRadius: 20, backgroundColor: PC.bgCard, borderWidth: 1, borderColor: PC.border, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
   emptyTitle: { color: PC.textPrimary, fontSize: 16, fontWeight: '600', marginBottom: 6 },
   emptyText:  { color: PC.textMuted, fontSize: 13 },
+
+  // Friend card
+  friendAvatar:     { width: 44, height: 44, borderRadius: 13, backgroundColor: PC.bgCardElevated, alignItems: 'center', justifyContent: 'center', marginRight: 13 },
+  friendAvatarText: { color: PC.textPrimary, fontSize: 16, fontWeight: '700' },
 
   // Group card
   groupCard: {
@@ -591,4 +718,23 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   errorText: { flex: 1, color: PC.negative, fontSize: 13 },
+
+  // Action sheet
+  actionOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+  actionSheet: {
+    backgroundColor: PC.bgCard,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    borderColor: PC.border,
+    padding: 24,
+    paddingBottom: 40,
+  },
+  actionHandle:  { width: 36, height: 4, backgroundColor: PC.border, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
+  actionRow:     { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 14 },
+  actionIconBox: { width: 44, height: 44, borderRadius: 13, backgroundColor: PC.bgCardElevated, borderWidth: 1, borderColor: PC.border, alignItems: 'center', justifyContent: 'center' },
+  actionTitle:   { color: PC.textPrimary, fontSize: 15, fontWeight: '600', marginBottom: 2 },
+  actionSub:     { color: PC.textSecondary, fontSize: 12 },
+  actionDivider: { height: 1, backgroundColor: PC.border, marginVertical: 4 },
 });

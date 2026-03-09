@@ -1,3 +1,4 @@
+const mongoose   = require('mongoose');
 const Group      = require('../models/Group');
 const User       = require('../models/User');
 const asyncHandler = require('../utils/asyncHandler');
@@ -95,6 +96,8 @@ const getMembers = asyncHandler(async (req, res) => {
 const addMember = asyncHandler(async (req, res) => {
   const { userId } = req.body;
   if (!userId) return res.status(400).json({ success: false, message: 'userId is required' });
+  if (!mongoose.Types.ObjectId.isValid(userId))
+    return res.status(400).json({ success: false, message: 'Invalid userId format' });
 
   const group = req.group;
   if (group.adminId.toString() !== req.user._id.toString()) {

@@ -57,21 +57,16 @@ export function AuthProvider({ children }) {
   };
 
   const updateUser = async (updatedUser) => {
-    // Use functional form so we always merge against the latest state, not a stale closure
-    let merged;
-    setUser(prev => {
-      merged = { ...prev, ...updatedUser };
-      return merged;
-    });
+    // Capture snapshot before mutating so rollback restores the exact previous state
+    let prevSnapshot;
+    setUser(prev => { prevSnapshot = prev; return prev; });
+    const merged = { ...prevSnapshot, ...updatedUser };
+    setUser(merged);
     try {
       await saveUser(merged);
     } catch {
-      // Rollback to previous state if persistence fails
-      setUser(prev => {
-        const rolled = { ...prev };
-        Object.keys(updatedUser).forEach(k => { delete rolled[k]; });
-        return rolled;
-      });
+      // Rollback to the pre-update snapshot if persistence fails
+      setUser(prevSnapshot);
     }
   };
 

@@ -1,3 +1,4 @@
+const mongoose     = require('mongoose');
 const DirectSplit  = require('../models/DirectSplit');
 const asyncHandler = require('../utils/asyncHandler');
 const logger       = require('../utils/logger');
@@ -9,9 +10,15 @@ const addDirectSplit = asyncHandler(async (req, res) => {
   const meId = req.user._id;
   const { amount, description, paidByMe } = req.body;
 
+  if (!mongoose.Types.ObjectId.isValid(friendId))
+    return res.status(400).json({ success: false, message: 'Invalid friendId' });
+
   const amt = parseFloat(amount);
   if (!amt || isNaN(amt) || amt <= 0)
     return res.status(400).json({ success: false, message: 'Enter a valid amount' });
+
+  if (!Object.prototype.hasOwnProperty.call(req.body, 'paidByMe') || typeof paidByMe !== 'boolean' && paidByMe !== 'true' && paidByMe !== 'false')
+    return res.status(400).json({ success: false, message: 'paidByMe (boolean) is required' });
 
   if (!(await areFriends(meId, friendId)))
     return res.status(403).json({ success: false, message: 'User must be a friend to track splits' });
@@ -59,7 +66,9 @@ const getDirectSplits = asyncHandler(async (req, res) => {
   // Positive = friend owes me; negative = I owe friend
   let balance = 0;
   for (const s of splits) {
-    if (s.payerId._id.toString() === meId.toString()) {
+    const payerIdStr = s.payerId?._id?.toString() ?? s.payerId?.toString();
+    if (!payerIdStr) continue; // skip if payer was deleted
+    if (payerIdStr === meId.toString()) {
       balance += s.amount / 2;
     } else {
       balance -= s.amount / 2;

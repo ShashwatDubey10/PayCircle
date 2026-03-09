@@ -36,7 +36,7 @@ function getInitials(name) {
 
 function Avatar({ name, size = 40 }) {
   return (
-    <View style={[avatarStyles.circle, { width: size, height: size, borderRadius: size / 2.5 }]}>
+    <View style={[avatarStyles.circle, { width: size, height: size, borderRadius: size / 2 }]}>
       <Text style={[avatarStyles.text, { fontSize: size * 0.35 }]}>{getInitials(name)}</Text>
     </View>
   );

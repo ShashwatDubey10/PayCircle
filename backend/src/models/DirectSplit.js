@@ -11,6 +11,12 @@ const directSplitSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+directSplitSchema.pre('validate', function () {
+  if (this.payerId && this.otherUserId && this.payerId.toString() === this.otherUserId.toString()) {
+    this.invalidate('otherUserId', 'payerId and otherUserId must be different users');
+  }
+});
+
 directSplitSchema.index({ payerId: 1, otherUserId: 1 });
 directSplitSchema.index({ otherUserId: 1, payerId: 1 });
 

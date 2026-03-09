@@ -58,7 +58,7 @@ const sendRequest = asyncHandler(async (req, res) => {
 
   if (!recipientId)
     return res.status(400).json({ success: false, message: 'recipientId is required' });
-  if (recipientId === meId.toString())
+  if (String(recipientId) === String(meId))
     return res.status(400).json({ success: false, message: 'You cannot send a friend request to yourself' });
 
   const recipient = await User.findById(recipientId);
@@ -114,6 +114,9 @@ const respondRequest = asyncHandler(async (req, res) => {
   const { action } = req.body;
   if (!['accept', 'reject'].includes(action))
     return res.status(400).json({ success: false, message: 'action must be "accept" or "reject"' });
+
+  if (!mongoose.Types.ObjectId.isValid(req.params.id))
+    return res.status(400).json({ success: false, message: 'Invalid request id' });
 
   const friendship = await Friendship.findOne({
     _id:       req.params.id,

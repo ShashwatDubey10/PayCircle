@@ -10,7 +10,8 @@ import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { updatePushToken } from '@/services/friends';
 
 // Push notifications don't work in Expo Go (SDK 53+) — only in dev/production builds.
-const IS_EXPO_GO = Constants.appOwnership === 'expo';
+// executionEnvironment is 'storeClient' in Expo Go, 'standalone' or 'bare' in real builds.
+const IS_EXPO_GO = Constants.executionEnvironment === 'storeClient';
 
 // Only set the foreground handler when push notifications are supported
 if (!IS_EXPO_GO) {

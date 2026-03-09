@@ -184,14 +184,14 @@ export default function DirectSplitScreen() {
     const showDate = !prevItem || formatDateLabel(item.date) !== formatDateLabel(prevItem.date);
 
     return (
-      <>
+      <View>
         {showDate && <DateSeparator label={formatDateLabel(item.date)} />}
         <Bubble
           split={item}
           isMine={isMine}
           friendFirstName={friend?.name?.split(' ')[0] || 'Friend'}
         />
-      </>
+      </View>
     );
   }
 
