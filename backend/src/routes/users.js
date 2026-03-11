@@ -11,7 +11,7 @@ const {
   searchUsers, sendRequest, getRequests, respondRequest,
   getFriends, setUsername, setPushToken,
 } = require('../controllers/friendController');
-const { addDirectSplit, getDirectSplits } = require('../controllers/directSplitController');
+const { addDirectSplit, getDirectSplits, getAllDirectSplits, requestSettle, confirmSettle } = require('../controllers/directSplitController');
 
 router.use(protect);
 
@@ -34,7 +34,10 @@ router.put  ('/me/friends/requests/:id',     respondRequest);
 router.get  ('/me/friends',                  getFriends);
 
 // Direct (1-on-1) splits
-router.post ('/me/direct/:friendId',         addDirectSplit);
-router.get  ('/me/direct/:friendId',         getDirectSplits);
+router.get  ('/me/direct',                                         getAllDirectSplits);
+router.post ('/me/direct/:friendId',                               addDirectSplit);
+router.get  ('/me/direct/:friendId',                               getDirectSplits);
+router.post ('/me/direct/:friendId/settle',                        requestSettle);
+router.put  ('/me/direct/:friendId/settle/:requestId/confirm',     confirmSettle);
 
 module.exports = router;

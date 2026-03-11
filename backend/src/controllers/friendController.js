@@ -85,13 +85,17 @@ const sendRequest = asyncHandler(async (req, res) => {
     friendshipId: friendship._id,
   });
 
-  // Push notification — fire-and-forget
+  // Push notification — fire-and-forget; catch to prevent unhandled rejection
   sendPushNotification(
     recipient.expoPushToken,
     'New Friend Request',
     `${req.user.name} sent you a friend request`,
     { type: 'friend_request', friendshipId: friendship._id.toString() }
-  );
+  ).catch(err => logger.error('FRIEND', 'Push notification failed', {
+    err: err.message,
+    recipientId: recipient._id,
+    friendshipId: friendship._id,
+  }));
 
   res.status(201).json({ success: true, message: 'Friend request sent', friendship });
 });

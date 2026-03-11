@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { PC } from '@/constants/theme';
 import api from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
+import { getAllDirectSplits } from '@/services/directSplit';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -66,6 +67,32 @@ function groupByMonth(txns) {
   return map;
 }
 
+// Normalize a direct (1-on-1) split into a display-compatible object
+function normalizeDirectSplit(split, myId) {
+  const payerIdStr = (
+    split.payerId?._id?.toString() ??
+    split.payerId?.id?.toString()  ??
+    split.payerId?.toString()
+  );
+  const isPayer    = payerIdStr === myId?.toString();
+  const friendName = isPayer
+    ? (split.otherUserId?.name ?? 'Friend')
+    : (split.payerId?.name     ?? 'Friend');
+  const label = split.description
+    ? `${split.description} · with ${friendName}`
+    : `Split with ${friendName}`;
+  return {
+    _id:            split._id,
+    _isDirectSplit: true,
+    type:           'expense',
+    amount:         split.amount,          // full transaction amount (for display)
+    _shareAmount:   split.amount / 2,      // user's share = budget deduction
+    category:       'Split',
+    notes:          label,
+    date:           split.date,
+  };
+}
+
 // Normalize a group settlement into a display-compatible object
 function normalizeSettlement(s, myId) {
   const fromId = s.fromUserId?._id ?? s.fromUserId?.id ?? s.fromUserId;
@@ -95,6 +122,9 @@ function TxRow({ tx, onLongPress, last }) {
   if (tx._isSettlement) {
     icon     = 'swap-horizontal-outline';
     metaLine = `${tx._groupName} · ${shortDate(tx.date)}`;
+  } else if (tx._isDirectSplit) {
+    icon     = 'people-outline';
+    metaLine = `Split · ${shortDate(tx.date)}`;
   } else {
     icon     = CATEGORY_ICONS[tx.category] || 'swap-horizontal-outline';
     metaLine = `${tx.category} · ${shortDate(tx.date)}`;
@@ -104,10 +134,10 @@ function TxRow({ tx, onLongPress, last }) {
     <>
       <TouchableOpacity
         style={styles.txRow}
-        onLongPress={() => !tx._isSettlement && onLongPress(tx)}
+        onLongPress={() => !tx._isSettlement && !tx._isDirectSplit && onLongPress(tx)}
         delayLongPress={400}
         activeOpacity={0.7}>
-        <View style={[styles.txIconBox, tx._isSettlement && styles.txIconBoxSettlement]}>
+        <View style={[styles.txIconBox, (tx._isSettlement || tx._isDirectSplit) && styles.txIconBoxSettlement]}>
           <Ionicons name={icon} size={18} color={PC.textSecondary} />
         </View>
         <View style={styles.txInfo}>
@@ -120,6 +150,11 @@ function TxRow({ tx, onLongPress, last }) {
           <Text style={[styles.txAmount, isIncome ? styles.amtPos : styles.amtNeg]}>
             {isIncome ? '+' : '-'}₹{(tx.amount ?? 0).toLocaleString('en-IN')}
           </Text>
+          {tx._isDirectSplit && tx._shareAmount != null && (
+            <Text style={styles.txShareBadge}>
+              ₹{tx._shareAmount.toLocaleString('en-IN')} your share
+            </Text>
+          )}
           {tx._isSettlement && (
             <Text style={styles.settlementBadge}>settlement</Text>
           )}
@@ -303,6 +338,7 @@ export default function TransactionsScreen() {
   const { user }     = useAuth();
   const [transactions,  setTransactions]  = useState([]);
   const [settlements,   setSettlements]   = useState([]); // normalized
+  const [directSplits,  setDirectSplits]  = useState([]); // normalized
   const [activeTab,     setActiveTab]     = useState('all');
   const [loading,       setLoading]       = useState(true);
   const [refreshing,    setRefreshing]    = useState(false);
@@ -335,12 +371,22 @@ export default function TransactionsScreen() {
     }
   }, [user?._id]);
 
+  // ── Fetch direct (1-on-1) splits ─────────────────────────────────────────
+  const fetchDirectSplits = useCallback(async () => {
+    try {
+      const data = await getAllDirectSplits();
+      setDirectSplits((data.splits || []).map(s => normalizeDirectSplit(s, user?._id)));
+    } catch {
+      // non-critical — direct splits missing is OK
+    }
+  }, [user?._id]);
+
   // ── Initial load ─────────────────────────────────────────────────────────
   useEffect(() => {
     async function init() {
       setLoading(true);
       try {
-        await Promise.all([fetchTransactions(), fetchSettlements()]);
+        await Promise.all([fetchTransactions(), fetchSettlements(), fetchDirectSplits()]);
         setError('');
       } catch (err) {
         setError(err?.message || 'Failed to load transactions.');
@@ -349,19 +395,19 @@ export default function TransactionsScreen() {
       }
     }
     init();
-  }, [fetchTransactions, fetchSettlements]);
+  }, [fetchTransactions, fetchSettlements, fetchDirectSplits]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await Promise.all([fetchTransactions(), fetchSettlements()]);
+      await Promise.all([fetchTransactions(), fetchSettlements(), fetchDirectSplits()]);
       setError('');
     } catch {
       // keep showing existing data
     } finally {
       setRefreshing(false);
     }
-  }, [fetchTransactions, fetchSettlements]);
+  }, [fetchTransactions, fetchSettlements, fetchDirectSplits]);
 
   // ── Delete personal transaction ───────────────────────────────────────────
   function confirmDelete(tx) {
@@ -390,15 +436,16 @@ export default function TransactionsScreen() {
   const totalExpense = transactions.filter(t => t.type === 'expense').reduce((s, t) => s + (t.amount ?? 0), 0);
   const net          = totalIncome - totalExpense;
 
-  // Merge personal + settlements, sorted by date descending
-  const allItems = [...transactions, ...settlements].sort(
+  // Merge personal + settlements + direct splits, sorted by date descending
+  const allItems = [...transactions, ...settlements, ...directSplits].sort(
     (a, b) => new Date(b.date) - new Date(a.date)
   );
 
   const filtered = (() => {
     switch (activeTab) {
       case 'income':      return transactions.filter(t => t.type === 'income');
-      case 'expense':     return transactions.filter(t => t.type === 'expense');
+      case 'expense':     return [...transactions.filter(t => t.type === 'expense'), ...directSplits]
+                            .sort((a, b) => new Date(b.date) - new Date(a.date));
       case 'settlements': return settlements;
       default:            return allItems;
     }
@@ -483,7 +530,7 @@ export default function TransactionsScreen() {
             onPress={() => {
               setError('');
               setLoading(true);
-              Promise.all([fetchTransactions(), fetchSettlements()])
+              Promise.all([fetchTransactions(), fetchSettlements(), fetchDirectSplits()])
                 .catch(() => {})
                 .finally(() => setLoading(false));
             }}>
@@ -677,6 +724,14 @@ const styles = StyleSheet.create({
     marginTop: 3,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+
+  txShareBadge: {
+    color:      PC.textMuted,
+    fontSize:   10,
+    fontWeight: '500',
+    marginTop:  3,
+    textAlign:  'right',
   },
 
   hint: { color: PC.textMuted, fontSize: 12, textAlign: 'center', marginBottom: 8 },

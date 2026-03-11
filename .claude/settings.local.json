@@ -17,7 +17,8 @@
       "Bash(reg query:*)",
       "Bash(ipconfig:*)",
       "Bash(python:*)",
-      "Bash(git rm:*)"
+      "Bash(git rm:*)",
+      "Bash(find \"D:\\\\Coding Workspace\\\\projects\\\\PayCircle\\\\frontend\" -name \"*direct*\" -type f 2>/dev/null | head -20)"
     ]
   }
 }

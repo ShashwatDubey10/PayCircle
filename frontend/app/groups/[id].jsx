@@ -225,13 +225,18 @@ function AddMemberModal({ visible, onClose, groupId, existingMemberIds, onAdded 
 
   useEffect(() => {
     if (!visible) return;
+    let cancelled = false;
     setError('');
     setLoadingList(true);
     getFriends()
-      .then(frs => setFriends((frs || []).filter(f => !existingMemberIds.includes(f.id))))
-      .catch(() => setError('Could not load friends list.'))
-      .finally(() => setLoadingList(false));
-  }, [visible]);
+      .then(frs => {
+        if (!cancelled)
+          setFriends((frs || []).filter(f => !existingMemberIds.includes(f.id)));
+      })
+      .catch(() => { if (!cancelled) setError('Could not load friends list.'); })
+      .finally(() => { if (!cancelled) setLoadingList(false); });
+    return () => { cancelled = true; };
+  }, [visible, existingMemberIds]);
 
   async function handleAdd(friend) {
     setAddingId(friend.id);

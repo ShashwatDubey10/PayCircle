@@ -442,12 +442,17 @@ export default function GroupsScreen() {
                 <Text style={styles.emptyText}>Go to Profile → Friends to add people</Text>
               </View>
             ) : (
-              friends.map((f) => (
-                <FriendCard
-                  key={f._id ?? f.id}
-                  friend={f}
-                  onPress={() => router.push(`/direct/${f._id ?? f.id}`)}
-                />
+              friends.map((f) => {
+                const fid = f._id ?? f.id;
+                if (!fid) return null;
+                return (
+                  <FriendCard
+                    key={fid}
+                    friend={f}
+                    onPress={() => router.push(`/direct/${fid}`)}
+                  />
+                );
+              }}
               ))
             )
           )}

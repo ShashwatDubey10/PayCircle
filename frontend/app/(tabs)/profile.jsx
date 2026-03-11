@@ -237,8 +237,9 @@ export default function ProfileScreen() {
     setUsernameLoading(true);
     try {
       const result = await apiSetUsername(cleaned);
-      // Update auth context so the profile screen reflects the new username immediately
-      if (result?.user) await updateUser(result.user);
+      // Prefer the full server-side user object; fall back to an optimistic patch
+      // so the auth context is never stale even when result.user is missing.
+      await updateUser(result?.user ?? { username: cleaned });
       setShowUsernameModal(false);
       setUsernameInput('');
       Alert.alert('Username set!', `Your username is now @${cleaned}`);

@@ -12,11 +12,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 
 import { PC } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
-import { getDirectSplits, addDirectSplit } from '@/services/directSplit';
+import { getDirectSplits, addDirectSplit, requestSettle, confirmSettle } from '@/services/directSplit';
 import { getFriends } from '@/services/friends';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -114,11 +114,13 @@ export default function DirectSplitScreen() {
   const [balance,     setBalance]     = useState(0);
   const [loading,     setLoading]     = useState(true);
 
-  const [amount,      setAmount]      = useState('');
-  const [description, setDescription] = useState('');
-  const [paidByMe,    setPaidByMe]    = useState(true);
-  const [sending,     setSending]     = useState(false);
-  const [inputError,  setInputError]  = useState('');
+  const [amount,        setAmount]        = useState('');
+  const [description,   setDescription]   = useState('');
+  const [paidByMe,      setPaidByMe]      = useState(true);
+  const [sending,       setSending]       = useState(false);
+  const [inputError,    setInputError]    = useState('');
+  const [pendingSettle, setPendingSettle] = useState(null);
+  const [settleLoading, setSettleLoading] = useState(false);
 
   // ── Load splits + friend info ──────────────────────────────────────────────
   const load = useCallback(async () => {
@@ -129,23 +131,26 @@ export default function DirectSplitScreen() {
       ]);
       setSplits(data.splits || []);
       setBalance(data.balance ?? 0);
+      setPendingSettle(data.pendingSettle || null);
       const f = (friends || []).find(f => String(f.id) === String(friendId));
       setFriend(f || null);
-    } catch {
-      // non-critical — show empty state
+    } catch (err) {
+      // Log so failures are visible in the console; UI shows empty state.
+      console.error('[DirectSplitScreen] load failed:', err?.message ?? err);
     } finally {
       setLoading(false);
     }
   }, [friendId]);
 
-  useEffect(() => { load(); }, [load]);
+  // Reload whenever this screen gains focus — ensures creditor sees pending settle requests
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  // Scroll to bottom after first load
+  // Scroll to bottom after first load and whenever splits change
   useEffect(() => {
     if (!loading && splits.length > 0) {
       setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 80);
     }
-  }, [loading]);
+  }, [loading, splits.length]);
 
   // ── Send split ────────────────────────────────────────────────────────────
   async function handleSend() {
@@ -158,14 +163,20 @@ export default function DirectSplitScreen() {
     setInputError('');
     try {
       const data = await addDirectSplit(friendId, amt, description.trim(), paidByMe);
-      setSplits(prev => [...prev, data.split]);
-      setBalance(prev => {
-        const delta = amt / 2;
-        return Math.round((paidByMe ? prev + delta : prev - delta) * 100) / 100;
-      });
-      setAmount('');
-      setDescription('');
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
+      // Guard: only append if the server returned a valid split object
+      if (!data?.split?._id) {
+        console.error('[DirectSplitScreen] addDirectSplit returned no split:', data);
+        setInputError('Split was saved but the response was unexpected. Pull to refresh.');
+      } else {
+        setSplits(prev => [...prev, data.split]);
+        setBalance(prev => {
+          const delta = amt / 2;
+          return Math.round((paidByMe ? prev + delta : prev - delta) * 100) / 100;
+        });
+        setAmount('');
+        setDescription('');
+        setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
+      }
     } catch (err) {
       setInputError(err?.message || 'Failed to add split');
     } finally {
@@ -173,12 +184,41 @@ export default function DirectSplitScreen() {
     }
   }
 
+  // ── Settle Up ─────────────────────────────────────────────────────────────
+  async function handleRequestSettle() {
+    setSettleLoading(true);
+    try {
+      const data = await requestSettle(friendId, Math.abs(balance));
+      setPendingSettle(data.pendingSettle);
+    } catch (err) {
+      setInputError(err?.message || 'Failed to send settle request');
+    } finally {
+      setSettleLoading(false);
+    }
+  }
+
+  async function handleConfirmSettle() {
+    if (!pendingSettle) return;
+    setSettleLoading(true);
+    try {
+      await confirmSettle(friendId, pendingSettle._id);
+      setPendingSettle(null);
+      await load();
+    } catch (err) {
+      setInputError(err?.message || 'Failed to confirm settlement');
+    } finally {
+      setSettleLoading(false);
+    }
+  }
+
   // ── Render bubble with date separator ─────────────────────────────────────
   function renderItem({ item, index }) {
-    const meId   = user?._id?.toString() ?? null;
+    // user._id might be a string or ObjectId; some auth responses expose id (virtual)
+    const meId = user?._id?.toString() ?? user?.id?.toString() ?? null;
     const isMine = meId != null && (
       item.payerId?._id?.toString() === meId ||
-      item.payerId?.toString?.() === meId
+      item.payerId?.id?.toString()  === meId ||
+      item.payerId?.toString()      === meId   // fallback: unpopulated ObjectId
     );
     const prevItem = index > 0 ? splits[index - 1] : null;
     const showDate = !prevItem || formatDateLabel(item.date) !== formatDateLabel(prevItem.date);
@@ -201,6 +241,15 @@ export default function DirectSplitScreen() {
   const isSettled = balAbs < 0.01;
   const youAreOwed = balance > 0;
   const friendFirst = friend?.name?.split(' ')[0] || 'Friend';
+
+  const meIdStr         = user?._id?.toString() ?? user?.id?.toString();
+  const iAmDebtor       = !youAreOwed && !isSettled;
+  const myPendingSettle = pendingSettle && (
+    pendingSettle.fromUserId?._id?.toString() === meIdStr ||
+    pendingSettle.fromUserId?.id?.toString()  === meIdStr ||
+    pendingSettle.fromUserId?.toString()      === meIdStr
+  );
+  const friendPendingSettle = pendingSettle && !myPendingSettle;
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
@@ -241,12 +290,28 @@ export default function DirectSplitScreen() {
             size={16}
             color={youAreOwed ? PC.positive : PC.negative}
           />
-          <Text style={[s.balBannerText, { color: youAreOwed ? PC.positive : PC.negative }]}>
+          <Text style={[s.balBannerText, { color: youAreOwed ? PC.positive : PC.negative, flex: 1 }]}>
             {youAreOwed
               ? `${friendFirst} owes you ₹${balAbs.toLocaleString('en-IN')}`
               : `You owe ${friendFirst} ₹${balAbs.toLocaleString('en-IN')}`
             }
           </Text>
+
+          {/* Settle Up chip — shown to debtor */}
+          {iAmDebtor && (
+            <TouchableOpacity
+              style={[s.settleChip, myPendingSettle && s.settleChipMuted]}
+              onPress={!myPendingSettle && !settleLoading ? handleRequestSettle : undefined}
+              disabled={!!myPendingSettle || settleLoading}
+              activeOpacity={0.75}>
+              {settleLoading && !myPendingSettle
+                ? <ActivityIndicator size="small" color={PC.textMuted} />
+                : <Text style={[s.settleChipText, myPendingSettle && s.settleChipTextMuted]}>
+                    {myPendingSettle ? 'Pending…' : 'Settle Up'}
+                  </Text>
+              }
+            </TouchableOpacity>
+          )}
         </View>
       )}
 
@@ -281,6 +346,31 @@ export default function DirectSplitScreen() {
             contentContainerStyle={s.listContent}
             showsVerticalScrollIndicator={false}
           />
+        )}
+
+        {/* Settle confirmation banner — shown to creditor when friend requested */}
+        {friendPendingSettle && (
+          <View style={s.settleConfirmBar}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.settleConfirmTitle}>Settle request</Text>
+              <Text style={s.settleConfirmSub}>
+                {friendFirst} says they paid ₹{(pendingSettle.amount ?? 0).toLocaleString('en-IN')}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[s.settleConfirmBtn, settleLoading && { opacity: 0.5 }]}
+              onPress={handleConfirmSettle}
+              disabled={settleLoading}
+              activeOpacity={0.8}>
+              {settleLoading
+                ? <ActivityIndicator size="small" color={PC.bg} />
+                : <>
+                    <Ionicons name="checkmark" size={14} color={PC.bg} />
+                    <Text style={s.settleConfirmBtnText}>Confirm</Text>
+                  </>
+              }
+            </TouchableOpacity>
+          </View>
         )}
 
         {/* ── Input bar ── */}
@@ -509,4 +599,33 @@ const s = StyleSheet.create({
     backgroundColor: PC.textPrimary,
     alignItems: 'center', justifyContent: 'center',
   },
+
+  // ── Settle Up chip (in balance banner) ──
+  settleChip: {
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: 20, borderWidth: 1,
+    borderColor: PC.border, backgroundColor: PC.bgCard,
+    marginLeft: 8,
+  },
+  settleChipMuted:     { borderColor: PC.border, backgroundColor: 'transparent' },
+  settleChipText:      { color: PC.textPrimary, fontSize: 11, fontWeight: '600' },
+  settleChipTextMuted: { color: PC.textMuted },
+
+  // ── Settle confirmation bar (shown to creditor) ──
+  settleConfirmBar: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 14, paddingVertical: 10,
+    borderTopWidth: 1, borderTopColor: 'rgba(92,184,92,0.25)',
+    backgroundColor: 'rgba(92,184,92,0.07)',
+    gap: 10,
+  },
+  settleConfirmTitle: { color: PC.positive, fontSize: 12, fontWeight: '600', marginBottom: 2 },
+  settleConfirmSub:   { color: PC.textSecondary, fontSize: 12 },
+  settleConfirmBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: PC.positive,
+    paddingHorizontal: 12, paddingVertical: 7,
+    borderRadius: 20,
+  },
+  settleConfirmBtnText: { color: PC.bg, fontSize: 12, fontWeight: '600' },
 });

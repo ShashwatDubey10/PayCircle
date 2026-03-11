@@ -35,7 +35,10 @@ function RootGuard() {
   const { user, loading } = useAuth();
   const segments = useSegments();
   const router   = useRouter();
-  const pushRegistered = useRef(false);
+  // Track the last user ID for which we registered a push token so that:
+  // • Registration is skipped for the same user (prevents duplicate calls).
+  // • Registration re-runs when a different user logs in after a sign-out.
+  const lastRegisteredUserId = useRef(null);
 
   // Redirect based on auth state
   useEffect(() => {
@@ -50,10 +53,11 @@ function RootGuard() {
     }
   }, [user, loading, segments]);
 
-  // Register for push notifications once after login (skipped in Expo Go)
+  // Register for push notifications once per user after login (skipped in Expo Go)
   useEffect(() => {
-    if (!user || pushRegistered.current || IS_EXPO_GO) return;
-    pushRegistered.current = true;
+    const userId = user?._id ?? user?.id ?? null;
+    if (!userId || lastRegisteredUserId.current === userId || IS_EXPO_GO) return;
+    lastRegisteredUserId.current = userId;
 
     (async () => {
       try {

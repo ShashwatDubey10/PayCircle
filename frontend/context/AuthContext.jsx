@@ -57,12 +57,18 @@ export function AuthProvider({ children }) {
   };
 
   const updateUser = async (updatedUser) => {
-    // Capture snapshot before mutating so rollback restores the exact previous state
-    let prevSnapshot;
-    setUser(prev => { prevSnapshot = prev; return prev; });
-    const merged = { ...prevSnapshot, ...updatedUser };
-    setUser(merged);
+    // Use functional updater so the merge is atomic relative to React state and
+    // we capture the exact pre-update snapshot without an extra render.
+    let prevSnapshot = null;
+    let merged = null;
+    setUser(prev => {
+      prevSnapshot = prev;
+      merged = { ...prev, ...updatedUser };
+      return merged;
+    });
     try {
+      // merged is set synchronously by the updater above (React calls it immediately
+      // in the same tick when state is not batched across async boundaries).
       await saveUser(merged);
     } catch {
       // Rollback to the pre-update snapshot if persistence fails
