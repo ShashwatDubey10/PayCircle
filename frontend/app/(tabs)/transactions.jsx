@@ -321,7 +321,7 @@ function AddTransactionModal({ visible, onClose, onAdded }) {
             disabled={loading}
             activeOpacity={0.85}>
             {loading
-              ? <ActivityIndicator color={PC.bg} size="small" />
+              ? <ActivityIndicator color="#060A09" size="small" />
               : <Text style={styles.submitBtnText}>Add Transaction</Text>
             }
           </TouchableOpacity>
@@ -460,7 +460,7 @@ export default function TransactionsScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>Transactions</Text>
         <TouchableOpacity style={styles.addBtn} onPress={() => setShowModal(true)}>
-          <Ionicons name="add" size={22} color={PC.textPrimary} />
+          <Ionicons name="add" size={22} color={PC.accent} />
         </TouchableOpacity>
       </View>
 
@@ -527,12 +527,16 @@ export default function TransactionsScreen() {
           <Text style={styles.errorMsg}>Something went wrong. Please try again.</Text>
           <TouchableOpacity
             style={styles.retryBtn}
-            onPress={() => {
+            onPress={async () => {
               setError('');
               setLoading(true);
-              Promise.all([fetchTransactions(), fetchSettlements(), fetchDirectSplits()])
-                .catch(() => {})
-                .finally(() => setLoading(false));
+              try {
+                await Promise.all([fetchTransactions(), fetchSettlements(), fetchDirectSplits()]);
+              } catch (err) {
+                setError(err?.message || 'Failed to load transactions.');
+              } finally {
+                setLoading(false);
+              }
             }}>
             <Text style={styles.retryText}>Retry</Text>
           </TouchableOpacity>
@@ -618,9 +622,9 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 12,
-    backgroundColor: PC.bgCard,
+    backgroundColor: PC.accent10,
     borderWidth: 1,
-    borderColor: PC.border,
+    borderColor: PC.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -639,7 +643,7 @@ const styles = StyleSheet.create({
   summaryItem:    { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
   summaryDot:     { width: 8, height: 8, borderRadius: 4, backgroundColor: PC.positive },
   summaryLabel:   { color: PC.textSecondary, fontSize: 11, marginBottom: 3 },
-  summaryAmount:  { fontSize: 13, fontWeight: '600' },
+  summaryAmount:  { fontSize: 13, fontWeight: '600', fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace' },
   summaryDivider: { width: 1, backgroundColor: PC.border, marginHorizontal: 4 },
 
   toggleRow: {
@@ -653,9 +657,9 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   toggleBtn:        { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 9 },
-  toggleActive:     { backgroundColor: PC.bgCardElevated },
+  toggleActive:     { backgroundColor: PC.accent10 },
   toggleText:       { color: PC.textMuted, fontSize: 12, fontWeight: '500' },
-  toggleTextActive: { color: PC.textPrimary },
+  toggleTextActive: { color: PC.accent, fontWeight: '600' },
 
   scroll:        { flex: 1 },
   scrollContent: { paddingHorizontal: 20, paddingBottom: 32 },
@@ -767,8 +771,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 9,
   },
-  typeBtnActive:       { backgroundColor: 'rgba(224,90,90,0.12)', borderWidth: 1, borderColor: 'rgba(224,90,90,0.30)' },
-  typeBtnActiveIncome: { backgroundColor: 'rgba(92,184,92,0.12)', borderWidth: 1, borderColor: 'rgba(92,184,92,0.30)' },
+  typeBtnActive:       { backgroundColor: 'rgba(255,80,85,0.12)', borderWidth: 1, borderColor: 'rgba(255,80,85,0.30)' },
+  typeBtnActiveIncome: { backgroundColor: 'rgba(0,229,190,0.12)', borderWidth: 1, borderColor: 'rgba(0,229,190,0.30)' },
   typeBtnText:         { color: PC.textMuted, fontSize: 14, fontWeight: '600' },
 
   modalInputBox: {
@@ -796,13 +800,13 @@ const styles = StyleSheet.create({
     borderColor: PC.border,
     backgroundColor: PC.bgCardElevated,
   },
-  chipActive:     { borderColor: PC.textPrimary, backgroundColor: 'rgba(255,255,255,0.07)' },
+  chipActive:     { borderColor: PC.accent, backgroundColor: PC.accent10 },
   chipText:       { color: PC.textMuted, fontSize: 12 },
-  chipTextActive: { color: PC.textPrimary },
+  chipTextActive: { color: PC.accent },
 
-  submitBtn:         { backgroundColor: PC.textPrimary, borderRadius: 14, height: 52, alignItems: 'center', justifyContent: 'center' },
+  submitBtn:         { backgroundColor: PC.accent, borderRadius: 14, height: 52, alignItems: 'center', justifyContent: 'center' },
   submitBtnDisabled: { opacity: 0.6 },
-  submitBtnText:     { color: PC.bg, fontSize: 15, fontWeight: '700' },
+  submitBtnText:     { color: '#060A09', fontSize: 15, fontWeight: '700' },
 
   errorBox: {
     flexDirection: 'row',

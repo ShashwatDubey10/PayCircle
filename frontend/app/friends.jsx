@@ -185,7 +185,7 @@ export default function FriendsScreen() {
                     <ActivityIndicator size="small" color={PC.textMuted} />
                   ) : (
                     <TouchableOpacity style={s.addBtn} onPress={() => handleSend(u._id)} activeOpacity={0.8}>
-                      <Ionicons name="person-add-outline" size={15} color={PC.bg} />
+                      <Ionicons name="person-add-outline" size={15} color="#060A09" />
                       <Text style={s.addBtnText}>Add</Text>
                     </TouchableOpacity>
                   )}
@@ -227,8 +227,8 @@ export default function FriendsScreen() {
                       disabled={!!responding[r._id]}
                       activeOpacity={0.8}>
                       {responding[r._id] === 'accept'
-                        ? <ActivityIndicator size="small" color={PC.bg} />
-                        : <Ionicons name="checkmark" size={16} color={PC.bg} />
+                        ? <ActivityIndicator size="small" color="#060A09" />
+                        : <Ionicons name="checkmark" size={16} color="#060A09" />
                       }
                     </TouchableOpacity>
                     <TouchableOpacity
@@ -371,12 +371,12 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: PC.textPrimary,
+    backgroundColor: PC.accent,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 7,
   },
-  addBtnText: { color: PC.bg, fontSize: 13, fontWeight: '600' },
+  addBtnText: { color: '#060A09', fontSize: 13, fontWeight: '600' },
   sentBadge: {
     paddingHorizontal: 10,
     paddingVertical: 6,

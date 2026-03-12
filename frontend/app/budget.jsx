@@ -114,7 +114,7 @@ function OverallBudgetModal({ visible, current, onClose, onSaved }) {
               onPress={handleSave}
               disabled={saving}>
               {saving
-                ? <ActivityIndicator size="small" color={PC.bg} />
+                ? <ActivityIndicator size="small" color="#060A09" />
                 : <Text style={s.saveBtnText}>Save</Text>
               }
             </TouchableOpacity>
@@ -308,7 +308,7 @@ function CategoryBudgetModal({ catModal, currentCategories, onClose, onSaved }) 
               onPress={handleSave}
               disabled={busy}>
               {saving
-                ? <ActivityIndicator size="small" color={PC.bg} />
+                ? <ActivityIndicator size="small" color="#060A09" />
                 : <Text style={s.saveBtnText}>{isEdit ? 'Update' : 'Add'}</Text>
               }
             </TouchableOpacity>
@@ -735,10 +735,10 @@ const s = StyleSheet.create({
   cancelBtnText: { color: PC.textSecondary, fontSize: 14, fontWeight: '500' },
   saveBtn: {
     flex: 1, height: 48, borderRadius: 12,
-    backgroundColor: PC.textPrimary,
+    backgroundColor: PC.accent,
     alignItems: 'center', justifyContent: 'center',
   },
-  saveBtnText: { color: PC.bg, fontSize: 14, fontWeight: '700' },
+  saveBtnText: { color: '#060A09', fontSize: 14, fontWeight: '700' },
 
   // Category bottom sheet
   sheetOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.55)' },

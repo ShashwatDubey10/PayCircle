@@ -138,34 +138,52 @@ const requestSettle = asyncHandler(async (req, res) => {
   const { friendId } = req.params;
   const meId = req.user._id;
 
+  // Validate friendId format before any DB call
+  if (!mongoose.Types.ObjectId.isValid(friendId))
+    return res.status(400).json({ success: false, message: 'Invalid friendId' });
+
   if (!(await areFriends(meId, friendId)))
     return res.status(403).json({ success: false, message: 'Must be friends' });
-
-  // Check no pending request already exists between this pair
-  const existing = await DirectSettle.findOne({
-    status: 'pending',
-    $or: [
-      { fromUserId: meId,     toUserId: friendId },
-      { fromUserId: friendId, toUserId: meId     },
-    ],
-  });
-  if (existing)
-    return res.status(409).json({ success: false, message: 'A settle request is already pending' });
 
   const { amount } = req.body;
   const amt = parseFloat(amount);
   if (!amt || isNaN(amt) || amt <= 0)
     return res.status(400).json({ success: false, message: 'Valid amount required' });
 
-  const settle = await DirectSettle.create({
+  // Atomically ensure only one pending record exists per pair.
+  // findOneAndUpdate with upsert will insert only if no matching doc exists;
+  // if a pending doc already exists it returns the existing doc without inserting.
+  const result = await DirectSettle.findOneAndUpdate(
+    {
+      status: 'pending',
+      $or: [
+        { fromUserId: meId,     toUserId: friendId },
+        { fromUserId: friendId, toUserId: meId     },
+      ],
+    },
+    {
+      $setOnInsert: {
+        fromUserId: meId,
+        toUserId:   friendId,
+        amount:     amt,
+        status:     'pending',
+      },
+    },
+    { upsert: true, new: false } // new:false → returns original (null if inserted)
+  );
+
+  // If result is non-null a pre-existing pending doc was found — conflict.
+  if (result !== null)
+    return res.status(409).json({ success: false, message: 'A settle request is already pending' });
+
+  // Fetch the newly inserted doc to populate and return it
+  const settle = await DirectSettle.findOne({
     fromUserId: meId,
     toUserId:   friendId,
-    amount:     amt,
-  });
-  await settle.populate([
-    { path: 'fromUserId', select: 'name username' },
-    { path: 'toUserId',   select: 'name username' },
-  ]);
+    status:     'pending',
+  })
+    .populate('fromUserId', 'name username')
+    .populate('toUserId',   'name username');
 
   logger.info('DIRECT', `Settle request ₹${amt}`, { from: meId, to: friendId });
   res.status(201).json({ success: true, pendingSettle: settle });
@@ -173,26 +191,42 @@ const requestSettle = asyncHandler(async (req, res) => {
 
 // PUT /api/users/me/direct/:friendId/settle/:requestId/confirm
 const confirmSettle = asyncHandler(async (req, res) => {
-  const { requestId } = req.params;
+  const { requestId, friendId } = req.params;
   const meId = req.user._id;
 
+  // Validate both IDs before hitting the DB
+  if (!mongoose.Types.ObjectId.isValid(requestId))
+    return res.status(400).json({ success: false, message: 'Invalid requestId' });
+  if (!mongoose.Types.ObjectId.isValid(friendId))
+    return res.status(400).json({ success: false, message: 'Invalid friendId' });
+
+  // Fetch the settle doc first so we can validate ownership
   const settle = await DirectSettle.findById(requestId);
   if (!settle)
     return res.status(404).json({ success: false, message: 'Settle request not found' });
 
-  // Only the creditor (toUserId) can confirm
-  if (settle.toUserId.toString() !== meId.toString())
-    return res.status(403).json({ success: false, message: 'Only the recipient can confirm' });
+  // Ensure the document belongs to this friend pair and that the authenticated
+  // user is the creditor (toUserId) — prevents cross-pair auth bypass.
+  if (
+    !settle.toUserId.equals(meId) ||
+    !settle.fromUserId.equals(friendId)
+  ) {
+    return res.status(403).json({ success: false, message: 'Forbidden' });
+  }
 
-  if (settle.status === 'confirmed')
+  // Atomically flip status to 'confirmed' only if it is still 'pending'.
+  // This prevents two concurrent requests from both succeeding.
+  const confirmed = await DirectSettle.findOneAndUpdate(
+    { _id: settle._id, status: { $ne: 'confirmed' } },
+    { $set: { status: 'confirmed', confirmedAt: new Date() } },
+    { new: true }
+  );
+
+  if (!confirmed)
     return res.status(400).json({ success: false, message: 'Already confirmed' });
 
-  settle.status      = 'confirmed';
-  settle.confirmedAt = new Date();
-  await settle.save();
-
-  logger.info('DIRECT', `Settle confirmed ₹${settle.amount}`, { requestId, by: meId });
-  res.json({ success: true, settle });
+  logger.info('DIRECT', `Settle confirmed ₹${confirmed.amount}`, { requestId, by: meId });
+  res.json({ success: true, settle: confirmed });
 });
 
 module.exports = { addDirectSplit, getDirectSplits, getAllDirectSplits, requestSettle, confirmSettle };

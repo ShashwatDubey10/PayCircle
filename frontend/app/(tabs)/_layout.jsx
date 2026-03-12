@@ -13,19 +13,19 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: PC.textPrimary,
+        tabBarActiveTintColor: PC.accent,
         tabBarInactiveTintColor: PC.textMuted,
         tabBarStyle: {
-          backgroundColor: '#0F0F0F',
+          backgroundColor: PC.bgCard,
           borderTopColor: PC.border,
           borderTopWidth: 1,
-          height: 62,
+          height: 64,
           paddingBottom: 10,
           paddingTop: 8,
         },
         tabBarLabelStyle: {
           fontSize: 11,
-          fontWeight: '500',
+          fontWeight: '600',
         },
       }}>
       <Tabs.Screen

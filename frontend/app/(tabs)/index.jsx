@@ -414,7 +414,7 @@ export default function DashboardScreen() {
                 onPress={saveBudget}
                 disabled={budgetSaving}>
                 {budgetSaving
-                  ? <ActivityIndicator size="small" color={PC.bg} />
+                  ? <ActivityIndicator size="small" color="#060A09" />
                   : <Text style={styles.modalSaveText}>Save</Text>
                 }
               </TouchableOpacity>
@@ -465,7 +465,7 @@ const styles = StyleSheet.create({
   avatarBtn: {
     width: 44, height: 44, borderRadius: 22,
     backgroundColor: PC.bgCardElevated,
-    borderWidth: 1, borderColor: PC.border,
+    borderWidth: 1.5, borderColor: PC.accent,
     alignItems: 'center', justifyContent: 'center',
   },
   avatarText: { color: PC.textPrimary, fontSize: 14, fontWeight: '600' },
@@ -478,12 +478,22 @@ const styles = StyleSheet.create({
   },
   balanceBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
   balanceBadgeText: { color: PC.textSecondary, fontSize: 13 },
-  balanceAmount: { fontSize: 38, fontWeight: '700', letterSpacing: -1, marginBottom: 20 },
+  balanceAmount: {
+    fontSize: 44,
+    fontWeight: '700',
+    letterSpacing: -2,
+    marginBottom: 20,
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
   balanceDivider: { height: 1, backgroundColor: PC.border, marginBottom: 16 },
   balanceRow:     { flexDirection: 'row', alignItems: 'center' },
   balanceSep:     { width: 1, height: 32, backgroundColor: PC.border, marginHorizontal: 24 },
   balanceSubLabel:  { color: PC.textSecondary, fontSize: 12, marginBottom: 4 },
-  balanceSubAmount: { fontSize: 18, fontWeight: '600' },
+  balanceSubAmount: {
+    fontSize: 18,
+    fontWeight: '600',
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
 
   // Stats
   statsRow: { flexDirection: 'row', gap: 12, marginBottom: 14 },
@@ -496,7 +506,13 @@ const styles = StyleSheet.create({
     backgroundColor: PC.bgCardElevated,
     alignItems: 'center', justifyContent: 'center', marginBottom: 10,
   },
-  statAmount: { color: PC.textPrimary, fontSize: 17, fontWeight: '600', marginBottom: 3 },
+  statAmount: {
+    color: PC.textPrimary,
+    fontSize: 17,
+    fontWeight: '600',
+    marginBottom: 3,
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
   statLabel:  { color: PC.textSecondary, fontSize: 11 },
 
   // Section
@@ -518,7 +534,7 @@ const styles = StyleSheet.create({
   budgetPlan:      { color: PC.textSecondary, fontSize: 12, marginBottom: 6 },
   budgetNumbers:   { color: PC.textPrimary, fontSize: 18, fontWeight: '600', marginBottom: 12 },
   budgetOf:        { color: PC.textSecondary, fontWeight: '400', fontSize: 14 },
-  barTrack:        { height: 4, backgroundColor: PC.border, borderRadius: 2, overflow: 'hidden', marginBottom: 8 },
+  barTrack:        { height: 5, backgroundColor: PC.border, borderRadius: 3, overflow: 'hidden', marginBottom: 8 },
   barFill:         { height: '100%', borderRadius: 2 },
   budgetRemaining: { color: PC.textSecondary, fontSize: 11 },
   budgetEmpty: {
@@ -598,8 +614,8 @@ const styles = StyleSheet.create({
   modalCancelText: { color: PC.textSecondary, fontSize: 14, fontWeight: '500' },
   modalSaveBtn: {
     flex: 1, height: 48, borderRadius: 12,
-    backgroundColor: PC.textPrimary,
+    backgroundColor: PC.accent,
     alignItems: 'center', justifyContent: 'center',
   },
-  modalSaveText: { color: PC.bg, fontSize: 14, fontWeight: '700' },
+  modalSaveText: { color: '#060A09', fontSize: 14, fontWeight: '700' },
 });

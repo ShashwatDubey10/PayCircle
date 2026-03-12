@@ -70,9 +70,11 @@ export function AuthProvider({ children }) {
       // merged is set synchronously by the updater above (React calls it immediately
       // in the same tick when state is not batched across async boundaries).
       await saveUser(merged);
-    } catch {
-      // Rollback to the pre-update snapshot if persistence fails
-      setUser(prevSnapshot);
+    } catch (err) {
+      // Rollback only if the state hasn't been changed by another update in the
+      // meantime — avoids clobbering a racing updateUser call.
+      setUser(curr => (curr === merged ? prevSnapshot : curr));
+      throw err; // re-throw so callers can observe the failure
     }
   };
 

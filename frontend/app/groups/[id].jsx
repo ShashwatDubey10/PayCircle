@@ -167,7 +167,7 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
                   onPress={() => setPayerId(m.id)}
                   disabled={loading}>
                   <View style={[styles.payerAvatar, selected && styles.payerAvatarActive]}>
-                    <Text style={[styles.payerInitials, selected && { color: PC.bg }]}>
+                    <Text style={[styles.payerInitials, selected && { color: '#060A09' }]}>
                       {initials(m.name)}
                     </Text>
                   </View>
@@ -204,7 +204,7 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
             disabled={loading}
             activeOpacity={0.85}>
             {loading
-              ? <ActivityIndicator color={PC.bg} size="small" />
+              ? <ActivityIndicator color="#060A09" size="small" />
               : <Text style={styles.createBtnText}>Add Expense</Text>
             }
           </TouchableOpacity>
@@ -300,7 +300,7 @@ function AddMemberModal({ visible, onClose, groupId, existingMemberIds, onAdded 
                       disabled={!!addingId}
                       activeOpacity={0.85}>
                       {addingId === f.id
-                        ? <ActivityIndicator color={PC.bg} size="small" />
+                        ? <ActivityIndicator color="#060A09" size="small" />
                         : <Text style={styles.createBtnText}>Add</Text>
                       }
                     </TouchableOpacity>
@@ -401,7 +401,7 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
                   onPress={() => handleFromChange(m.id)}
                   disabled={loading}>
                   <View style={[styles.payerAvatar, selected && styles.payerAvatarActive]}>
-                    <Text style={[styles.payerInitials, selected && { color: PC.bg }]}>
+                    <Text style={[styles.payerInitials, selected && { color: '#060A09' }]}>
                       {initials(m.name)}
                     </Text>
                   </View>
@@ -425,7 +425,7 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
                   onPress={() => handleToChange(m.id)}
                   disabled={loading}>
                   <View style={[styles.payerAvatar, selected && styles.payerAvatarActive]}>
-                    <Text style={[styles.payerInitials, selected && { color: PC.bg }]}>
+                    <Text style={[styles.payerInitials, selected && { color: '#060A09' }]}>
                       {initials(m.name)}
                     </Text>
                   </View>
@@ -472,7 +472,7 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
             disabled={loading}
             activeOpacity={0.85}>
             {loading
-              ? <ActivityIndicator color={PC.bg} size="small" />
+              ? <ActivityIndicator color="#060A09" size="small" />
               : <Text style={styles.createBtnText}>Record Settlement</Text>
             }
           </TouchableOpacity>
@@ -719,7 +719,7 @@ export default function GroupDetailScreen() {
               style={styles.settleBtn}
               onPress={() => setShowSettlement(true)}
               activeOpacity={0.85}>
-              <Ionicons name="checkmark-done-outline" size={17} color={PC.bg} style={{ marginRight: 7 }} />
+              <Ionicons name="checkmark-done-outline" size={17} color={PC.accent} style={{ marginRight: 7 }} />
               <Text style={styles.settleBtnText}>Record Settlement</Text>
             </TouchableOpacity>
 
@@ -817,7 +817,7 @@ export default function GroupDetailScreen() {
       {/* ── Add Expense FAB ── */}
       {tab === 'expenses' && (
         <TouchableOpacity style={styles.fab} onPress={() => setShowAddExpense(true)} activeOpacity={0.85}>
-          <Ionicons name="add" size={24} color={PC.bg} />
+          <Ionicons name="add" size={24} color="#060A09" />
           <Text style={styles.fabText}>Add Expense</Text>
         </TouchableOpacity>
       )}
@@ -867,7 +867,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: PC.bgCard,
     borderWidth: 1,
-    borderColor: PC.border,
+    borderColor: PC.borderLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -890,7 +890,7 @@ const styles = StyleSheet.create({
   },
   balanceStat:      { flex: 1, alignItems: 'center' },
   balanceStatLabel: { color: PC.textSecondary, fontSize: 11, marginBottom: 4 },
-  balanceStatVal:   { color: PC.textPrimary, fontSize: 16, fontWeight: '700' },
+  balanceStatVal:   { color: PC.textPrimary, fontSize: 16, fontWeight: '700', fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace' },
   balanceDivider:   { width: 1, backgroundColor: PC.border },
 
   // Tabs
@@ -905,9 +905,9 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   tabBtn:        { flex: 1, paddingVertical: 9, alignItems: 'center', borderRadius: 9 },
-  tabActive:     { backgroundColor: PC.bgCardElevated },
+  tabActive:     { backgroundColor: PC.accent10 },
   tabText:       { color: PC.textMuted, fontSize: 13, fontWeight: '500' },
-  tabTextActive: { color: PC.textPrimary },
+  tabTextActive: { color: PC.accent, fontWeight: '600' },
 
   scroll:        { flex: 1 },
   scrollContent: { paddingHorizontal: 20, paddingBottom: 100 },
@@ -928,12 +928,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: PC.textPrimary,
+    backgroundColor: PC.accent10,
+    borderWidth: 1,
+    borderColor: PC.accent,
     borderRadius: 14,
     paddingVertical: 13,
     marginBottom: 20,
   },
-  settleBtnText: { color: PC.bg, fontSize: 14, fontWeight: '700' },
+  settleBtnText: { color: PC.accent, fontSize: 14, fontWeight: '700' },
 
   // Expense card
   expenseCard: {
@@ -969,7 +971,7 @@ const styles = StyleSheet.create({
   debtAvatarGroup: { flexDirection: 'row', alignItems: 'center' },
   debtInfo:        { flex: 1 },
   debtLabel:       { fontSize: 13 },
-  debtAmount:      { color: PC.textPrimary, fontSize: 15, fontWeight: '600' },
+  debtAmount:      { color: PC.textPrimary, fontSize: 15, fontWeight: '600', fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace' },
 
   // Member balance card
   memberBalCard: {
@@ -990,9 +992,9 @@ const styles = StyleSheet.create({
   memberNetBal:    { fontSize: 15, fontWeight: '700' },
 
   roleBadge:      { paddingHorizontal: 8, paddingVertical: 3, backgroundColor: PC.bgCardElevated, borderRadius: 8, borderWidth: 1, borderColor: PC.border },
-  roleBadgeAdmin: { borderColor: PC.textPrimary, backgroundColor: 'rgba(255,255,255,0.05)' },
+  roleBadgeAdmin: { borderColor: PC.accent, backgroundColor: PC.accent10 },
   roleText:       { color: PC.textMuted, fontSize: 11, fontWeight: '500' },
-  roleTextAdmin:  { color: PC.textPrimary },
+  roleTextAdmin:  { color: PC.accent },
 
   // FAB
   fab: {
@@ -1001,18 +1003,18 @@ const styles = StyleSheet.create({
     right: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: PC.textPrimary,
+    backgroundColor: PC.accent,
     paddingVertical: 14,
     paddingHorizontal: 20,
     borderRadius: 16,
     gap: 6,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
+    elevation: 6,
+    shadowColor: PC.accent,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
   },
-  fabText: { color: PC.bg, fontSize: 15, fontWeight: '700' },
+  fabText: { color: '#060A09', fontSize: 15, fontWeight: '700' },
 
   // Modal
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' },
@@ -1042,23 +1044,23 @@ const styles = StyleSheet.create({
 
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
   chip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: PC.border, backgroundColor: PC.bgCardElevated },
-  chipActive:     { borderColor: PC.textPrimary, backgroundColor: 'rgba(255,255,255,0.07)' },
+  chipActive:     { borderColor: PC.accent, backgroundColor: PC.accent10 },
   chipText:       { color: PC.textMuted, fontSize: 13 },
-  chipTextActive: { color: PC.textPrimary },
+  chipTextActive: { color: PC.accent },
 
   payerChip:        { alignItems: 'center', marginRight: 14 },
   payerChipActive:  {},
   payerAvatar:      { width: 44, height: 44, borderRadius: 14, backgroundColor: PC.bgCardElevated, borderWidth: 1, borderColor: PC.border, alignItems: 'center', justifyContent: 'center', marginBottom: 5 },
-  payerAvatarActive: { backgroundColor: PC.textPrimary, borderColor: PC.textPrimary },
+  payerAvatarActive: { backgroundColor: PC.accent, borderColor: PC.accent },
   payerInitials:    { color: PC.textPrimary, fontSize: 14, fontWeight: '700' },
   payerName:        { color: PC.textMuted, fontSize: 12 },
   payerNameActive:  { color: PC.textPrimary, fontWeight: '600' },
 
   splitNote: { color: PC.textMuted, fontSize: 12, marginBottom: 24, lineHeight: 18 },
 
-  createBtn:         { backgroundColor: PC.textPrimary, borderRadius: 14, height: 52, alignItems: 'center', justifyContent: 'center' },
+  createBtn:         { backgroundColor: PC.accent, borderRadius: 14, height: 52, alignItems: 'center', justifyContent: 'center' },
   createBtnDisabled: { opacity: 0.6 },
-  createBtnText:     { color: PC.bg, fontSize: 15, fontWeight: '700' },
+  createBtnText:     { color: '#060A09', fontSize: 15, fontWeight: '700' },
 
   errorBox: {
     flexDirection: 'row',

@@ -237,7 +237,7 @@ export default function RegisterScreen() {
               activeOpacity={0.85}
               disabled={loading}>
               {loading
-                ? <ActivityIndicator color={PC.bg} size="small" />
+                ? <ActivityIndicator color="#060A09" size="small" />
                 : <Text style={styles.primaryBtnText}>Create Account</Text>
               }
             </TouchableOpacity>
@@ -340,14 +340,14 @@ const styles = StyleSheet.create({
   hintText: { color: PC.textMuted, fontSize: 12 },
 
   primaryBtn: {
-    backgroundColor: PC.textPrimary,
+    backgroundColor: PC.accent,
     borderRadius: 14,
     height: 52,
     alignItems: 'center',
     justifyContent: 'center',
   },
   primaryBtnDisabled: { opacity: 0.6 },
-  primaryBtnText: { color: PC.bg, fontSize: 15, fontWeight: '700' },
+  primaryBtnText: { color: '#060A09', fontSize: 15, fontWeight: '700' },
 
   signinRow: {
     flexDirection: 'row',

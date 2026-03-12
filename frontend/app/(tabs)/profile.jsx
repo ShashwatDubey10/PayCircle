@@ -3,6 +3,7 @@ import {
   View,
   Text,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
@@ -168,13 +169,13 @@ const modalStyles = StyleSheet.create({
   itemBody:    { color: PC.textSecondary,  fontSize: 13, lineHeight: 19 },
   closeBtn: {
     marginTop: 16,
-    backgroundColor: PC.textPrimary,
+    backgroundColor: PC.accent,
     borderRadius: 14,
     height: 50,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  closeBtnText: { color: PC.bg, fontSize: 15, fontWeight: '700' },
+  closeBtnText: { color: '#060A09', fontSize: 15, fontWeight: '700' },
 });
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
@@ -345,7 +346,7 @@ export default function ProfileScreen() {
             style={styles.usernameRow}
             onPress={() => { setUsernameInput(user?.username || ''); setShowUsernameModal(true); }}
             activeOpacity={0.7}>
-            <Ionicons name="at" size={13} color={user?.username ? PC.textSecondary : PC.warning} />
+            <Ionicons name="at" size={13} color={user?.username ? PC.accent : PC.warning} />
             <Text style={[styles.usernameDisplay, !user?.username && styles.usernameUnset]}>
               {user?.username ? user.username : 'Set username'}
             </Text>
@@ -479,7 +480,7 @@ export default function ProfileScreen() {
               disabled={usernameLoading}
               activeOpacity={0.85}>
               {usernameLoading
-                ? <ActivityIndicator color={PC.bg} size="small" />
+                ? <ActivityIndicator color="#060A09" size="small" />
                 : <Text style={modalStyles.closeBtnText}>Save Username</Text>
               }
             </TouchableOpacity>
@@ -524,7 +525,7 @@ const styles = StyleSheet.create({
     borderRadius: 36,
     backgroundColor: PC.bgCardElevated,
     borderWidth: 2,
-    borderColor: PC.borderLight,
+    borderColor: PC.accent,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 14,
@@ -556,7 +557,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   statItem:    { flex: 1, alignItems: 'center' },
-  statValue:   { color: PC.textPrimary, fontSize: 20, fontWeight: '700', marginBottom: 4 },
+  statValue:   { color: PC.textPrimary, fontSize: 20, fontWeight: '700', marginBottom: 4, fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace' },
   statLabel:   { color: PC.textSecondary, fontSize: 12 },
   statDivider: { width: 1, backgroundColor: PC.border },
 
@@ -610,12 +611,12 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingHorizontal: 12,
     paddingVertical: 5,
-    backgroundColor: PC.bgCardElevated,
+    backgroundColor: PC.accent10,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: PC.border,
+    borderColor: PC.accent,
   },
-  usernameDisplay: { color: PC.textSecondary, fontSize: 13, fontWeight: '500' },
+  usernameDisplay: { color: PC.accent, fontSize: 13, fontWeight: '500' },
   usernameUnset:   { color: PC.warning, fontStyle: 'italic' },
 
   errorBox: {

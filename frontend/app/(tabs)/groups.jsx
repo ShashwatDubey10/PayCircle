@@ -214,7 +214,7 @@ function AddGroupModal({ visible, onClose, onCreated }) {
             disabled={loading}
             activeOpacity={0.85}>
             {loading
-              ? <ActivityIndicator color={PC.bg} size="small" />
+              ? <ActivityIndicator color="#060A09" size="small" />
               : <Text style={styles.createBtnText}>Create Group</Text>
             }
           </TouchableOpacity>
@@ -347,7 +347,7 @@ export default function GroupsScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>Split</Text>
         <TouchableOpacity style={styles.addBtn} onPress={() => setShowActionSheet(true)}>
-          <Ionicons name="add" size={22} color={PC.textPrimary} />
+          <Ionicons name="add" size={22} color={PC.accent} />
         </TouchableOpacity>
       </View>
 
@@ -452,8 +452,7 @@ export default function GroupsScreen() {
                     onPress={() => router.push(`/direct/${fid}`)}
                   />
                 );
-              }}
-              ))
+              })
             )
           )}
 
@@ -567,9 +566,9 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 12,
-    backgroundColor: PC.bgCard,
+    backgroundColor: PC.accent10,
     borderWidth: 1,
-    borderColor: PC.border,
+    borderColor: PC.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -600,9 +599,9 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   toggleBtn:        { flex: 1, paddingVertical: 9, alignItems: 'center', borderRadius: 9 },
-  toggleActive:     { backgroundColor: PC.bgCardElevated },
+  toggleActive:     { backgroundColor: PC.accent10 },
   toggleText:       { color: PC.textMuted, fontSize: 13, fontWeight: '500' },
-  toggleTextActive: { color: PC.textPrimary },
+  toggleTextActive: { color: PC.accent, fontWeight: '600' },
 
   scroll:        { flex: 1 },
   scrollContent: { paddingHorizontal: 20, paddingBottom: 32 },
@@ -702,13 +701,13 @@ const styles = StyleSheet.create({
     borderColor: PC.border,
     backgroundColor: PC.bgCardElevated,
   },
-  typeChipActive:     { borderColor: PC.textPrimary, backgroundColor: 'rgba(255,255,255,0.07)' },
+  typeChipActive:     { borderColor: PC.accent, backgroundColor: PC.accent10 },
   typeChipText:       { color: PC.textMuted, fontSize: 13, fontWeight: '500' },
-  typeChipTextActive: { color: PC.textPrimary },
+  typeChipTextActive: { color: PC.accent },
 
-  createBtn:         { backgroundColor: PC.textPrimary, borderRadius: 14, height: 52, alignItems: 'center', justifyContent: 'center' },
+  createBtn:         { backgroundColor: PC.accent, borderRadius: 14, height: 52, alignItems: 'center', justifyContent: 'center' },
   createBtnDisabled: { opacity: 0.6 },
-  createBtnText:     { color: PC.bg, fontSize: 15, fontWeight: '700' },
+  createBtnText:     { color: '#060A09', fontSize: 15, fontWeight: '700' },
 
   errorBox: {
     flexDirection: 'row',

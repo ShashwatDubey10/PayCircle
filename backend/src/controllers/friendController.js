@@ -58,6 +58,8 @@ const sendRequest = asyncHandler(async (req, res) => {
 
   if (!recipientId)
     return res.status(400).json({ success: false, message: 'recipientId is required' });
+  if (!mongoose.Types.ObjectId.isValid(recipientId))
+    return res.status(400).json({ success: false, message: 'Invalid recipientId' });
   if (String(recipientId) === String(meId))
     return res.status(400).json({ success: false, message: 'You cannot send a friend request to yourself' });
 

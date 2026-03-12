@@ -59,7 +59,8 @@ function DateSeparator({ label }) {
 // ─── Chat bubble ──────────────────────────────────────────────────────────────
 
 function Bubble({ split, isMine, friendFirstName }) {
-  const halfAmt = (split.amount / 2).toLocaleString('en-IN');
+  const amt     = Number(split?.amount ?? 0);
+  const halfAmt = (amt / 2).toLocaleString('en-IN');
 
   return (
     <View style={[s.bubbleRow, isMine ? s.bubbleRowRight : s.bubbleRowLeft]}>
@@ -76,7 +77,7 @@ function Bubble({ split, isMine, friendFirstName }) {
             {isMine ? 'You' : friendFirstName} paid
           </Text>
           <Text style={[s.bubbleAmt, isMine ? s.textMine : { color: PC.textPrimary }]}>
-            {'  '}₹{split.amount.toLocaleString('en-IN')}
+            {'  '}₹{amt.toLocaleString('en-IN')}
           </Text>
         </View>
 
@@ -90,7 +91,7 @@ function Bubble({ split, isMine, friendFirstName }) {
         {/* Footer */}
         <View style={s.bubbleFooter}>
           <Text style={[s.bubbleTime, isMine ? s.textMineMuted : { color: PC.textMuted }]}>
-            {formatTime(split.date)}
+            {split?.date ? formatTime(split.date) : '—'}
           </Text>
           <Text style={[s.bubbleSplitNote, isMine ? s.textMineMuted : { color: PC.textMuted }]}>
             {' · '}each ₹{halfAmt}
@@ -148,7 +149,8 @@ export default function DirectSplitScreen() {
   // Scroll to bottom after first load and whenever splits change
   useEffect(() => {
     if (!loading && splits.length > 0) {
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 80);
+      const timer = setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 80);
+      return () => clearTimeout(timer);
     }
   }, [loading, splits.length]);
 
@@ -363,9 +365,9 @@ export default function DirectSplitScreen() {
               disabled={settleLoading}
               activeOpacity={0.8}>
               {settleLoading
-                ? <ActivityIndicator size="small" color={PC.bg} />
+                ? <ActivityIndicator size="small" color="#060A09" />
                 : <>
-                    <Ionicons name="checkmark" size={14} color={PC.bg} />
+                    <Ionicons name="checkmark" size={14} color="#060A09" />
                     <Text style={s.settleConfirmBtnText}>Confirm</Text>
                   </>
               }
@@ -424,8 +426,8 @@ export default function DirectSplitScreen() {
               disabled={sending}
               activeOpacity={0.8}>
               {sending
-                ? <ActivityIndicator size="small" color={PC.bg} />
-                : <Ionicons name="arrow-up" size={18} color={PC.bg} />
+                ? <ActivityIndicator size="small" color="#060A09" />
+                : <Ionicons name="arrow-up" size={18} color="#060A09" />
               }
             </TouchableOpacity>
           </View>
@@ -473,7 +475,7 @@ const s = StyleSheet.create({
     borderRadius: 20, borderWidth: 1,
   },
   headerBalSettled: { backgroundColor: PC.bgCard, borderColor: PC.border },
-  headerBalPos:     { backgroundColor: 'rgba(92,184,92,0.1)', borderColor: 'rgba(92,184,92,0.3)' },
+  headerBalPos:     { backgroundColor: 'rgba(0,229,190,0.1)', borderColor: 'rgba(0,229,190,0.3)' },
   headerBalNeg:     { backgroundColor: 'rgba(224,90,90,0.1)', borderColor: 'rgba(224,90,90,0.3)' },
   headerBalText:    { fontSize: 12, fontWeight: '600' },
 
@@ -483,7 +485,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 8,
     borderBottomWidth: 1,
   },
-  balBannerPos:  { backgroundColor: 'rgba(92,184,92,0.07)',  borderBottomColor: 'rgba(92,184,92,0.15)' },
+  balBannerPos:  { backgroundColor: 'rgba(0,229,190,0.07)',  borderBottomColor: 'rgba(0,229,190,0.15)' },
   balBannerNeg:  { backgroundColor: 'rgba(224,90,90,0.07)', borderBottomColor: 'rgba(224,90,90,0.15)' },
   balBannerText: { fontSize: 13, fontWeight: '500' },
 
@@ -531,8 +533,8 @@ const s = StyleSheet.create({
     borderWidth: 1,
   },
   bubbleMine: {
-    backgroundColor: PC.textPrimary, // white
-    borderColor: PC.textPrimary,
+    backgroundColor: PC.accent,
+    borderColor: PC.accent,
     borderBottomRightRadius: 4,
   },
   bubbleFriend: {
@@ -545,10 +547,10 @@ const s = StyleSheet.create({
   bubblePaidBy: { fontSize: 12 },
   bubbleAmt:    { fontSize: 17, fontWeight: '700' },
 
-  // Mine text colors
-  textMine:          { color: PC.bg },
-  textMineSecondary: { color: 'rgba(10,10,10,0.6)' },
-  textMineMuted:     { color: 'rgba(10,10,10,0.45)' },
+  // Mine text colors — dark text on mint bubble
+  textMine:          { color: '#060A09' },
+  textMineSecondary: { color: 'rgba(6,10,9,0.65)' },
+  textMineMuted:     { color: 'rgba(6,10,9,0.45)' },
 
   bubbleDesc:   { fontSize: 13, marginTop: 3 },
   bubbleFooter: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
@@ -573,9 +575,9 @@ const s = StyleSheet.create({
     borderRadius: 20, borderWidth: 1,
     borderColor: PC.border, backgroundColor: PC.bgCardElevated,
   },
-  paidByChipActive: { borderColor: PC.textPrimary, backgroundColor: PC.textPrimary },
+  paidByChipActive: { borderColor: PC.accent, backgroundColor: PC.accent },
   paidByChipText:       { color: PC.textSecondary, fontSize: 12, fontWeight: '500' },
-  paidByChipTextActive: { color: PC.bg, fontWeight: '600' },
+  paidByChipTextActive: { color: '#060A09', fontWeight: '600' },
 
   inputRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
 
@@ -596,7 +598,7 @@ const s = StyleSheet.create({
 
   sendBtn: {
     width: 44, height: 44, borderRadius: 13,
-    backgroundColor: PC.textPrimary,
+    backgroundColor: PC.accent,
     alignItems: 'center', justifyContent: 'center',
   },
 
@@ -615,8 +617,8 @@ const s = StyleSheet.create({
   settleConfirmBar: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 14, paddingVertical: 10,
-    borderTopWidth: 1, borderTopColor: 'rgba(92,184,92,0.25)',
-    backgroundColor: 'rgba(92,184,92,0.07)',
+    borderTopWidth: 1, borderTopColor: 'rgba(0,229,190,0.25)',
+    backgroundColor: 'rgba(0,229,190,0.07)',
     gap: 10,
   },
   settleConfirmTitle: { color: PC.positive, fontSize: 12, fontWeight: '600', marginBottom: 2 },
@@ -627,5 +629,5 @@ const s = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 7,
     borderRadius: 20,
   },
-  settleConfirmBtnText: { color: PC.bg, fontSize: 12, fontWeight: '600' },
+  settleConfirmBtnText: { color: '#060A09', fontSize: 12, fontWeight: '600' },
 });
