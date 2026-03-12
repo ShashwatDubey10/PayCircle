@@ -2,12 +2,22 @@ import { DarkTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef } from 'react';
+import { Text, TextInput } from 'react-native';
 import 'react-native-reanimated';
 import * as Notifications from 'expo-notifications';
+import * as SplashScreen from 'expo-splash-screen';
 import Constants from 'expo-constants';
+import {
+  useFonts,
+  Roboto_400Regular,
+  Roboto_500Medium,
+  Roboto_700Bold,
+} from '@expo-google-fonts/roboto';
 
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { updatePushToken } from '@/services/friends';
+
+SplashScreen.preventAutoHideAsync();
 
 // Push notifications don't work in Expo Go (SDK 53+) — only in dev/production builds.
 // executionEnvironment is 'storeClient' in Expo Go, 'standalone' or 'bare' in real builds.
@@ -85,6 +95,26 @@ function RootGuard() {
 // ─── Root layout ──────────────────────────────────────────────────────────────
 
 export default function RootLayout() {
+  const [fontsLoaded] = useFonts({
+    Roboto_400Regular,
+    Roboto_500Medium,
+    Roboto_700Bold,
+  });
+
+  useEffect(() => {
+    if (fontsLoaded) {
+      // Apply Roboto globally — iOS will now match Android's default font
+      Text.defaultProps = Text.defaultProps ?? {};
+      Text.defaultProps.style = { fontFamily: 'Roboto_400Regular' };
+      TextInput.defaultProps = TextInput.defaultProps ?? {};
+      TextInput.defaultProps.style = { fontFamily: 'Roboto_400Regular' };
+
+      SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded]);
+
+  if (!fontsLoaded) return null;
+
   return (
     <AuthProvider>
       <ThemeProvider value={DarkTheme}>

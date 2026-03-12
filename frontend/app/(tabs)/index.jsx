@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,8 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Animated,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,121 +23,320 @@ import { PC } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
 
+const { width: SCREEN_W } = Dimensions.get('window');
+const CHART_W = SCREEN_W - 40 - 32; // screen - padding - card padding
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function getGreeting() {
   const h = new Date().getHours();
-  if (h < 12) return 'Good morning,';
-  if (h < 17) return 'Good afternoon,';
-  if (h < 21) return 'Good evening,';
-  return 'Good night,';
+  if (h < 12) return 'Good morning';
+  if (h < 17) return 'Good afternoon';
+  if (h < 21) return 'Good evening';
+  return 'Good night';
 }
 
 function getInitials(name = '') {
-  return name
-    .trim()
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0].toUpperCase())
-    .join('');
+  return name.trim().split(' ').filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
 }
 
 function formatMonth(monthStr) {
-  // "2026-02" → "Feb 2026"
   if (!monthStr) return '';
-  const parts = monthStr.split('-');
-  if (parts.length < 2) return monthStr;
-  const [year, raw] = parts;
+  const [year, raw] = monthStr.split('-');
   const m = parseInt(raw, 10);
   if (isNaN(m) || m < 1 || m > 12) return monthStr;
-  const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  return `${names[m - 1]} ${year}`;
+  return `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m - 1]} ${year}`;
 }
 
 function formatDate(dateStr) {
   if (!dateStr) return '';
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return '';
-  const now   = new Date();
+  const now = new Date();
   const diffH = (now - d) / 3_600_000;
-  if (diffH < 1)  return 'Just now';
+  if (diffH < 1) return 'Just now';
   if (diffH < 24) return `${Math.floor(diffH)}h ago`;
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  return `${months[d.getMonth()]} ${d.getDate()}`;
+  if (diffH < 48) return 'Yesterday';
+  return `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]} ${d.getDate()}`;
+}
+
+function shortDay(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  return ['S','M','T','W','T','F','S'][d.getDay()];
 }
 
 const CATEGORY_ICONS = {
-  Food:          'fast-food-outline',
-  Travel:        'airplane-outline',
-  Utilities:     'flash-outline',
-  Entertainment: 'film-outline',
-  Health:        'fitness-outline',
-  Shopping:      'bag-outline',
-  Salary:        'briefcase-outline',
-  Freelance:     'laptop-outline',
-  Investment:    'trending-up-outline',
-  Miscellaneous: 'grid-outline',
+  Food: 'fast-food-outline', Travel: 'airplane-outline', Utilities: 'flash-outline',
+  Entertainment: 'film-outline', Health: 'fitness-outline', Shopping: 'bag-outline',
+  Salary: 'briefcase-outline', Freelance: 'laptop-outline', Investment: 'trending-up-outline',
+  Miscellaneous: 'grid-outline', Settlement: 'swap-horizontal-outline', Split: 'people-outline',
 };
 
-const BAR_COLOR = { healthy: PC.positive, warning: PC.warning, critical: PC.negative, over: PC.negative };
+const CATEGORY_COLORS = {
+  Food: '#FF8C42', Travel: '#4FC3F7', Utilities: '#FFB020', Entertainment: '#CE93D8',
+  Health: '#EF9A9A', Shopping: '#80CBC4', Salary: '#00E5BE', Freelance: '#A5D6A7',
+  Investment: '#00E5BE', Miscellaneous: '#637870', Settlement: '#4FC3F7', Split: '#CE93D8',
+};
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+const STATUS_COLOR = { healthy: PC.positive, warning: PC.warning, critical: PC.negative, over: PC.negative };
 
-function BudgetRing({ percent, status }) {
-  const color = BAR_COLOR[status] || PC.textPrimary;
+// ─── Animated progress bar ────────────────────────────────────────────────────
+
+function AnimatedBar({ pct, color, height = 5, delay = 0 }) {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(anim, {
+      toValue: pct / 100,
+      duration: 900,
+      delay,
+      useNativeDriver: false,
+    }).start();
+  }, [pct, delay]);
   return (
-    <View style={[styles.ring, { borderColor: color }]}>
-      <Text style={[styles.ringPercent, { color }]}>{percent}%</Text>
-      <Text style={styles.ringLabel}>used</Text>
+    <View style={[styles.barTrack, { height }]}>
+      <Animated.View
+        style={[
+          styles.barFill,
+          { height, backgroundColor: color, width: anim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) },
+        ]}
+      />
     </View>
   );
 }
 
-function TransactionRow({ item, last }) {
-  const isIncome = item.type === 'income';
-  const icon     = CATEGORY_ICONS[item.category] || 'swap-horizontal-outline';
+// ─── Budget Hero Card ─────────────────────────────────────────────────────────
+
+function BudgetHero({ budget, onEdit, onManage }) {
+  const hasData = budget?.budget > 0;
+  const pct = hasData ? Math.min(Math.round(budget.usagePercentage ?? 0), 100) : 0;
+  const status = budget?.status || 'healthy';
+  const barColor = STATUS_COLOR[status];
+  const month = formatMonth(budget?.month);
+  const remaining = budget?.remaining ?? 0;
+
+  if (!hasData) {
+    return (
+      <TouchableOpacity style={styles.budgetHeroEmpty} onPress={onEdit} activeOpacity={0.8}>
+        <View style={styles.budgetHeroEmptyInner}>
+          <View style={styles.budgetEmptyIcon}>
+            <Ionicons name="wallet-outline" size={24} color={PC.accent} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.budgetEmptyTitle}>No budget set</Text>
+            <Text style={styles.budgetEmptyHint}>Tap to set a monthly spending limit</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={PC.textMuted} />
+        </View>
+      </TouchableOpacity>
+    );
+  }
+
   return (
-    <>
-      <View style={styles.txRow}>
-        <View style={styles.txIconBox}>
-          <Ionicons name={icon} size={19} color={PC.textSecondary} />
-        </View>
-        <View style={styles.txMeta}>
-          <Text style={styles.txLabel}>{item.category}</Text>
-          <Text style={styles.txDate}>{formatDate(item.date)}</Text>
-        </View>
-        <View style={styles.txRight}>
-          <Text style={[styles.txAmount, isIncome ? styles.amtPos : styles.amtNeg]}>
-            {isIncome ? '+' : '-'}₹{(item.amount ?? 0).toLocaleString('en-IN')}
+    <TouchableOpacity style={styles.budgetHero} activeOpacity={0.9} onPress={onManage}>
+      {/* Top row */}
+      <View style={styles.budgetHeroTop}>
+        <View>
+          <Text style={styles.budgetHeroLabel}>Monthly Budget · {month}</Text>
+          <Text style={styles.budgetHeroAmount}>
+            ₹{(budget.spent ?? 0).toLocaleString('en-IN')}
+            <Text style={styles.budgetHeroOf}> / ₹{(budget.budget ?? 0).toLocaleString('en-IN')}</Text>
           </Text>
-          <Text style={styles.txCategory}>{item.notes || item.type}</Text>
+        </View>
+        <View style={[styles.budgetPctBadge, { borderColor: barColor + '60' }]}>
+          <Text style={[styles.budgetPctText, { color: barColor }]}>{pct}%</Text>
         </View>
       </View>
-      {!last && <View style={styles.txDivider} />}
+
+      {/* Progress bar */}
+      <AnimatedBar pct={pct} color={barColor} height={8} />
+
+      {/* Bottom row */}
+      <View style={styles.budgetHeroBottom}>
+        <View style={styles.budgetHeroStat}>
+          <View style={[styles.budgetDot, { backgroundColor: barColor }]} />
+          <Text style={styles.budgetHeroStatText}>
+            {remaining >= 0
+              ? `₹${remaining.toLocaleString('en-IN')} left`
+              : `₹${Math.abs(remaining).toLocaleString('en-IN')} over`}
+          </Text>
+        </View>
+        <TouchableOpacity onPress={onEdit} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Text style={styles.budgetEditLink}>Edit budget</Text>
+        </TouchableOpacity>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+// ─── Category bar chart ───────────────────────────────────────────────────────
+
+function CategoryChart({ transactions }) {
+  // Aggregate expense transactions by category
+  const cats = {};
+  for (const tx of transactions) {
+    if (tx.type !== 'expense') continue;
+    const c = tx.category || 'Miscellaneous';
+    cats[c] = (cats[c] || 0) + (tx.amount ?? 0);
+  }
+  const sorted = Object.entries(cats).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  if (sorted.length === 0) return null;
+  const max = sorted[0][1];
+
+  return (
+    <View style={styles.categoryChart}>
+      {sorted.map(([cat, amt], i) => {
+        const pct = Math.round((amt / max) * 100);
+        const color = CATEGORY_COLORS[cat] || PC.textSecondary;
+        return (
+          <View key={cat} style={styles.catRow}>
+            <View style={styles.catLeft}>
+              <View style={[styles.catDot, { backgroundColor: color }]} />
+              <Text style={styles.catLabel}>{cat}</Text>
+            </View>
+            <View style={styles.catBarWrap}>
+              <AnimatedBar pct={pct} color={color} height={6} delay={i * 80} />
+            </View>
+            <Text style={styles.catAmt}>₹{amt.toLocaleString('en-IN')}</Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+// ─── 7-day sparkline ──────────────────────────────────────────────────────────
+
+function SpendingSparkline({ transactions }) {
+  // Build last-7-days buckets
+  const today = new Date();
+  const buckets = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today);
+    d.setDate(today.getDate() - (6 - i));
+    return { label: shortDay(d.toISOString()), date: d.toISOString().slice(0, 10), amount: 0 };
+  });
+
+  for (const tx of transactions) {
+    if (tx.type !== 'expense') continue;
+    const txDate = new Date(tx.date).toISOString().slice(0, 10);
+    const bucket = buckets.find(b => b.date === txDate);
+    if (bucket) bucket.amount += tx.amount ?? 0;
+  }
+
+  const max = Math.max(...buckets.map(b => b.amount), 1);
+  const barW = Math.floor((CHART_W - 60) / 7 - 6);
+
+  return (
+    <View style={styles.sparkline}>
+      <View style={styles.sparkBars}>
+        {buckets.map((b, i) => {
+          const h = Math.max(Math.round((b.amount / max) * 72), 3);
+          const isToday = i === 6;
+          return (
+            <View key={i} style={styles.sparkCol}>
+              <View style={styles.sparkBarWrap}>
+                <View
+                  style={[
+                    styles.sparkBar,
+                    {
+                      height: h,
+                      width: barW,
+                      backgroundColor: isToday ? PC.accent : (b.amount > 0 ? PC.accent + '55' : PC.border),
+                      borderRadius: 4,
+                    },
+                  ]}
+                />
+              </View>
+              <Text style={[styles.sparkLabel, isToday && { color: PC.accent }]}>{b.label}</Text>
+            </View>
+          );
+        })}
+      </View>
+      <View style={styles.sparkLegend}>
+        <Text style={styles.sparkLegendText}>Last 7 days</Text>
+        <Text style={styles.sparkLegendAmt}>
+          ₹{buckets.reduce((s, b) => s + b.amount, 0).toLocaleString('en-IN')} total
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+// ─── Rich Transaction Row ─────────────────────────────────────────────────────
+
+function ActivityRow({ item, last }) {
+  const isIncome = item.type === 'income';
+  const icon = CATEGORY_ICONS[item.category] || 'swap-horizontal-outline';
+  const color = CATEGORY_COLORS[item.category] || PC.textSecondary;
+  const isSettlement = item.category === 'Settlement' || item.category === 'Split';
+
+  return (
+    <>
+      <View style={styles.actRow}>
+        <View style={[styles.actIconBox, { backgroundColor: color + '18', borderColor: color + '35' }]}>
+          <Ionicons name={icon} size={17} color={color} />
+        </View>
+        <View style={styles.actInfo}>
+          <Text style={styles.actLabel} numberOfLines={1}>
+            {item.notes || item.category}
+          </Text>
+          <View style={styles.actMetaRow}>
+            <View style={[styles.actCatPill, { backgroundColor: color + '18' }]}>
+              <Text style={[styles.actCatText, { color }]}>{item.category}</Text>
+            </View>
+            <Text style={styles.actDate}>{formatDate(item.date)}</Text>
+          </View>
+        </View>
+        <View style={styles.actRight}>
+          <Text style={[styles.actAmount, isIncome ? styles.amtPos : styles.amtNeg]}>
+            {isIncome ? '+' : '−'}₹{(item.amount ?? 0).toLocaleString('en-IN')}
+          </Text>
+          {isSettlement && (
+            <View style={styles.actSettleBadge}>
+              <Text style={styles.actSettleText}>settled</Text>
+            </View>
+          )}
+        </View>
+      </View>
+      {!last && <View style={styles.actDivider} />}
     </>
   );
 }
 
-function SkeletonBox({ height = 120, mb = 14, radius = 16 }) {
-  return <View style={[styles.skeleton, { height, marginBottom: mb, borderRadius: radius }]} />;
+// ─── Skeleton ─────────────────────────────────────────────────────────────────
+
+function Skeleton({ h = 100, r = 16, mb = 12 }) {
+  const anim = useRef(new Animated.Value(0.4)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(anim, { toValue: 0.9, duration: 800, useNativeDriver: true }),
+        Animated.timing(anim, { toValue: 0.4, duration: 800, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, []);
+  return (
+    <Animated.View style={{ height: h, borderRadius: r, marginBottom: mb, backgroundColor: PC.bgCard, opacity: anim }} />
+  );
 }
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function DashboardScreen() {
-  const router       = useRouter();
-  const { user }     = useAuth();
+  const router   = useRouter();
+  const { user } = useAuth();
 
-  const [dash,               setDash]               = useState(null);
-  const [budget,             setBudget]             = useState(null);
-  const [recent,             setRecent]             = useState([]);
-  const [loading,            setLoading]            = useState(true);
-  const [refreshing,         setRefreshing]         = useState(false);
-  const [error,              setError]              = useState('');
-  const [budgetModalVisible, setBudgetModalVisible] = useState(false);
-  const [budgetInput,        setBudgetInput]        = useState('');
-  const [budgetSaving,       setBudgetSaving]       = useState(false);
+  const [dash,         setDash]         = useState(null);
+  const [budget,       setBudget]       = useState(null);
+  const [recent,       setRecent]       = useState([]);
+  const [loading,      setLoading]      = useState(true);
+  const [refreshing,   setRefreshing]   = useState(false);
+  const [error,        setError]        = useState('');
+  const [modalVisible, setModalVisible] = useState(false);
+  const [budgetInput,  setBudgetInput]  = useState('');
+  const [budgetSaving, setBudgetSaving] = useState(false);
 
   const fetchAll = useCallback(async () => {
     try {
@@ -147,7 +348,7 @@ export default function DashboardScreen() {
       ]);
       setDash(dashRes.data.data);
       setBudget(budgetRes.data);
-      setRecent(txRes.data.transactions.slice(0, 5));
+      setRecent(txRes.data.transactions || []);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -158,70 +359,63 @@ export default function DashboardScreen() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  function onRefresh() {
-    setRefreshing(true);
-    fetchAll();
-  }
+  function onRefresh() { setRefreshing(true); fetchAll(); }
 
-  function openBudgetModal() {
+  function openModal() {
     setBudgetInput(budget?.budget > 0 ? String(budget.budget) : '');
-    setBudgetModalVisible(true);
+    setModalVisible(true);
   }
 
   async function saveBudget() {
     const amount = parseFloat(budgetInput);
     if (!budgetInput.trim() || isNaN(amount) || amount < 1) {
-      Alert.alert('Invalid Amount', 'Please enter a valid budget amount (minimum ₹1).');
+      Alert.alert('Invalid Amount', 'Please enter a valid amount (minimum ₹1).');
       return;
     }
     setBudgetSaving(true);
     try {
       await api.post('/api/users/me/budget', { amount });
-      setBudgetModalVisible(false);
+      setModalVisible(false);
       setBudgetInput('');
       fetchAll();
     } catch (err) {
-      Alert.alert('Error', err.message || 'Could not save budget. Please try again.');
+      Alert.alert('Error', err.message || 'Could not save budget.');
     } finally {
       setBudgetSaving(false);
     }
   }
 
-  // ── Derived values ──────────────────────────────────────────────────────────
+  // Derived
   const netGroupBalance = dash ? dash.totalToReceive - dash.totalOwed : 0;
-  const budgetPct       = budget ? Math.min(Math.round(budget.usagePercentage), 100) : 0;
-  const budgetStatus    = budget?.status || 'healthy';
-  const currentMonth    = formatMonth(budget?.month);
+  const recentSlice     = recent.slice(0, 8);
 
-  // ── Loading state ───────────────────────────────────────────────────────────
   if (loading) {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.loadingHeader}>
-          <SkeletonBox height={28} mb={4} radius={8} />
-          <SkeletonBox height={44} mb={0} radius={22} />
+          <Skeleton h={22} r={8} mb={6} />
+          <Skeleton h={38} r={10} mb={0} />
         </View>
         <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-          <SkeletonBox height={160} mb={14} radius={20} />
-          <View style={{ flexDirection: 'row', gap: 12, marginBottom: 14 }}>
-            <SkeletonBox height={100} mb={0} radius={16} />
-            <SkeletonBox height={100} mb={0} radius={16} />
+          <Skeleton h={110} r={20} mb={12} />
+          <Skeleton h={140} r={20} mb={12} />
+          <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
+            <View style={{ flex: 1 }}><Skeleton h={96} r={16} mb={0} /></View>
+            <View style={{ flex: 1 }}><Skeleton h={96} r={16} mb={0} /></View>
           </View>
-          <SkeletonBox height={110} mb={24} />
-          <SkeletonBox height={220} mb={0} />
+          <Skeleton h={160} r={16} mb={12} />
+          <Skeleton h={240} r={16} mb={0} />
         </ScrollView>
       </SafeAreaView>
     );
   }
 
-  // ── Error state ─────────────────────────────────────────────────────────────
   if (error) {
-    console.error('[Dashboard] fetch error:', error);
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.errorCenter}>
+        <View style={styles.centered}>
           <Ionicons name="cloud-offline-outline" size={42} color={PC.textMuted} />
-          <Text style={styles.errorMsg}>Something went wrong. Please try again.</Text>
+          <Text style={styles.errorMsg}>Something went wrong.</Text>
           <TouchableOpacity style={styles.retryBtn} onPress={fetchAll}>
             <Text style={styles.retryText}>Retry</Text>
           </TouchableOpacity>
@@ -237,135 +431,141 @@ export default function DashboardScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={PC.textSecondary}
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={PC.accent} />
         }>
 
         {/* ── Header ── */}
         <View style={styles.header}>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={styles.greeting}>{getGreeting()}</Text>
-            <Text style={styles.userName}>{user?.name?.split(' ')[0] ?? 'there'} 👋</Text>
+            <Text style={styles.userName}>{user?.name?.split(' ')[0] ?? 'there'}</Text>
           </View>
-          <TouchableOpacity style={styles.avatarBtn}>
+          <TouchableOpacity
+            style={styles.avatarBtn}
+            onPress={() => router.push('/(tabs)/profile')}>
             <Text style={styles.avatarText}>{getInitials(user?.name)}</Text>
           </TouchableOpacity>
         </View>
 
-        {/* ── Balance Card ── */}
+        {/* ══ 1. BUDGET HERO ══ */}
+        <BudgetHero
+          budget={budget}
+          onEdit={openModal}
+          onManage={() => router.push('/budget')}
+        />
+
+        {/* ══ 2. BALANCE CARD ══ */}
         <View style={styles.balanceCard}>
-          <View style={styles.balanceBadge}>
-            <Ionicons name="swap-horizontal-outline" size={14} color={PC.textSecondary} />
-            <Text style={styles.balanceBadgeText}>Group Net Balance</Text>
-          </View>
-          <Text style={[
-            styles.balanceAmount,
-            { color: netGroupBalance >= 0 ? PC.positive : PC.negative },
-          ]}>
-            {netGroupBalance >= 0 ? '+' : ''}₹{Math.abs(netGroupBalance).toLocaleString('en-IN')}
-          </Text>
-          <View style={styles.balanceDivider} />
-          <View style={styles.balanceRow}>
+          {/* Net */}
+          <View style={styles.balanceNetRow}>
             <View>
-              <Text style={styles.balanceSubLabel}>Owed to you</Text>
-              <Text style={[styles.balanceSubAmount, { color: PC.positive }]}>
+              <Text style={styles.balanceNetLabel}>Group net balance</Text>
+              <Text style={[
+                styles.balanceNetAmt,
+                { color: netGroupBalance >= 0 ? PC.positive : PC.negative },
+              ]}>
+                {netGroupBalance >= 0 ? '+' : ''}₹{Math.abs(netGroupBalance).toLocaleString('en-IN')}
+              </Text>
+            </View>
+            <View style={[
+              styles.netBadge,
+              { backgroundColor: (netGroupBalance >= 0 ? PC.positive : PC.negative) + '18' },
+            ]}>
+              <Ionicons
+                name={netGroupBalance >= 0 ? 'trending-up-outline' : 'trending-down-outline'}
+                size={18}
+                color={netGroupBalance >= 0 ? PC.positive : PC.negative}
+              />
+            </View>
+          </View>
+
+          <View style={styles.balanceDivider} />
+
+          {/* Owed row */}
+          <View style={styles.balanceSubRow}>
+            <View style={styles.balanceSubItem}>
+              <View style={styles.balanceSubIconRow}>
+                <View style={[styles.balanceSubDot, { backgroundColor: PC.positive }]} />
+                <Text style={styles.balanceSubLabel}>Owed to you</Text>
+              </View>
+              <Text style={[styles.balanceSubAmt, { color: PC.positive }]}>
                 +₹{(dash?.totalToReceive ?? 0).toLocaleString('en-IN')}
               </Text>
             </View>
-            <View style={styles.balanceSep} />
-            <View>
-              <Text style={styles.balanceSubLabel}>You owe</Text>
-              <Text style={[styles.balanceSubAmount, { color: PC.negative }]}>
-                -₹{(dash?.totalOwed ?? 0).toLocaleString('en-IN')}
+            <View style={styles.balanceSubSep} />
+            <View style={styles.balanceSubItem}>
+              <View style={styles.balanceSubIconRow}>
+                <View style={[styles.balanceSubDot, { backgroundColor: PC.negative }]} />
+                <Text style={styles.balanceSubLabel}>You owe</Text>
+              </View>
+              <Text style={[styles.balanceSubAmt, { color: PC.negative }]}>
+                −₹{(dash?.totalOwed ?? 0).toLocaleString('en-IN')}
               </Text>
             </View>
           </View>
         </View>
 
-        {/* ── Quick Stats ── */}
+        {/* ══ 3. QUICK STATS ══ */}
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
-            <View style={styles.statIconBox}>
-              <Ionicons name="arrow-up-outline" size={18} color={PC.negative} />
+            <View style={[styles.statIconBox, { backgroundColor: PC.negative + '18' }]}>
+              <Ionicons name="arrow-up-outline" size={16} color={PC.negative} />
             </View>
-            <Text style={styles.statAmount}>
-              ₹{(dash?.totalSpent?.combined ?? 0).toLocaleString('en-IN')}
-            </Text>
+            <Text style={styles.statAmt}>₹{(dash?.totalSpent?.combined ?? 0).toLocaleString('en-IN')}</Text>
             <Text style={styles.statLabel}>Spent this month</Text>
           </View>
           <View style={styles.statCard}>
-            <View style={styles.statIconBox}>
-              <Ionicons name="arrow-down-outline" size={18} color={PC.positive} />
+            <View style={[styles.statIconBox, { backgroundColor: PC.positive + '18' }]}>
+              <Ionicons name="arrow-down-outline" size={16} color={PC.positive} />
             </View>
-            <Text style={styles.statAmount}>
-              ₹{(dash?.personalIncome ?? 0).toLocaleString('en-IN')}
-            </Text>
+            <Text style={styles.statAmt}>₹{(dash?.personalIncome ?? 0).toLocaleString('en-IN')}</Text>
             <Text style={styles.statLabel}>Earned this month</Text>
           </View>
         </View>
 
-        {/* ── Budget Progress ── */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Monthly Budget</Text>
-            <TouchableOpacity onPress={() => router.push('/budget')}>
-              <Text style={styles.seeAll}>Manage →</Text>
-            </TouchableOpacity>
-          </View>
-          {budget?.budget > 0 ? (
-            <TouchableOpacity
-              style={styles.budgetCard}
-              activeOpacity={0.85}
-              onPress={() => router.push('/budget')}>
-              <View style={styles.budgetInfo}>
-                <Text style={styles.budgetPlan}>Plan · {currentMonth}</Text>
-                <Text style={styles.budgetNumbers}>
-                  ₹{(budget.spent ?? 0).toLocaleString('en-IN')}{' '}
-                  <Text style={styles.budgetOf}>
-                    / ₹{(budget.budget ?? 0).toLocaleString('en-IN')}
-                  </Text>
-                </Text>
-                <View style={styles.barTrack}>
-                  <View style={[
-                    styles.barFill,
-                    { width: `${budgetPct}%`, backgroundColor: BAR_COLOR[budgetStatus] || PC.textPrimary },
-                  ]} />
-                </View>
-                <Text style={styles.budgetRemaining}>
-                  {budget.remaining >= 0
-                    ? `₹${budget.remaining.toLocaleString('en-IN')} remaining`
-                    : `₹${Math.abs(budget.remaining).toLocaleString('en-IN')} over budget`}
-                </Text>
-              </View>
-              <BudgetRing percent={budgetPct} status={budgetStatus} />
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity style={styles.budgetEmpty} onPress={openBudgetModal}>
-              <Ionicons name="add-circle-outline" size={20} color={PC.textSecondary} />
-              <Text style={styles.budgetEmptyText}>Set a monthly budget</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+        {/* ══ 4. ANALYTICS ══ */}
+        {recent.some(t => t.type === 'expense') && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Analytics</Text>
+              <TouchableOpacity onPress={() => router.push('/(tabs)/transactions')}>
+                <Text style={styles.seeAll}>View all →</Text>
+              </TouchableOpacity>
+            </View>
 
-        {/* ── Recent Activity ── */}
+            <View style={styles.analyticsCard}>
+              {/* 7-day sparkline */}
+              <Text style={styles.analyticsSubhead}>Daily spending · last 7 days</Text>
+              <SpendingSparkline transactions={recent} />
+
+              <View style={styles.analyticsDivider} />
+
+              {/* Category breakdown */}
+              <Text style={styles.analyticsSubhead}>Top categories · this month</Text>
+              <CategoryChart transactions={recent} />
+            </View>
+          </View>
+        )}
+
+        {/* ══ 5. RECENT ACTIVITY ══ */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Recent Activity</Text>
             <TouchableOpacity onPress={() => router.push('/(tabs)/transactions')}>
-              <Text style={styles.seeAll}>See all</Text>
+              <Text style={styles.seeAll}>See all →</Text>
             </TouchableOpacity>
           </View>
-          {recent.length === 0 ? (
+
+          {recentSlice.length === 0 ? (
             <View style={styles.emptyCard}>
-              <Text style={styles.emptyText}>No transactions yet</Text>
+              <Ionicons name="receipt-outline" size={28} color={PC.textMuted} style={{ marginBottom: 10 }} />
+              <Text style={styles.emptyTitle}>No transactions yet</Text>
+              <Text style={styles.emptyHint}>Tap + on the Transactions tab to get started</Text>
             </View>
           ) : (
-            <View style={styles.txCard}>
-              {recent.map((tx, i) => (
-                <TransactionRow key={tx._id} item={tx} last={i === recent.length - 1} />
+            <View style={styles.actCard}>
+              {recentSlice.map((tx, i) => (
+                <ActivityRow key={tx._id ?? `recent-${i}`} item={tx} last={i === recentSlice.length - 1} />
               ))}
             </View>
           )}
@@ -375,22 +575,29 @@ export default function DashboardScreen() {
 
       {/* ── Budget Modal ── */}
       <Modal
-        visible={budgetModalVisible}
+        visible={modalVisible}
         transparent
         animationType="fade"
-        onRequestClose={() => setBudgetModalVisible(false)}>
+        onRequestClose={() => setModalVisible(false)}>
         <KeyboardAvoidingView
           style={styles.modalOverlay}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>
-              {budget?.budget > 0 ? 'Edit Monthly Budget' : 'Set Monthly Budget'}
-            </Text>
-            <Text style={styles.modalSubtitle}>
-              {formatMonth(budget?.month || new Date().toISOString().slice(0, 7))}
-            </Text>
+            <View style={styles.modalHeaderRow}>
+              <View>
+                <Text style={styles.modalTitle}>
+                  {budget?.budget > 0 ? 'Edit Budget' : 'Set Budget'}
+                </Text>
+                <Text style={styles.modalSub}>
+                  {formatMonth(budget?.month || new Date().toISOString().slice(0, 7))}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.modalCloseBtn}>
+                <Ionicons name="close" size={18} color={PC.textSecondary} />
+              </TouchableOpacity>
+            </View>
             <View style={styles.modalInputBox}>
-              <Text style={styles.modalCurrencySymbol}>₹</Text>
+              <Text style={styles.modalRupee}>₹</Text>
               <TextInput
                 style={styles.modalInput}
                 placeholder="e.g. 10000"
@@ -404,25 +611,23 @@ export default function DashboardScreen() {
             </View>
             <View style={styles.modalBtnRow}>
               <TouchableOpacity
-                style={styles.modalCancelBtn}
-                onPress={() => setBudgetModalVisible(false)}
+                style={styles.cancelBtn}
+                onPress={() => setModalVisible(false)}
                 disabled={budgetSaving}>
-                <Text style={styles.modalCancelText}>Cancel</Text>
+                <Text style={styles.cancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalSaveBtn, budgetSaving && { opacity: 0.6 }]}
+                style={[styles.saveBtn, budgetSaving && { opacity: 0.6 }]}
                 onPress={saveBudget}
                 disabled={budgetSaving}>
                 {budgetSaving
                   ? <ActivityIndicator size="small" color="#060A09" />
-                  : <Text style={styles.modalSaveText}>Save</Text>
-                }
+                  : <Text style={styles.saveText}>Save</Text>}
               </TouchableOpacity>
             </View>
           </View>
         </KeyboardAvoidingView>
       </Modal>
-
     </SafeAreaView>
   );
 }
@@ -432,190 +637,242 @@ export default function DashboardScreen() {
 const styles = StyleSheet.create({
   safe:          { flex: 1, backgroundColor: PC.bg },
   scroll:        { flex: 1 },
-  scrollContent: { paddingHorizontal: 20, paddingBottom: 32 },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 40 },
+  centered:      { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  errorMsg:      { color: PC.textSecondary, fontSize: 14, textAlign: 'center', paddingHorizontal: 32 },
+  retryBtn:      { paddingHorizontal: 24, paddingVertical: 10, backgroundColor: PC.bgCard, borderRadius: 10, borderWidth: 1, borderColor: PC.border },
+  retryText:     { color: PC.textPrimary, fontSize: 14 },
 
-  // Skeleton
-  skeleton: { backgroundColor: PC.bgCard },
-
-  // Loading header row (matches real header layout)
   loadingHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 24,
+    paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16,
+    flexDirection: 'row', justifyContent: 'space-between', gap: 12,
   },
-
-  // Error
-  errorCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  errorMsg:    { color: PC.textSecondary, fontSize: 14, textAlign: 'center', paddingHorizontal: 32 },
-  retryBtn:    { paddingHorizontal: 24, paddingVertical: 10, backgroundColor: PC.bgCard, borderRadius: 10, borderWidth: 1, borderColor: PC.border },
-  retryText:   { color: PC.textPrimary, fontSize: 14 },
 
   // Header
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 16,
-    paddingBottom: 24,
+    paddingTop: 18,
+    paddingBottom: 20,
   },
-  greeting: { color: PC.textSecondary, fontSize: 13, marginBottom: 2 },
-  userName:  { color: PC.textPrimary,   fontSize: 22, fontWeight: '700' },
+  greeting: { color: PC.textSecondary, fontSize: 12, letterSpacing: 0.4, marginBottom: 2 },
+  userName:  { color: PC.textPrimary, fontSize: 24, fontWeight: '700', letterSpacing: -0.5 },
   avatarBtn: {
-    width: 44, height: 44, borderRadius: 22,
+    width: 46, height: 46, borderRadius: 23,
     backgroundColor: PC.bgCardElevated,
-    borderWidth: 1.5, borderColor: PC.accent,
+    borderWidth: 1.5, borderColor: PC.accent + '80',
     alignItems: 'center', justifyContent: 'center',
   },
-  avatarText: { color: PC.textPrimary, fontSize: 14, fontWeight: '600' },
+  avatarText: { color: PC.accent, fontSize: 14, fontWeight: '700' },
 
-  // Balance card
+  // ── Budget Hero
+  budgetHero: {
+    backgroundColor: PC.bgCard,
+    borderRadius: 20, borderWidth: 1, borderColor: PC.border,
+    padding: 20, marginBottom: 12,
+  },
+  budgetHeroEmpty: {
+    backgroundColor: PC.bgCard,
+    borderRadius: 20, borderWidth: 1, borderColor: PC.border,
+    borderStyle: 'dashed', marginBottom: 12,
+  },
+  budgetHeroEmptyInner: {
+    flexDirection: 'row', alignItems: 'center', padding: 18, gap: 14,
+  },
+  budgetEmptyIcon: {
+    width: 44, height: 44, borderRadius: 14,
+    backgroundColor: PC.accent10,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  budgetEmptyTitle: { color: PC.textPrimary, fontSize: 15, fontWeight: '600', marginBottom: 3 },
+  budgetEmptyHint:  { color: PC.textMuted, fontSize: 12 },
+
+  budgetHeroTop: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14,
+  },
+  budgetHeroLabel:  { color: PC.textSecondary, fontSize: 11, letterSpacing: 0.4, marginBottom: 5, textTransform: 'uppercase' },
+  budgetHeroAmount: {
+    color: PC.textPrimary, fontSize: 26, fontWeight: '700', letterSpacing: -1,
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
+  budgetHeroOf: { color: PC.textSecondary, fontWeight: '400', fontSize: 15 },
+  budgetPctBadge: {
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 20, borderWidth: 1,
+    backgroundColor: PC.bgCardElevated,
+  },
+  budgetPctText: { fontSize: 14, fontWeight: '700' },
+  budgetHeroBottom: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10,
+  },
+  budgetHeroStat:     { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  budgetDot:          { width: 7, height: 7, borderRadius: 4 },
+  budgetHeroStatText: { color: PC.textSecondary, fontSize: 12 },
+  budgetEditLink:     { color: PC.accent, fontSize: 12, fontWeight: '500' },
+
+  barTrack: { backgroundColor: PC.border, borderRadius: 6, overflow: 'hidden', width: '100%' },
+  barFill:  { borderRadius: 6 },
+
+  // ── Balance card
   balanceCard: {
     backgroundColor: PC.bgCard,
     borderRadius: 20, borderWidth: 1, borderColor: PC.border,
-    padding: 24, marginBottom: 14,
+    padding: 20, marginBottom: 12,
   },
-  balanceBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
-  balanceBadgeText: { color: PC.textSecondary, fontSize: 13 },
-  balanceAmount: {
-    fontSize: 44,
-    fontWeight: '700',
-    letterSpacing: -2,
-    marginBottom: 20,
+  balanceNetRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16,
+  },
+  balanceNetLabel: { color: PC.textSecondary, fontSize: 11, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 5 },
+  balanceNetAmt: {
+    fontSize: 32, fontWeight: '700', letterSpacing: -1.5,
     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
+  netBadge: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   balanceDivider: { height: 1, backgroundColor: PC.border, marginBottom: 16 },
-  balanceRow:     { flexDirection: 'row', alignItems: 'center' },
-  balanceSep:     { width: 1, height: 32, backgroundColor: PC.border, marginHorizontal: 24 },
-  balanceSubLabel:  { color: PC.textSecondary, fontSize: 12, marginBottom: 4 },
-  balanceSubAmount: {
-    fontSize: 18,
-    fontWeight: '600',
+  balanceSubRow: { flexDirection: 'row', alignItems: 'center' },
+  balanceSubItem: { flex: 1 },
+  balanceSubSep:  { width: 1, height: 36, backgroundColor: PC.border, marginHorizontal: 16 },
+  balanceSubIconRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 5 },
+  balanceSubDot: { width: 6, height: 6, borderRadius: 3 },
+  balanceSubLabel: { color: PC.textSecondary, fontSize: 11 },
+  balanceSubAmt: {
+    fontSize: 18, fontWeight: '600',
     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
 
-  // Stats
-  statsRow: { flexDirection: 'row', gap: 12, marginBottom: 14 },
+  // ── Quick stats
+  statsRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
   statCard: {
     flex: 1, backgroundColor: PC.bgCard,
     borderRadius: 16, borderWidth: 1, borderColor: PC.border, padding: 16,
   },
   statIconBox: {
     width: 34, height: 34, borderRadius: 10,
-    backgroundColor: PC.bgCardElevated,
     alignItems: 'center', justifyContent: 'center', marginBottom: 10,
   },
-  statAmount: {
-    color: PC.textPrimary,
-    fontSize: 17,
-    fontWeight: '600',
-    marginBottom: 3,
+  statAmt: {
+    color: PC.textPrimary, fontSize: 16, fontWeight: '600', marginBottom: 3,
     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
-  statLabel:  { color: PC.textSecondary, fontSize: 11 },
+  statLabel: { color: PC.textSecondary, fontSize: 11 },
 
-  // Section
-  section: { marginBottom: 24 },
+  // ── Section wrapper
+  section: { marginBottom: 20 },
   sectionHeader: {
-    flexDirection: 'row', justifyContent: 'space-between',
-    alignItems: 'center', marginBottom: 12,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10,
   },
-  sectionTitle: { color: PC.textPrimary, fontSize: 15, fontWeight: '600', marginBottom: 12 },
+  sectionTitle: { color: PC.textPrimary, fontSize: 15, fontWeight: '600' },
   seeAll:       { color: PC.textSecondary, fontSize: 13 },
 
-  // Budget
-  budgetCard: {
+  // ── Analytics card
+  analyticsCard: {
     backgroundColor: PC.bgCard,
     borderRadius: 16, borderWidth: 1, borderColor: PC.border,
-    padding: 20, flexDirection: 'row', alignItems: 'center',
+    padding: 16,
   },
-  budgetInfo:      { flex: 1 },
-  budgetPlan:      { color: PC.textSecondary, fontSize: 12, marginBottom: 6 },
-  budgetNumbers:   { color: PC.textPrimary, fontSize: 18, fontWeight: '600', marginBottom: 12 },
-  budgetOf:        { color: PC.textSecondary, fontWeight: '400', fontSize: 14 },
-  barTrack:        { height: 5, backgroundColor: PC.border, borderRadius: 3, overflow: 'hidden', marginBottom: 8 },
-  barFill:         { height: '100%', borderRadius: 2 },
-  budgetRemaining: { color: PC.textSecondary, fontSize: 11 },
-  budgetEmpty: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    backgroundColor: PC.bgCard, borderRadius: 16,
-    borderWidth: 1, borderColor: PC.border, borderStyle: 'dashed', padding: 20,
+  analyticsSubhead: {
+    color: PC.textSecondary, fontSize: 11, fontWeight: '500',
+    textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 12,
   },
-  budgetEmptyText: { color: PC.textSecondary, fontSize: 14 },
+  analyticsDivider: { height: 1, backgroundColor: PC.border, marginVertical: 16 },
 
-  // Ring
-  ring: {
-    width: 68, height: 68, borderRadius: 34,
-    borderWidth: 3.5,
-    alignItems: 'center', justifyContent: 'center', marginLeft: 20,
-  },
-  ringPercent: { fontSize: 15, fontWeight: '700' },
-  ringLabel:   { color: PC.textSecondary, fontSize: 9, marginTop: 1 },
+  // Sparkline
+  sparkline: {},
+  sparkBars: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, marginBottom: 8 },
+  sparkCol:  { alignItems: 'center', flex: 1 },
+  sparkBarWrap: { height: 72, justifyContent: 'flex-end', width: '100%', alignItems: 'center' },
+  sparkBar:  {},
+  sparkLabel: { color: PC.textMuted, fontSize: 10, marginTop: 5 },
+  sparkLegend: { flexDirection: 'row', justifyContent: 'space-between' },
+  sparkLegendText: { color: PC.textMuted, fontSize: 11 },
+  sparkLegendAmt:  { color: PC.textSecondary, fontSize: 11, fontWeight: '500' },
 
-  // Transactions
-  txCard: {
+  // Category chart
+  categoryChart: { gap: 10 },
+  catRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  catLeft: { flexDirection: 'row', alignItems: 'center', gap: 6, width: 90 },
+  catDot:  { width: 7, height: 7, borderRadius: 4, flexShrink: 0 },
+  catLabel: { color: PC.textSecondary, fontSize: 11, flexShrink: 1 },
+  catBarWrap: { flex: 1 },
+  catAmt: { color: PC.textSecondary, fontSize: 11, width: 70, textAlign: 'right' },
+
+  // ── Activity
+  actCard: {
     backgroundColor: PC.bgCard,
     borderRadius: 16, borderWidth: 1, borderColor: PC.border, overflow: 'hidden',
   },
-  txRow: {
+  actRow: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 16, paddingVertical: 14,
+    paddingHorizontal: 16, paddingVertical: 13,
   },
-  txIconBox: {
-    width: 40, height: 40, borderRadius: 11,
-    backgroundColor: PC.bgCardElevated,
-    alignItems: 'center', justifyContent: 'center', marginRight: 13,
+  actIconBox: {
+    width: 38, height: 38, borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center', marginRight: 12,
+    flexShrink: 0,
   },
-  txMeta:    { flex: 1 },
-  txLabel:   { color: PC.textPrimary,   fontSize: 14, fontWeight: '500', marginBottom: 3 },
-  txDate:    { color: PC.textSecondary, fontSize: 12 },
-  txRight:   { alignItems: 'flex-end' },
-  txAmount:  { fontSize: 14, fontWeight: '600', marginBottom: 2 },
-  txCategory:{ color: PC.textMuted, fontSize: 11 },
-  amtPos:    { color: PC.positive },
-  amtNeg:    { color: PC.negative },
-  txDivider: { height: 1, backgroundColor: PC.border, marginHorizontal: 16 },
+  actInfo:    { flex: 1, marginRight: 8 },
+  actLabel:   { color: PC.textPrimary, fontSize: 14, fontWeight: '500', marginBottom: 5 },
+  actMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  actCatPill: {
+    paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6,
+  },
+  actCatText: { fontSize: 10, fontWeight: '600', letterSpacing: 0.3 },
+  actDate:    { color: PC.textMuted, fontSize: 11 },
+  actRight:   { alignItems: 'flex-end', flexShrink: 0 },
+  actAmount:  { fontSize: 14, fontWeight: '600', marginBottom: 3 },
+  amtPos:     { color: PC.positive },
+  amtNeg:     { color: PC.negative },
+  actSettleBadge: {
+    backgroundColor: PC.white05,
+    borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2,
+  },
+  actSettleText: { color: PC.textMuted, fontSize: 9, fontWeight: '500', textTransform: 'uppercase', letterSpacing: 0.4 },
+  actDivider: { height: 1, backgroundColor: PC.border, marginHorizontal: 16 },
 
-  // Empty state
+  // Empty
   emptyCard: {
     backgroundColor: PC.bgCard,
     borderRadius: 16, borderWidth: 1, borderColor: PC.border,
-    padding: 32, alignItems: 'center',
+    padding: 36, alignItems: 'center',
   },
-  emptyText: { color: PC.textMuted, fontSize: 14 },
+  emptyTitle: { color: PC.textPrimary, fontSize: 15, fontWeight: '600', marginBottom: 5 },
+  emptyHint:  { color: PC.textMuted, fontSize: 13, textAlign: 'center' },
 
-  // Budget modal
+  // Modal
   modalOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.6)',
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.65)',
     justifyContent: 'center', alignItems: 'center', padding: 24,
   },
   modalCard: {
     width: '100%', backgroundColor: PC.bgCard,
-    borderRadius: 20, borderWidth: 1, borderColor: PC.border,
-    padding: 24,
+    borderRadius: 20, borderWidth: 1, borderColor: PC.border, padding: 24,
   },
-  modalTitle:    { color: PC.textPrimary, fontSize: 18, fontWeight: '700', marginBottom: 4 },
-  modalSubtitle: { color: PC.textSecondary, fontSize: 13, marginBottom: 20 },
+  modalHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
+  modalTitle:     { color: PC.textPrimary, fontSize: 18, fontWeight: '700', marginBottom: 3 },
+  modalSub:       { color: PC.textSecondary, fontSize: 13 },
+  modalCloseBtn:  {
+    width: 32, height: 32, borderRadius: 10,
+    backgroundColor: PC.bgCardElevated, borderWidth: 1, borderColor: PC.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
   modalInputBox: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: PC.bgInput, borderRadius: 12,
-    borderWidth: 1, borderColor: PC.border,
-    paddingHorizontal: 14, height: 52, marginBottom: 20,
+    backgroundColor: PC.bgInput, borderWidth: 1, borderColor: PC.border,
+    borderRadius: 12, paddingHorizontal: 14, height: 52, marginBottom: 20,
   },
-  modalCurrencySymbol: { color: PC.textSecondary, fontSize: 18, fontWeight: '600', marginRight: 8 },
-  modalInput: { flex: 1, color: PC.textPrimary, fontSize: 18, fontWeight: '500' },
+  modalRupee: { color: PC.textSecondary, fontSize: 20, fontWeight: '600', marginRight: 8 },
+  modalInput: { flex: 1, color: PC.textPrimary, fontSize: 20, fontWeight: '500' },
   modalBtnRow: { flexDirection: 'row', gap: 12 },
-  modalCancelBtn: {
+  cancelBtn: {
     flex: 1, height: 48, borderRadius: 12,
     borderWidth: 1, borderColor: PC.border,
     alignItems: 'center', justifyContent: 'center',
   },
-  modalCancelText: { color: PC.textSecondary, fontSize: 14, fontWeight: '500' },
-  modalSaveBtn: {
+  cancelText: { color: PC.textSecondary, fontSize: 14, fontWeight: '500' },
+  saveBtn: {
     flex: 1, height: 48, borderRadius: 12,
-    backgroundColor: PC.accent,
-    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: PC.accent, alignItems: 'center', justifyContent: 'center',
   },
-  modalSaveText: { color: '#060A09', fontSize: 14, fontWeight: '700' },
+  saveText: { color: '#060A09', fontSize: 14, fontWeight: '700' },
 });

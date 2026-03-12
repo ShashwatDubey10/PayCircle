@@ -62,10 +62,12 @@ export function AuthProvider({ children }) {
     let prevSnapshot = null;
     let merged = null;
     setUser(prev => {
+      if (!prev) return prev; // no-op when not logged in
       prevSnapshot = prev;
       merged = { ...prev, ...updatedUser };
       return merged;
     });
+    if (!merged) return; // was not logged in — nothing to persist
     try {
       // merged is set synchronously by the updater above (React calls it immediately
       // in the same tick when state is not batched across async boundaries).

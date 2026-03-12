@@ -1,4 +1,12 @@
 // PayCircle Design Tokens — Mint Terminal Edition
+
+// Font families — Roboto loaded globally so iOS matches Android
+export const FONTS = {
+  regular: 'Roboto_400Regular',
+  medium:  'Roboto_500Medium',
+  bold:    'Roboto_700Bold',
+};
+
 export const PC = {
   // Backgrounds — deep near-black with subtle teal warmth
   bg:             '#060A09',

@@ -45,9 +45,10 @@ const register = asyncHandler(async (req, res) => {
     user = await User.create({ name: name.trim(), email: email.toLowerCase(), password, username: cleanUsername });
   } catch (err) {
     if (err.code === 11000) {
-      const field = err.keyPattern?.username ? 'Username' : 'Email';
-      logger.warn('AUTH', `Register race — duplicate ${field.toLowerCase()}: ${email}`);
-      return res.status(409).json({ success: false, message: `${field} already registered` });
+      const isUsername = !!err.keyPattern?.username;
+      const msg = isUsername ? 'Username already taken' : 'Email already registered';
+      logger.warn('AUTH', `Register race — duplicate ${isUsername ? 'username' : 'email'}: ${email}`);
+      return res.status(409).json({ success: false, message: msg });
     }
     throw err;
   }

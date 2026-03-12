@@ -40,8 +40,6 @@ const userSchema = new mongoose.Schema(
       type: String,
       trim: true,
       lowercase: true,
-      sparse: true,
-      unique: true,
       match: [/^[a-z0-9_]{3,20}$/, 'Username must be 3–20 chars, letters/numbers/underscore only'],
     },
     expoPushToken: {
@@ -51,6 +49,10 @@ const userSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Sparse unique index — allows multiple docs with no username (null/undefined)
+// while still enforcing uniqueness among docs that do have one.
+userSchema.index({ username: 1 }, { unique: true, sparse: true });
 
 userSchema.pre('save', async function () {
   if (!this.isModified('password')) return;

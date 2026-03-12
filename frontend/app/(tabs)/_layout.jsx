@@ -2,7 +2,7 @@ import { Tabs } from 'expo-router';
 import React from 'react';
 import { Ionicons } from '@expo/vector-icons';
 
-import { PC } from '@/constants/theme';
+import { PC, FONTS } from '@/constants/theme';
 
 function TabIcon({ name, color, size }) {
   return <Ionicons name={name} size={size} color={color} />;
@@ -25,7 +25,7 @@ export default function TabLayout() {
         },
         tabBarLabelStyle: {
           fontSize: 11,
-          fontWeight: '600',
+          fontFamily: FONTS.medium,
         },
       }}>
       <Tabs.Screen

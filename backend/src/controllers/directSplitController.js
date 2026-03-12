@@ -217,7 +217,7 @@ const confirmSettle = asyncHandler(async (req, res) => {
   // Atomically flip status to 'confirmed' only if it is still 'pending'.
   // This prevents two concurrent requests from both succeeding.
   const confirmed = await DirectSettle.findOneAndUpdate(
-    { _id: settle._id, status: { $ne: 'confirmed' } },
+    { _id: settle._id, status: 'pending' },
     { $set: { status: 'confirmed', confirmedAt: new Date() } },
     { new: true }
   );
@@ -260,10 +260,14 @@ const getAllDirectBalances = asyncHandler(async (req, res) => {
 
   const map = {}; // friendIdStr → { balance, friend }
   for (const s of splits) {
-    const payerStr  = s.payerId._id.toString();
+    if (!s.payerId || !s.otherUserId) continue; // skip if either user was deleted
+    const payerStr  = s.payerId?._id?.toString() ?? s.payerId.toString();
     const isPayer   = payerStr === meStr;
-    const friendId  = isPayer ? s.otherUserId._id.toString() : payerStr;
     const friendDoc = isPayer ? s.otherUserId : s.payerId;
+    const friendId  = isPayer
+      ? (s.otherUserId?._id?.toString() ?? s.otherUserId.toString())
+      : payerStr;
+    if (!friendId || !friendDoc) continue;
     if (!map[friendId]) map[friendId] = { balance: 0, friend: friendDoc };
     map[friendId].balance += isPayer ? s.amount / 2 : -(s.amount / 2);
   }

@@ -15,12 +15,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-
 import { PC } from '@/constants/theme';
 import api from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
-import { getAllDirectSplits, getAllDirectSettlements, getAllDirectBalances } from '@/services/directSplit';
+import { getAllDirectSplits, getAllDirectSettlements } from '@/services/directSplit';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -176,64 +174,6 @@ function TxRow({ tx, onLongPress, last }) {
           {tx._isSettlement && (
             <Text style={styles.settlementBadge}>settlement</Text>
           )}
-        </View>
-      </TouchableOpacity>
-      {!last && <View style={styles.txDivider} />}
-    </>
-  );
-}
-
-// ─── Settle Row ───────────────────────────────────────────────────────────────
-
-function SettleRow({ item, myId, onPress, last }) {
-  let icon, title, meta, amountText, amountStyle;
-
-  if (item._groupId) {
-    // Not Opened — group debt
-    const fromStr = item.from?.id ?? item.from?._id?.toString() ?? item.from?.toString();
-    const iOwe    = fromStr === myId?.toString();
-    const other   = iOwe ? (item.to?.name ?? 'Someone') : (item.from?.name ?? 'Someone');
-    icon        = 'people-outline';
-    title       = iOwe ? `You owe ${other}` : `${other} owes you`;
-    meta        = `${item._groupName} · group`;
-    amountText  = `₹${item.amount.toLocaleString('en-IN')}`;
-    amountStyle = iOwe ? styles.amtNeg : styles.amtPos;
-  } else if (item.status === 'pending') {
-    // Open — pending settle request
-    const fromStr = item.fromUserId?._id?.toString() ?? item.fromUserId?.toString();
-    const iDebtor = fromStr === myId?.toString();
-    const other   = iDebtor
-      ? (item.toUserId?.name   ?? 'Someone')
-      : (item.fromUserId?.name ?? 'Someone');
-    icon        = 'time-outline';
-    title       = iDebtor ? `Awaiting ${other}'s confirmation` : `${other} wants to settle`;
-    meta        = `₹${item.amount.toLocaleString('en-IN')} · pending`;
-    amountText  = `₹${item.amount.toLocaleString('en-IN')}`;
-    amountStyle = iDebtor ? styles.amtNeg : styles.amtPos;
-  } else {
-    // Not Opened — direct balance
-    const iOwe  = item.balance < 0;
-    const other = item.friend?.name ?? 'Friend';
-    icon        = 'swap-horizontal-outline';
-    title       = iOwe ? `You owe ${other}` : `${other} owes you`;
-    meta        = 'Direct · tap to settle';
-    amountText  = `₹${Math.abs(item.balance).toLocaleString('en-IN')}`;
-    amountStyle = iOwe ? styles.amtNeg : styles.amtPos;
-  }
-
-  return (
-    <>
-      <TouchableOpacity style={styles.txRow} onPress={onPress} activeOpacity={0.7}>
-        <View style={[styles.txIconBox, styles.txIconBoxSettlement]}>
-          <Ionicons name={icon} size={18} color={PC.textSecondary} />
-        </View>
-        <View style={styles.txInfo}>
-          <Text style={styles.txLabel} numberOfLines={1}>{title}</Text>
-          <Text style={styles.txMeta}>{meta}</Text>
-        </View>
-        <View style={styles.txAmountCol}>
-          <Text style={[styles.txAmount, amountStyle]}>{amountText}</Text>
-          <Ionicons name="chevron-forward" size={14} color={PC.textMuted} style={{ marginTop: 2 }} />
         </View>
       </TouchableOpacity>
       {!last && <View style={styles.txDivider} />}
@@ -412,17 +352,13 @@ function AddTransactionModal({ visible, onClose, onAdded }) {
 
 export default function TransactionsScreen() {
   const { user }   = useAuth();
-  const router     = useRouter();
 
   const [transactions,    setTransactions]    = useState([]);
   const [settlements,     setSettlements]     = useState([]); // normalized group + confirmed direct
   const [directSplits,    setDirectSplits]    = useState([]); // normalized
-  const [allDirectSettles, setAllDirectSettles] = useState([]); // all statuses, raw
-  const [directBalances,  setDirectBalances]  = useState([]); // per-friend net balances
-  const [groupBalanceMaps, setGroupBalanceMaps] = useState([]); // [{groupId, groupName, debts}]
+  const [allDirectSettles, setAllDirectSettles] = useState([]); // confirmed + pending, raw
 
   const [activeTab,     setActiveTab]     = useState('all');
-  const [settleFilter,  setSettleFilter]  = useState('closed'); // 'not_opened'|'open'|'closed'
   const [loading,       setLoading]       = useState(true);
   const [refreshing,    setRefreshing]    = useState(false);
   const [error,         setError]         = useState('');
@@ -437,16 +373,14 @@ export default function TransactionsScreen() {
   // ── Fetch all direct data (splits + settles + balances) ───────────────────
   const fetchDirectData = useCallback(async () => {
     try {
-      const [splitsData, settlesData, balancesData] = await Promise.all([
+      const [splitsData, settlesData] = await Promise.all([
         getAllDirectSplits(),
         getAllDirectSettlements(),
-        getAllDirectBalances(),
       ]);
       setDirectSplits(
         (splitsData.splits || []).map(s => normalizeDirectSplit(s, user?._id)).filter(Boolean)
       );
       setAllDirectSettles(settlesData.settlements || []);
-      setDirectBalances(balancesData.balances || []);
     } catch { /* non-critical */ }
   }, [user?._id]);
 
@@ -455,22 +389,15 @@ export default function TransactionsScreen() {
     try {
       const { data: gData } = await api.get('/api/groups');
       const groups = gData.groups || [];
-
-      const [settleResults, balanceResults] = groups.length
-        ? await Promise.all([
-            Promise.all(groups.map(async (g) => {
+      const settleResults = groups.length
+        ? await Promise.all(
+            groups.map(async (g) => {
               const { data } = await api.get(`/api/groups/${g._id}/settlements`);
               return (data.settlements || []).map(s => ({ ...s, groupName: g.name, groupId: g._id }));
-            })),
-            Promise.all(groups.map(async (g) => {
-              const { data } = await api.get(`/api/groups/${g._id}/balances`);
-              return { groupId: g._id, groupName: g.name, debts: data.debts || [] };
-            })),
-          ])
-        : [[], []];
-
+            })
+          )
+        : [];
       setSettlements(settleResults.flat().map(s => normalizeSettlement(s, user?._id)));
-      setGroupBalanceMaps(balanceResults);
     } catch { /* non-critical */ }
   }, [user?._id]);
 
@@ -526,50 +453,21 @@ export default function TransactionsScreen() {
   const net          = totalIncome - totalExpense;
 
   const allItems = [...transactions, ...settlements, ...directSplits].sort(
-    (a, b) => new Date(b.date) - new Date(a.date)
+    (a, b) => (Date.parse(b.date) || 0) - (Date.parse(a.date) || 0)
   );
 
-  const meIdStr = user?._id?.toString();
-
-  // Open: pending settle requests
-  const openSettles = allDirectSettles.filter(s => s.status === 'pending');
-
-  // Closed: confirmed direct settles (normalized)
+  // Confirmed direct settles (normalized for Settled tab)
   const closedDirectSettles = allDirectSettles
     .filter(s => s.status === 'confirmed')
     .map(s => normalizeDirectSettle(s, user?._id));
-
-  // Not Opened: direct balances with no pending settle
-  const notOpenedDirect = directBalances.filter(b => !b.hasPendingSettle);
-
-  // Not Opened: group debts involving current user
-  const notOpenedGroup = groupBalanceMaps.flatMap(gm =>
-    (gm.debts || [])
-      .filter(d => {
-        const fromStr = d.from?.id ?? d.from?._id?.toString() ?? d.from?.toString();
-        const toStr   = d.to?.id   ?? d.to?._id?.toString()   ?? d.to?.toString();
-        return fromStr === meIdStr || toStr === meIdStr;
-      })
-      .map(d => ({ ...d, _groupId: gm.groupId, _groupName: gm.groupName }))
-  );
 
   const filtered = (() => {
     switch (activeTab) {
       case 'income':      return transactions.filter(t => t.type === 'income');
       case 'expense':     return [...transactions.filter(t => t.type === 'expense'), ...directSplits]
-                            .sort((a, b) => new Date(b.date) - new Date(a.date));
-      case 'settlements': {
-        switch (settleFilter) {
-          case 'not_opened':
-            return [...notOpenedDirect, ...notOpenedGroup];
-          case 'open':
-            return openSettles;
-          case 'closed':
-          default:
-            return [...closedDirectSettles, ...settlements]
-              .sort((a, b) => new Date(b.date) - new Date(a.date));
-        }
-      }
+                            .sort((a, b) => (Date.parse(b.date) || 0) - (Date.parse(a.date) || 0));
+      case 'settlements': return [...closedDirectSettles, ...settlements]
+                            .sort((a, b) => (Date.parse(b.date) || 0) - (Date.parse(a.date) || 0));
       default:            return allItems;
     }
   })();
@@ -639,26 +537,6 @@ export default function TransactionsScreen() {
         ))}
       </View>
 
-      {/* ── Secondary filter (Settled sub-filters) ── */}
-      {activeTab === 'settlements' && (
-        <View style={styles.settleFilterRow}>
-          {[
-            { key: 'not_opened', label: 'Not Opened' },
-            { key: 'open',       label: 'Open' },
-            { key: 'closed',     label: 'Closed' },
-          ].map(({ key, label }) => (
-            <TouchableOpacity
-              key={key}
-              style={[styles.settleFilterBtn, settleFilter === key && styles.settleFilterActive]}
-              onPress={() => setSettleFilter(key)}>
-              <Text style={[styles.settleFilterText, settleFilter === key && styles.settleFilterTextActive]}>
-                {label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-
       {/* ── List ── */}
       {loading ? (
         <View style={styles.centered}>
@@ -693,54 +571,8 @@ export default function TransactionsScreen() {
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={PC.textPrimary} />
           }>
 
-          {/* Flat list for Not Opened + Open settle filters */}
-          {activeTab === 'settlements' && settleFilter !== 'closed' ? (
-            filtered.length === 0 ? (
-              <View style={styles.emptyState}>
-                <View style={styles.emptyIcon}>
-                  <Ionicons name="swap-horizontal-outline" size={28} color={PC.textMuted} />
-                </View>
-                <Text style={styles.emptyTitle}>
-                  {settleFilter === 'not_opened' ? 'No outstanding balances' : 'No pending requests'}
-                </Text>
-                <Text style={styles.emptyText}>
-                  {settleFilter === 'not_opened'
-                    ? 'All balances are settled or have open requests'
-                    : 'No settle requests awaiting confirmation'}
-                </Text>
-              </View>
-            ) : (
-              <View style={[styles.txCard, { marginHorizontal: 0 }]}>
-                {filtered.map((item, i) => {
-                  const key = item._id ?? item.friendId ?? `${item._groupId}-${i}`;
-                  const onPress = () => {
-                    if (item._groupId) {
-                      router.push(`/groups/${item._groupId}`);
-                    } else if (item.status === 'pending') {
-                      const fromStr  = item.fromUserId?._id?.toString() ?? item.fromUserId?.toString();
-                      const friendId = fromStr === meIdStr
-                        ? (item.toUserId?._id?.toString() ?? item.toUserId?.toString())
-                        : fromStr;
-                      router.push(`/direct/${friendId}`);
-                    } else {
-                      router.push(`/direct/${item.friendId}`);
-                    }
-                  };
-                  return (
-                    <SettleRow
-                      key={key}
-                      item={item}
-                      myId={user?._id}
-                      onPress={onPress}
-                      last={i === filtered.length - 1}
-                    />
-                  );
-                })}
-              </View>
-            )
-          ) : (
-            /* Grouped-by-month renderer for Closed + all other tabs */
-            Object.keys(grouped).length === 0 ? (
+          {/* Grouped-by-month renderer */}
+          {Object.keys(grouped).length === 0 ? (
               <View style={styles.emptyState}>
                 <View style={styles.emptyIcon}>
                   <Ionicons
@@ -779,7 +611,7 @@ export default function TransactionsScreen() {
                 </View>
               ))
             )
-          )}
+          }
 
           {allItems.length > 0 && activeTab !== 'settlements' && (
             <Text style={styles.hint}>Long-press a personal transaction to delete it</Text>
@@ -853,25 +685,6 @@ const styles = StyleSheet.create({
   toggleText:       { color: PC.textMuted, fontSize: 12, fontWeight: '500' },
   toggleTextActive: { color: PC.accent, fontWeight: '600' },
 
-  settleFilterRow: {
-    flexDirection: 'row',
-    marginHorizontal: 20,
-    gap: 8,
-    marginBottom: 12,
-  },
-  settleFilterBtn: {
-    flex: 1,
-    paddingVertical: 7,
-    alignItems: 'center',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: PC.border,
-    backgroundColor: PC.bgCard,
-  },
-  settleFilterActive:     { borderColor: PC.accent, backgroundColor: PC.accent10 },
-  settleFilterText:       { color: PC.textMuted, fontSize: 12, fontWeight: '500' },
-  settleFilterTextActive: { color: PC.accent, fontWeight: '600' },
-
   scroll:        { flex: 1 },
   scrollContent: { paddingHorizontal: 20, paddingBottom: 32 },
 
@@ -939,14 +752,6 @@ const styles = StyleSheet.create({
     marginTop: 3,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-  },
-
-  txShareBadge: {
-    color:      PC.textMuted,
-    fontSize:   10,
-    fontWeight: '500',
-    marginTop:  3,
-    textAlign:  'right',
   },
 
   hint: { color: PC.textMuted, fontSize: 12, textAlign: 'center', marginBottom: 8 },
