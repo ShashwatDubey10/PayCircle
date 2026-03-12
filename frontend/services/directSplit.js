@@ -14,3 +14,9 @@ export const requestSettle = (friendId, amount) =>
 
 export const confirmSettle = (friendId, requestId) =>
   api.put(`/api/users/me/direct/${friendId}/settle/${requestId}/confirm`).then(r => r.data);
+
+export const getAllDirectSettlements = () =>
+  api.get('/api/users/me/direct/settlements').then(r => r.data);
+
+export const getAllDirectBalances = () =>
+  api.get('/api/users/me/direct/balances').then(r => r.data);

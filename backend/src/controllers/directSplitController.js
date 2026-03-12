@@ -229,4 +229,69 @@ const confirmSettle = asyncHandler(async (req, res) => {
   res.json({ success: true, settle: confirmed });
 });
 
-module.exports = { addDirectSplit, getDirectSplits, getAllDirectSplits, requestSettle, confirmSettle };
+// GET /api/users/me/direct/settlements
+const getAllDirectSettlements = asyncHandler(async (req, res) => {
+  const meId = req.user._id;
+
+  const settles = await DirectSettle.find({
+    $or: [{ fromUserId: meId }, { toUserId: meId }],
+  })
+    .sort({ createdAt: -1 })
+    .populate('fromUserId', 'name username')
+    .populate('toUserId',   'name username');
+
+  res.json({ success: true, settlements: settles });
+});
+
+// GET /api/users/me/direct/balances
+const getAllDirectBalances = asyncHandler(async (req, res) => {
+  const meId  = req.user._id;
+  const meStr = meId.toString();
+
+  const [splits, confirms, pendings] = await Promise.all([
+    DirectSplit.find({ $or: [{ payerId: meId }, { otherUserId: meId }] })
+      .populate('payerId',     'name username _id')
+      .populate('otherUserId', 'name username _id'),
+    DirectSettle.find({ status: 'confirmed', $or: [{ fromUserId: meId }, { toUserId: meId }] }),
+    DirectSettle.find({ status: 'pending',   $or: [{ fromUserId: meId }, { toUserId: meId }] })
+      .populate('fromUserId', 'name username _id')
+      .populate('toUserId',   'name username _id'),
+  ]);
+
+  const map = {}; // friendIdStr → { balance, friend }
+  for (const s of splits) {
+    const payerStr  = s.payerId._id.toString();
+    const isPayer   = payerStr === meStr;
+    const friendId  = isPayer ? s.otherUserId._id.toString() : payerStr;
+    const friendDoc = isPayer ? s.otherUserId : s.payerId;
+    if (!map[friendId]) map[friendId] = { balance: 0, friend: friendDoc };
+    map[friendId].balance += isPayer ? s.amount / 2 : -(s.amount / 2);
+  }
+  for (const st of confirms) {
+    const fromStr  = st.fromUserId.toString();
+    const friendId = fromStr === meStr ? st.toUserId.toString() : fromStr;
+    if (!map[friendId]) continue;
+    map[friendId].balance += fromStr === meStr ? st.amount : -st.amount;
+  }
+
+  const pendingFriendIds = new Set(pendings.map(p => {
+    const fromStr = p.fromUserId._id?.toString() ?? p.fromUserId.toString();
+    return fromStr === meStr
+      ? (p.toUserId._id?.toString() ?? p.toUserId.toString())
+      : fromStr;
+  }));
+
+  const balances = Object.entries(map)
+    .filter(([, v]) => Math.abs(v.balance) >= 0.01)
+    .map(([friendId, v]) => ({
+      friendId,
+      friend:           v.friend,
+      balance:          Math.round(v.balance * 100) / 100,
+      hasPendingSettle: pendingFriendIds.has(friendId),
+    }));
+
+  logger.debug('DIRECT', `Balances for ${balances.length} friends`, { meId });
+  res.json({ success: true, balances });
+});
+
+module.exports = { addDirectSplit, getDirectSplits, getAllDirectSplits, requestSettle, confirmSettle, getAllDirectSettlements, getAllDirectBalances };
