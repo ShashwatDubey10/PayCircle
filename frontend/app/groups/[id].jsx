@@ -12,7 +12,14 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  LayoutAnimation,
+  UIManager,
 } from 'react-native';
+
+// Enable LayoutAnimation on Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -59,13 +66,20 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
   const [category,  setCategory]  = useState('Food');
   const [notes,     setNotes]     = useState('');
   const [payerId,   setPayerId]   = useState(user?._id ?? '');
-  const [loading,   setLoading]   = useState(false);
-  const [error,     setError]     = useState('');
+  const [loading,      setLoading]      = useState(false);
+  const [error,        setError]        = useState('');
+  const [splitType,    setSplitType]    = useState('equal');
+  const [customSplits, setCustomSplits] = useState([]);
+  const [showCustom,   setShowCustom]   = useState(false);
 
   async function handleSubmit() {
     const amt = parseFloat(amount);
     if (!amount || isNaN(amt) || amt <= 0) {
       setError('Enter a valid amount.');
+      return;
+    }
+    if (splitType === 'exact' && customSplits.length === 0) {
+      setError('Configure the custom split first.');
       return;
     }
     setLoading(true);
@@ -78,13 +92,16 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
         date: today,
         category,
         notes: notes.trim(),
-        splitType: 'equal',
+        splitType,
+        ...(splitType === 'exact' ? { splits: customSplits } : {}),
       });
       onAdded(data.expense);
       setAmount('');
       setNotes('');
       setPayerId(user?._id ?? '');
       setCategory('Food');
+      setSplitType('equal');
+      setCustomSplits([]);
       onClose();
     } catch (err) {
       setError(err.message);
@@ -100,6 +117,8 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
     setPayerId(user?._id ?? '');
     setCategory('Food');
     setError('');
+    setSplitType('equal');
+    setCustomSplits([]);
     onClose();
   }
 
@@ -107,7 +126,7 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <KeyboardAvoidingView
         style={styles.modalOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
         <ScrollView style={styles.modalSheet} bounces={false} keyboardShouldPersistTaps="handled">
           <View style={styles.modalHandle} />
@@ -129,7 +148,7 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
               placeholder="0.00"
               placeholderTextColor={PC.textMuted}
               value={amount}
-              onChangeText={(v) => { setAmount(v); setError(''); }}
+              onChangeText={(v) => { setAmount(v); setError(''); setCustomSplits([]); setSplitType('equal'); }}
               keyboardType="decimal-pad"
               editable={!loading}
             />
@@ -193,10 +212,53 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
             />
           </View>
 
-          <Text style={styles.splitNote}>
-            <Ionicons name="information-circle-outline" size={13} color={PC.textMuted} />{' '}
-            Amount will be split equally among all {members.length} members
-          </Text>
+          {/* Split type toggle */}
+          <Text style={styles.modalLabel}>Split</Text>
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+            <TouchableOpacity
+              style={[styles.chip, splitType === 'equal' && styles.chipActive]}
+              onPress={() => { setSplitType('equal'); setCustomSplits([]); }}
+              disabled={loading}>
+              <Ionicons name="people-outline" size={14} color={splitType === 'equal' ? PC.textPrimary : PC.textMuted} style={{ marginRight: 4 }} />
+              <Text style={[styles.chipText, splitType === 'equal' && styles.chipTextActive]}>Equal</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.chip, splitType === 'exact' && styles.chipActive]}
+              onPress={() => {
+                if (!amount || isNaN(parseFloat(amount))) {
+                  setError('Enter the amount before customising the split.');
+                  return;
+                }
+                setSplitType('exact');
+                setShowCustom(true);
+              }}
+              disabled={loading}>
+              <Ionicons name="options-outline" size={14} color={splitType === 'exact' ? PC.textPrimary : PC.textMuted} style={{ marginRight: 4 }} />
+              <Text style={[styles.chipText, splitType === 'exact' && styles.chipTextActive]}>Custom</Text>
+            </TouchableOpacity>
+          </View>
+
+          {splitType === 'exact' && customSplits.length > 0 && (
+            <TouchableOpacity onPress={() => setShowCustom(true)} style={styles.splitPreviewBox}>
+              {customSplits.map(s => {
+                const member = members.find(m => m.id === s.userId);
+                return (
+                  <View key={s.userId} style={styles.splitPreviewRow}>
+                    <Text style={styles.splitPreviewName}>{member?.name?.split(' ')[0]}</Text>
+                    <Text style={styles.splitPreviewAmt}>₹{s.amount.toFixed(2)}</Text>
+                  </View>
+                );
+              })}
+              <Text style={styles.splitPreviewEdit}>Tap to edit</Text>
+            </TouchableOpacity>
+          )}
+
+          {splitType === 'equal' && (
+            <Text style={styles.splitNote}>
+              <Ionicons name="information-circle-outline" size={13} color={PC.textMuted} />{' '}
+              Amount will be split equally among all {members.length} members
+            </Text>
+          )}
 
           <TouchableOpacity
             style={[styles.createBtn, loading && styles.createBtnDisabled]}
@@ -207,6 +269,147 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
               ? <ActivityIndicator color="#060A09" size="small" />
               : <Text style={styles.createBtnText}>Add Expense</Text>
             }
+          </TouchableOpacity>
+          <View style={{ height: 20 }} />
+        </ScrollView>
+
+        <CustomSplitModal
+          visible={showCustom}
+          onClose={() => setShowCustom(false)}
+          members={members}
+          payerId={payerId}
+          totalAmount={parseFloat(amount) || 0}
+          onConfirm={(splits) => {
+            setCustomSplits(splits);
+            setShowCustom(false);
+          }}
+        />
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+// ─── Custom Split Modal ───────────────────────────────────────────────────────
+
+function CustomSplitModal({ visible, onClose, members, payerId, totalAmount, onConfirm }) {
+  const [amounts,   setAmounts]   = useState({});
+  const [lockedIds, setLockedIds] = useState(new Set());
+
+  useEffect(() => {
+    if (!visible) return;
+    if (!members.length || !totalAmount) return;
+    const equal = (totalAmount / members.length).toFixed(2);
+    const init = {};
+    members.forEach(m => { init[m.id] = equal; });
+    setAmounts(init);
+    setLockedIds(new Set());
+  }, [visible]);
+
+  function handleChange(memberId, rawValue) {
+    const newLocked = new Set(lockedIds);
+    newLocked.add(memberId);
+
+    const newAmounts = { ...amounts, [memberId]: rawValue };
+
+    let sumLocked = 0;
+    for (const id of newLocked) {
+      sumLocked += parseFloat(newAmounts[id]) || 0;
+    }
+
+    const remaining = totalAmount - sumLocked;
+    const unlocked = members.filter(m => !newLocked.has(m.id));
+
+    if (unlocked.length > 0) {
+      const each = (remaining / unlocked.length).toFixed(2);
+      unlocked.forEach(m => { newAmounts[m.id] = each; });
+    }
+
+    setAmounts(newAmounts);
+    setLockedIds(newLocked);
+  }
+
+  function resetEqual() {
+    if (!members.length || !totalAmount) return;
+    const equal = (totalAmount / members.length).toFixed(2);
+    const init = {};
+    members.forEach(m => { init[m.id] = equal; });
+    setAmounts(init);
+    setLockedIds(new Set());
+  }
+
+  const totalEntered = members.reduce((sum, m) => sum + (parseFloat(amounts[m.id]) || 0), 0);
+  const leftover = Math.round((totalAmount - totalEntered) * 100) / 100;
+  const isValid = Math.abs(leftover) <= 0.02;
+
+  function handleConfirm() {
+    if (!isValid) return;
+    const splits = members.map(m => ({
+      userId: m.id,
+      amount: parseFloat(amounts[m.id]) || 0,
+    }));
+    onConfirm(splits);
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
+        <ScrollView style={styles.modalSheet} bounces={false} keyboardShouldPersistTaps="handled">
+          <View style={styles.modalHandle} />
+          <Text style={styles.modalTitle}>Custom Split</Text>
+          <Text style={[styles.modalLabel, { marginBottom: 16 }]}>Total: ₹{totalAmount.toFixed(2)}</Text>
+
+          {members.map(m => {
+            const isPayer = m.id === payerId;
+            return (
+              <View
+                key={m.id}
+                style={[
+                  styles.customSplitRow,
+                  isPayer && { backgroundColor: PC.accent10, borderRadius: 10, padding: 8, marginHorizontal: -8 },
+                ]}>
+                <View style={styles.customSplitMember}>
+                  <View style={styles.memberAvatar}>
+                    <Text style={styles.memberInitials}>{initials(m.name)}</Text>
+                  </View>
+                  <Text style={{ color: PC.textPrimary, fontSize: 14, fontWeight: '600' }}>
+                    {m.name.split(' ')[0]}{isPayer ? ' (paid)' : ''}
+                  </Text>
+                </View>
+                <View style={styles.customSplitInput}>
+                  <Text style={styles.rupeePrefix}>₹</Text>
+                  <TextInput
+                    style={[styles.modalInput, { flex: 1 }]}
+                    value={amounts[m.id] ?? ''}
+                    onChangeText={v => handleChange(m.id, v)}
+                    keyboardType="decimal-pad"
+                    placeholder="0.00"
+                    placeholderTextColor={PC.textMuted}
+                  />
+                </View>
+              </View>
+            );
+          })}
+
+          <View style={styles.remainingBar}>
+            <Text style={{ color: PC.textSecondary, fontSize: 13 }}>Remaining</Text>
+            <Text style={{ color: isValid ? PC.positive : PC.warning, fontSize: 13, fontWeight: '600' }}>
+              ₹{leftover.toFixed(2)}
+            </Text>
+          </View>
+
+          <TouchableOpacity onPress={resetEqual} style={{ alignItems: 'center', marginBottom: 16 }}>
+            <Text style={{ color: PC.accent, fontSize: 13 }}>Reset to equal</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.createBtn, !isValid && styles.createBtnDisabled]}
+            onPress={handleConfirm}
+            disabled={!isValid}
+            activeOpacity={0.85}>
+            <Text style={styles.createBtnText}>Confirm Split</Text>
           </TouchableOpacity>
           <View style={{ height: 20 }} />
         </ScrollView>
@@ -376,7 +579,7 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <KeyboardAvoidingView
         style={styles.modalOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
         <ScrollView style={styles.modalSheet} bounces={false} keyboardShouldPersistTaps="handled">
           <View style={styles.modalHandle} />
@@ -502,6 +705,7 @@ export default function GroupDetailScreen() {
   const [showAddExpense,    setShowAddExpense]    = useState(false);
   const [showAddMember,     setShowAddMember]     = useState(false);
   const [showSettlement,    setShowSettlement]    = useState(false);
+  const [expandedExpId,     setExpandedExpId]     = useState(null);
 
   // ── Fetch all group data ──────────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
@@ -569,7 +773,7 @@ export default function GroupDetailScreen() {
   }
 
   // ── My balance in this group ──────────────────────────────────────────────
-  const myBalance = balances.members?.find(m => m.user.id === user._id);
+  const myBalance = balances.members?.find(m => m.user.id === user._id?.toString());
 
   if (loading) {
     return (
@@ -682,31 +886,81 @@ export default function GroupDetailScreen() {
             </View>
           ) : (
             expenses.map((exp) => {
-              const myShare = exp.splits?.find(s => s.userId?._id === user._id || s.userId?.id === user._id);
-              const paidByMe = exp.payerId?._id === user._id || exp.payerId?.id === user._id;
+              const myShare = exp.splits?.find(s =>
+                s.userId?._id?.toString() === user._id?.toString() ||
+                s.userId?.id?.toString()  === user._id?.toString()
+              );
+              const paidByMe = exp.payerId?._id?.toString() === user._id?.toString() ||
+                               exp.payerId?.id?.toString()  === user._id?.toString();
+              const isExpanded = expandedExpId === exp._id;
               return (
-                <View key={exp._id} style={styles.expenseCard}>
-                  <View style={styles.expCatIcon}>
-                    <Ionicons name={CAT_ICONS[exp.category] || 'grid-outline'} size={18} color={PC.textSecondary} />
-                  </View>
-                  <View style={styles.expInfo}>
-                    <Text style={styles.expTitle}>{exp.notes || exp.category}</Text>
-                    <Text style={styles.expMeta}>
-                      Paid by {paidByMe ? 'You' : exp.payerId?.name ?? 'Unknown'} · {formatShortDate(exp.date)}
-                    </Text>
-                  </View>
-                  <View style={styles.expAmounts}>
-                    <Text style={styles.expTotal}>₹{exp.amount.toLocaleString('en-IN')}</Text>
-                    {myShare ? (
-                      <Text style={[
-                        styles.expShare,
-                        paidByMe ? { color: PC.positive } : { color: PC.negative },
-                      ]}>
-                        {paidByMe ? 'lent' : 'owe'} ₹{myShare.amount.toLocaleString('en-IN')}
+                <TouchableOpacity
+                  key={exp._id}
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                    setExpandedExpId(isExpanded ? null : exp._id);
+                  }}>
+                  <View style={[styles.expenseCard, isExpanded && styles.expenseCardExpanded]}>
+                    <View style={styles.expCatIcon}>
+                      <Ionicons name={CAT_ICONS[exp.category] || 'grid-outline'} size={18} color={PC.textSecondary} />
+                    </View>
+                    <View style={styles.expInfo}>
+                      <Text style={styles.expTitle}>{exp.notes || exp.category}</Text>
+                      <Text style={styles.expMeta}>
+                        Paid by {paidByMe ? 'You' : exp.payerId?.name ?? 'Unknown'} · {formatShortDate(exp.date)}
                       </Text>
-                    ) : null}
+                    </View>
+                    <View style={styles.expAmounts}>
+                      <Text style={styles.expTotal}>₹{exp.amount.toLocaleString('en-IN')}</Text>
+                      {myShare ? (
+                        <Text style={[
+                          styles.expShare,
+                          paidByMe ? { color: PC.positive } : { color: PC.negative },
+                        ]}>
+                          {paidByMe ? 'lent' : 'owe'} ₹{myShare.amount.toLocaleString('en-IN')}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <Ionicons
+                      name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                      size={14}
+                      color={PC.textMuted}
+                      style={{ marginLeft: 6 }}
+                    />
                   </View>
-                </View>
+                  {isExpanded && (
+                    <View style={styles.expSplitList}>
+                      <View style={styles.expSplitHeader}>
+                        <Ionicons name="receipt-outline" size={11} color={PC.textMuted} />
+                        <Text style={styles.expSplitHeaderText}>Split breakdown</Text>
+                      </View>
+                      {exp.splits?.map((s, si) => {
+                        const memberId = s.userId?._id?.toString() ?? s.userId?.toString();
+                        const memberName = members.find(m => m.id === memberId)?.name ?? s.userId?.name ?? 'Unknown';
+                        const isMe = memberId === user._id?.toString();
+                        const isPayer = exp.payerId?._id?.toString() === memberId || exp.payerId?.toString() === memberId;
+                        return (
+                          <React.Fragment key={memberId}>
+                            {si > 0 && <View style={styles.expSplitDivider} />}
+                            <View style={[styles.expSplitRow, isPayer && styles.expSplitRowPayer]}>
+                              <View style={styles.memberAvatarSm}>
+                                <Text style={styles.memberInitials}>{initials(memberName)}</Text>
+                              </View>
+                              <Text style={[styles.expSplitName, isMe && { color: PC.textPrimary, fontWeight: '600' }]}>
+                                {isMe ? 'You' : memberName.split(' ')[0]}
+                              </Text>
+                              {isPayer && <View style={styles.payerTag}><Text style={styles.payerTagText}>paid</Text></View>}
+                              <Text style={[styles.expSplitAmt, isPayer ? { color: PC.positive } : { color: PC.textSecondary }]}>
+                                ₹{s.amount.toFixed(2)}
+                              </Text>
+                            </View>
+                          </React.Fragment>
+                        );
+                      })}
+                    </View>
+                  )}
+                </TouchableOpacity>
               );
             })
           )
@@ -727,8 +981,8 @@ export default function GroupDetailScreen() {
               <>
                 <Text style={styles.sectionLabel}>Simplified Debts</Text>
                 {balances.debts.map((d, i) => {
-                  const fromMe = d.from.id === user._id;
-                  const toMe   = d.to.id   === user._id;
+                  const fromMe = d.from.id === user._id?.toString();
+                  const toMe   = d.to.id   === user._id?.toString();
                   return (
                     <View key={i} style={styles.debtCard}>
                       <View style={styles.debtAvatarGroup}>
@@ -776,7 +1030,7 @@ export default function GroupDetailScreen() {
                 </View>
                 <View style={{ flex: 1, marginLeft: 12 }}>
                   <Text style={styles.memberName}>
-                    {m.user.id === user._id ? 'You' : m.user.name}
+                    {m.user.id === user._id?.toString() ? 'You' : m.user.name}
                   </Text>
                   <Text style={styles.memberEmail}>{m.user.email}</Text>
                 </View>
@@ -1075,4 +1329,45 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   errorText: { flex: 1, color: PC.negative, fontSize: 13 },
+
+  expenseCardExpanded: { borderBottomLeftRadius: 0, borderBottomRightRadius: 0, marginBottom: 0 },
+  expSplitList: {
+    backgroundColor: PC.bgCard,
+    borderRadius: 14,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+    borderWidth: 1,
+    borderTopWidth: 0,
+    borderColor: PC.border,
+    marginBottom: 10,
+    overflow: 'hidden',
+  },
+  expSplitHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: PC.border,
+  },
+  expSplitHeaderText: { color: PC.textMuted, fontSize: 10, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  expSplitRow:        { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10 },
+  expSplitRowPayer:   { backgroundColor: PC.accent10, borderLeftWidth: 3, borderLeftColor: PC.accent },
+  expSplitDivider:    { height: 1, backgroundColor: PC.border },
+  expSplitName: { flex: 1, color: PC.textSecondary, fontSize: 13 },
+  expSplitAmt:  { fontSize: 13, fontWeight: '700' },
+  payerTag:     { paddingHorizontal: 6, paddingVertical: 2, backgroundColor: PC.accent, borderRadius: 6 },
+  payerTagText: { color: '#060A09', fontSize: 10, fontWeight: '700' },
+
+  splitPreviewBox:   { borderWidth: 1, borderColor: PC.borderLight, borderRadius: 10, padding: 12, marginBottom: 16 },
+  splitPreviewRow:   { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
+  splitPreviewName:  { color: PC.textSecondary, fontSize: 13 },
+  splitPreviewAmt:   { color: PC.textPrimary, fontSize: 13, fontWeight: '600' },
+  splitPreviewEdit:  { color: PC.accent, fontSize: 11, textAlign: 'right', marginTop: 6 },
+  customSplitRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  customSplitMember: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
+  customSplitInput:  { flexDirection: 'row', alignItems: 'center', backgroundColor: PC.bgInput, borderWidth: 1, borderColor: PC.border, borderRadius: 12, paddingHorizontal: 10, height: 44, width: 110 },
+  remainingBar:      { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderTopWidth: 1, borderTopColor: PC.border },
 });

@@ -265,10 +265,38 @@ function SpendingSparkline({ transactions }) {
 // ─── Rich Transaction Row ─────────────────────────────────────────────────────
 
 function ActivityRow({ item, last }) {
-  const isIncome = item.type === 'income';
-  const icon = CATEGORY_ICONS[item.category] || 'swap-horizontal-outline';
-  const color = CATEGORY_COLORS[item.category] || PC.textSecondary;
-  const isSettlement = item.category === 'Settlement' || item.category === 'Split';
+  // Support both old personal-transaction shape and new unified recentActivities shape
+  const isNewShape = item.type === 'personal' || item.type === 'group_expense' || item.type === 'direct_split';
+
+  let icon, color, label, catLabel, isPositive;
+
+  if (isNewShape) {
+    if (item.type === 'group_expense') {
+      icon  = 'people-outline';
+      color = PC.textSecondary;
+      catLabel = 'Group';
+    } else if (item.type === 'direct_split') {
+      icon  = 'git-branch-outline';
+      color = '#CE93D8';
+      catLabel = 'Direct Split';
+    } else {
+      // personal
+      icon     = CATEGORY_ICONS[item.description] || 'swap-horizontal-outline';
+      color    = CATEGORY_COLORS[item.description] || PC.textSecondary;
+      catLabel = item.description;
+    }
+    label      = item.description;
+    isPositive = item.sign === 1;
+  } else {
+    // Legacy personal transaction shape
+    isPositive = item.type === 'income';
+    icon       = CATEGORY_ICONS[item.category] || 'swap-horizontal-outline';
+    color      = CATEGORY_COLORS[item.category] || PC.textSecondary;
+    label      = item.notes || item.category;
+    catLabel   = item.category;
+  }
+
+  const isSettlement = !isNewShape && (item.category === 'Settlement' || item.category === 'Split');
 
   return (
     <>
@@ -277,19 +305,17 @@ function ActivityRow({ item, last }) {
           <Ionicons name={icon} size={17} color={color} />
         </View>
         <View style={styles.actInfo}>
-          <Text style={styles.actLabel} numberOfLines={1}>
-            {item.notes || item.category}
-          </Text>
+          <Text style={styles.actLabel} numberOfLines={1}>{label}</Text>
           <View style={styles.actMetaRow}>
             <View style={[styles.actCatPill, { backgroundColor: color + '18' }]}>
-              <Text style={[styles.actCatText, { color }]}>{item.category}</Text>
+              <Text style={[styles.actCatText, { color }]}>{catLabel}</Text>
             </View>
             <Text style={styles.actDate}>{formatDate(item.date)}</Text>
           </View>
         </View>
         <View style={styles.actRight}>
-          <Text style={[styles.actAmount, isIncome ? styles.amtPos : styles.amtNeg]}>
-            {isIncome ? '+' : '−'}₹{(item.amount ?? 0).toLocaleString('en-IN')}
+          <Text style={[styles.actAmount, isPositive ? styles.amtPos : styles.amtNeg]}>
+            {isPositive ? '+' : '−'}₹{(item.amount ?? 0).toLocaleString('en-IN')}
           </Text>
           {isSettlement && (
             <View style={styles.actSettleBadge}>
@@ -350,7 +376,7 @@ export default function DashboardScreen() {
       setBudget(budgetRes.data);
       setRecent(txRes.data.transactions || []);
     } catch (err) {
-      setError(err.message);
+      setError(err.message ?? 'Something went wrong.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -386,8 +412,9 @@ export default function DashboardScreen() {
   }
 
   // Derived
-  const netGroupBalance = dash ? dash.totalToReceive - dash.totalOwed : 0;
-  const recentSlice     = recent.slice(0, 8);
+  const netGroupBalance  = dash ? dash.totalToReceive - dash.totalOwed : 0;
+  const recentSlice      = recent.slice(0, 8);
+  const activityFeed     = dash?.recentActivities ?? [];
 
   if (loading) {
     return (
@@ -440,9 +467,10 @@ export default function DashboardScreen() {
             <Text style={styles.greeting}>{getGreeting()}</Text>
             <Text style={styles.userName}>{user?.name?.split(' ')[0] ?? 'there'}</Text>
           </View>
-          <TouchableOpacity
-            style={styles.avatarBtn}
-            onPress={() => router.push('/(tabs)/profile')}>
+          <TouchableOpacity style={[styles.avatarBtn, { marginRight: 10 }]} onPress={() => router.push('/friends')}>
+            <Ionicons name="people-outline" size={20} color={PC.textPrimary} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.avatarBtn} onPress={() => router.push('/(tabs)/profile')}>
             <Text style={styles.avatarText}>{getInitials(user?.name)}</Text>
           </TouchableOpacity>
         </View>
@@ -556,7 +584,7 @@ export default function DashboardScreen() {
             </TouchableOpacity>
           </View>
 
-          {recentSlice.length === 0 ? (
+          {activityFeed.length === 0 ? (
             <View style={styles.emptyCard}>
               <Ionicons name="receipt-outline" size={28} color={PC.textMuted} style={{ marginBottom: 10 }} />
               <Text style={styles.emptyTitle}>No transactions yet</Text>
@@ -564,8 +592,8 @@ export default function DashboardScreen() {
             </View>
           ) : (
             <View style={styles.actCard}>
-              {recentSlice.map((tx, i) => (
-                <ActivityRow key={tx._id ?? `recent-${i}`} item={tx} last={i === recentSlice.length - 1} />
+              {activityFeed.map((item, i) => (
+                <ActivityRow key={item._id ?? `activity-${i}`} item={item} last={i === activityFeed.length - 1} />
               ))}
             </View>
           )}

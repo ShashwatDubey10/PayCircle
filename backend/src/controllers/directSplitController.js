@@ -9,7 +9,7 @@ const { areFriends } = require('./friendController');
 const addDirectSplit = asyncHandler(async (req, res) => {
   const { friendId } = req.params;
   const meId = req.user._id;
-  const { amount, description, paidByMe } = req.body;
+  const { amount, description, paidByMe, myShare } = req.body;
 
   if (!mongoose.Types.ObjectId.isValid(friendId))
     return res.status(400).json({ success: false, message: 'Invalid friendId' });
@@ -29,11 +29,20 @@ const addDirectSplit = asyncHandler(async (req, res) => {
   const payer = isPaidByMe ? meId : friendId;
   const other = isPaidByMe ? friendId : meId;
 
+  let payerShare = null;
+  if (myShare !== undefined && myShare !== null) {
+    const ps = parseFloat(myShare);
+    if (!isNaN(ps) && ps > 0 && ps < amt) {
+      payerShare = isPaidByMe ? ps : amt - ps;
+    }
+  }
+
   const split = await DirectSplit.create({
     payerId:     payer,
     otherUserId: other,
     amount:      amt,
     description: (description || '').trim(),
+    payerShare,
     date:        new Date(),
   });
 
@@ -72,10 +81,11 @@ const getDirectSplits = asyncHandler(async (req, res) => {
   for (const s of splits) {
     const payerIdStr = s.payerId?._id?.toString() ?? s.payerId?.toString();
     if (!payerIdStr) continue; // skip if payer was deleted
+    const theirShare = s.amount - (s.payerShare ?? s.amount / 2);
     if (payerIdStr === meId.toString()) {
-      balance += s.amount / 2;
+      balance += theirShare;
     } else {
-      balance -= s.amount / 2;
+      balance -= theirShare;
     }
   }
 
@@ -269,7 +279,8 @@ const getAllDirectBalances = asyncHandler(async (req, res) => {
       : payerStr;
     if (!friendId || !friendDoc) continue;
     if (!map[friendId]) map[friendId] = { balance: 0, friend: friendDoc };
-    map[friendId].balance += isPayer ? s.amount / 2 : -(s.amount / 2);
+    const theirShare = s.amount - (s.payerShare ?? s.amount / 2);
+    map[friendId].balance += isPayer ? theirShare : -theirShare;
   }
   for (const st of confirms) {
     const fromStr  = st.fromUserId.toString();

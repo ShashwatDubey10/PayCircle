@@ -1,6 +1,7 @@
 const Group               = require('../models/Group');
 const Expense             = require('../models/Expense');
 const PersonalTransaction = require('../models/PersonalTransaction');
+const DirectSplit         = require('../models/DirectSplit');
 const { calculateGroupBalances } = require('../services/balanceService');
 const asyncHandler        = require('../utils/asyncHandler');
 const logger              = require('../utils/logger');
@@ -76,6 +77,37 @@ const getDashboard = asyncHandler(async (req, res) => {
     if (mine.netBalance > 0) totalToReceive   += mine.netBalance;
   }));
 
+  // Recent activity — last 5 across all types
+  const [recentTx, recentGroupExp, recentDirect] = await Promise.all([
+    PersonalTransaction.find({ userId }).sort({ date: -1 }).limit(10),
+    Expense.find({ groupId: { $in: groupIds }, 'splits.userId': userId })
+           .sort({ date: -1 }).limit(10)
+           .populate('payerId', 'name'),
+    DirectSplit.find({ $or: [{ payerId: userId }, { otherUserId: userId }] })
+               .sort({ date: -1 }).limit(10)
+               .populate('payerId', 'name')
+               .populate('otherUserId', 'name'),
+  ]);
+
+  const activities = [
+    ...recentTx.map(t => ({
+      _id: t._id, type: 'personal', date: t.date,
+      amount: t.amount, description: t.notes || t.category,
+      sign: t.type === 'income' ? 1 : -1,
+    })),
+    ...recentGroupExp.map(e => {
+      const split = e.splits.find(s => s.userId.toString() === userId.toString());
+      return { _id: e._id, type: 'group_expense', date: e.date,
+               amount: split?.amount ?? e.amount, description: e.notes || e.category, sign: -1 };
+    }),
+    ...recentDirect.map(s => {
+      const payerIdStr = s.payerId._id?.toString() ?? s.payerId.toString();
+      const iAm = payerIdStr === userId.toString();
+      return { _id: s._id, type: 'direct_split', date: s.date,
+               amount: s.amount, description: s.description || 'Direct split', sign: iAm ? 1 : -1 };
+    }),
+  ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
+
   logger.debug('DASH', `Dashboard computed`, {
     userId,
     totalSpend: totalSpend.toFixed(2),
@@ -92,9 +124,10 @@ const getDashboard = asyncHandler(async (req, res) => {
       },
       personalIncome:  parseFloat(personalIncome.toFixed(2)),
       netCashflow:     parseFloat((personalIncome - personalSpend).toFixed(2)),
-      totalOwed:       parseFloat(totalOwed.toFixed(2)),
-      totalToReceive:  parseFloat(totalToReceive.toFixed(2)),
+      totalOwed:        parseFloat(totalOwed.toFixed(2)),
+      totalToReceive:   parseFloat(totalToReceive.toFixed(2)),
       categoryBreakdown: breakdown,
+      recentActivities: activities,
     },
   });
 });

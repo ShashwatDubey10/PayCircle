@@ -1,6 +1,7 @@
 const mongoose    = require('mongoose');
 const User        = require('../models/User');
 const Friendship  = require('../models/Friendship');
+const DirectSplit  = require('../models/DirectSplit');
 const asyncHandler = require('../utils/asyncHandler');
 const logger       = require('../utils/logger');
 const { sendPushNotification } = require('../utils/pushNotification');
@@ -155,16 +156,36 @@ const getFriends = asyncHandler(async (req, res) => {
     status: 'accepted',
     $or: [{ requester: meId }, { recipient: meId }],
   })
-    .populate('requester', 'name username avatar')
-    .populate('recipient', 'name username avatar');
+    .populate('requester', 'name username avatar createdAt')
+    .populate('recipient', 'name username avatar createdAt');
 
   const friends = friendships.map(f => {
     const other = f.requester._id.toString() === meId.toString() ? f.recipient : f.requester;
-    return { id: other._id, name: other.name, username: other.username, avatar: other.avatar };
+    return { _id: other._id, name: other.name, username: other.username, avatar: other.avatar, createdAt: other.createdAt };
   });
 
-  logger.debug('FRIEND', `Friends list: ${friends.length}`, { userId: meId });
-  res.json({ success: true, friends });
+  // Compute lastActivity per friend from DirectSplit
+  const friendUserIds = friends.map(f => f._id);
+  const latestSplits = await DirectSplit.aggregate([
+    { $match: { $or: [
+      { payerId: meId, otherUserId: { $in: friendUserIds } },
+      { otherUserId: meId, payerId: { $in: friendUserIds } },
+    ]}},
+    { $sort: { date: -1 } },
+    { $group: {
+      _id: { $cond: [{ $eq: ['$payerId', meId] }, '$otherUserId', '$payerId'] },
+      lastDate: { $first: '$date' },
+    }},
+  ]);
+  const activityMap = Object.fromEntries(latestSplits.map(x => [x._id.toString(), x.lastDate]));
+
+  const enrichedFriends = friends.map(f => ({
+    ...f,
+    lastActivity: activityMap[f._id.toString()] ?? f.createdAt,
+  }));
+
+  logger.debug('FRIEND', `Friends list: ${enrichedFriends.length}`, { userId: meId });
+  res.json({ success: true, friends: enrichedFriends });
 });
 
 // ─── PUT /api/users/me/username ───────────────────────────────────────────────

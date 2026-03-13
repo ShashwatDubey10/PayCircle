@@ -3,16 +3,19 @@ import {
   View,
   Text,
   FlatList,
+  ScrollView,
   StyleSheet,
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
   KeyboardAvoidingView,
+  Modal,
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { PC } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
@@ -59,8 +62,10 @@ function DateSeparator({ label }) {
 // ─── Chat bubble ──────────────────────────────────────────────────────────────
 
 function Bubble({ split, isMine, friendFirstName }) {
-  const amt     = Number(split?.amount ?? 0);
-  const halfAmt = (amt / 2).toLocaleString('en-IN');
+  const amt        = Number(split?.amount ?? 0);
+  const payerShare = split?.payerShare != null ? split.payerShare : amt / 2;
+  const otherShare = amt - payerShare;
+  const myShare    = isMine ? payerShare : otherShare;
 
   return (
     <View style={[s.bubbleRow, isMine ? s.bubbleRowRight : s.bubbleRowLeft]}>
@@ -88,15 +93,18 @@ function Bubble({ split, isMine, friendFirstName }) {
           </Text>
         ) : null}
 
-        {/* Footer */}
-        <View style={s.bubbleFooter}>
-          <Text style={[s.bubbleTime, isMine ? s.textMineMuted : { color: PC.textMuted }]}>
-            {split?.date ? formatTime(split.date) : '—'}
+        {/* Your Share */}
+        <Text style={[s.bubbleShareLine, isMine ? s.textMineSecondary : { color: PC.textSecondary }]}>
+          {'Your Share : '}
+          <Text style={[s.bubbleShareAmt, isMine ? s.textMine : { color: PC.textPrimary }]}>
+            ₹{myShare.toLocaleString('en-IN')}
           </Text>
-          <Text style={[s.bubbleSplitNote, isMine ? s.textMineMuted : { color: PC.textMuted }]}>
-            {' · '}each ₹{halfAmt}
-          </Text>
-        </View>
+        </Text>
+
+        {/* Time */}
+        <Text style={[s.bubbleTime, isMine ? s.textMineMuted : { color: PC.textMuted }, { marginTop: 4 }]}>
+          {split?.date ? formatTime(split.date) : '—'}
+        </Text>
       </View>
     </View>
   );
@@ -122,6 +130,8 @@ export default function DirectSplitScreen() {
   const [inputError,    setInputError]    = useState('');
   const [pendingSettle, setPendingSettle] = useState(null);
   const [settleLoading, setSettleLoading] = useState(false);
+  const [myShare,       setMyShare]       = useState(null);
+  const [showSplit,     setShowSplit]     = useState(false);
 
   // ── Load splits + friend info ──────────────────────────────────────────────
   const load = useCallback(async () => {
@@ -133,7 +143,18 @@ export default function DirectSplitScreen() {
       setSplits(data.splits || []);
       setBalance(data.balance ?? 0);
       setPendingSettle(data.pendingSettle || null);
-      const f = (friends || []).find(f => String(f.id) === String(friendId));
+      let f = (friends || []).find(f =>
+        String(f._id) === String(friendId) ||
+        String(f.id)  === String(friendId)
+      );
+      // Fallback: extract friend info from split data if friends list lookup fails
+      if (!f && data.splits?.length > 0) {
+        const first = data.splits[0];
+        const meId = user?._id?.toString() ?? user?.id?.toString();
+        const payerId = first.payerId?._id?.toString() ?? first.payerId?.toString();
+        const friendDoc = payerId !== meId ? first.payerId : first.otherUserId;
+        if (friendDoc?.name) f = { name: friendDoc.name, username: friendDoc.username };
+      }
       setFriend(f || null);
     } catch (err) {
       // Log so failures are visible in the console; UI shows empty state.
@@ -144,7 +165,15 @@ export default function DirectSplitScreen() {
   }, [friendId]);
 
   // Reload whenever this screen gains focus — ensures creditor sees pending settle requests
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  // Also mark conversation as seen so the navbar badge clears
+  useFocusEffect(useCallback(() => {
+    load();
+    AsyncStorage.getItem('directLastViewed').then(raw => {
+      const map = raw ? JSON.parse(raw) : {};
+      map[String(friendId)] = new Date().toISOString();
+      AsyncStorage.setItem('directLastViewed', JSON.stringify(map));
+    }).catch(() => {});
+  }, [load, friendId]));
 
   // Scroll to bottom after first load and whenever splits change
   useEffect(() => {
@@ -164,7 +193,7 @@ export default function DirectSplitScreen() {
     setSending(true);
     setInputError('');
     try {
-      const data = await addDirectSplit(friendId, amt, description.trim(), paidByMe);
+      const data = await addDirectSplit(friendId, amt, description.trim(), paidByMe, myShare);
       // Guard: only append if the server returned a valid split object
       if (!data?.split?._id) {
         console.error('[DirectSplitScreen] addDirectSplit returned no split:', data);
@@ -172,11 +201,13 @@ export default function DirectSplitScreen() {
       } else {
         setSplits(prev => [...prev, data.split]);
         setBalance(prev => {
-          const delta = amt / 2;
+          const myHalf = myShare ?? amt / 2;
+          const delta = amt - myHalf;
           return Math.round((paidByMe ? prev + delta : prev - delta) * 100) / 100;
         });
         setAmount('');
         setDescription('');
+        setMyShare(null);
         setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
       }
     } catch (err) {
@@ -320,8 +351,7 @@ export default function DirectSplitScreen() {
       {/* ── Chat + Input ── */}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
 
         {/* Chat list */}
         {loading ? (
@@ -396,6 +426,27 @@ export default function DirectSplitScreen() {
                 {friendFirst}
               </Text>
             </TouchableOpacity>
+            <View style={{ flex: 1 }} />
+            <TouchableOpacity
+              style={[s.customBtn, myShare !== null && s.customBtnActive]}
+              onPress={() => {
+                if (!amount || isNaN(parseFloat(amount))) {
+                  setInputError('Enter amount first');
+                  return;
+                }
+                setShowSplit(true);
+              }}
+              disabled={sending}
+              activeOpacity={0.75}>
+              <Ionicons
+                name={myShare !== null ? 'checkmark-circle' : 'options-outline'}
+                size={13}
+                color={myShare !== null ? PC.accent : PC.textMuted}
+              />
+              <Text style={[s.customBtnText, myShare !== null && s.customBtnTextActive]}>
+                {myShare !== null ? `₹${myShare}` : 'Custom'}
+              </Text>
+            </TouchableOpacity>
           </View>
 
           {/* Amount + note + send */}
@@ -407,7 +458,7 @@ export default function DirectSplitScreen() {
                 placeholder="0.00"
                 placeholderTextColor={PC.textMuted}
                 value={amount}
-                onChangeText={v => { setAmount(v); setInputError(''); }}
+                onChangeText={v => { setAmount(v); setInputError(''); setMyShare(null); }}
                 keyboardType="decimal-pad"
                 editable={!sending}
               />
@@ -433,7 +484,114 @@ export default function DirectSplitScreen() {
           </View>
         </View>
       </KeyboardAvoidingView>
+      <TwoPersonSplitModal
+        visible={showSplit}
+        onClose={() => setShowSplit(false)}
+        totalAmount={parseFloat(amount) || 0}
+        myName="You"
+        friendName={friendFirst}
+        onConfirm={(share) => {
+          setMyShare(share);
+          setShowSplit(false);
+        }}
+      />
     </SafeAreaView>
+  );
+}
+
+// ─── Two-Person Split Modal ───────────────────────────────────────────────────
+
+function TwoPersonSplitModal({ visible, onClose, totalAmount, myName, friendName, onConfirm }) {
+  const [myAmt,     setMyAmt]     = useState('');
+  const [friendAmt, setFriendAmt] = useState('');
+
+  useEffect(() => {
+    if (!visible || !totalAmount) return;
+    const half = (totalAmount / 2).toFixed(2);
+    setMyAmt(half);
+    setFriendAmt(half);
+  }, [visible, totalAmount]);
+
+  function handleMyAmtChange(v) {
+    setMyAmt(v);
+    const n = parseFloat(v);
+    if (!isNaN(n) && n >= 0 && n <= totalAmount) {
+      setFriendAmt((totalAmount - n).toFixed(2));
+    }
+  }
+
+  function handleFriendAmtChange(v) {
+    setFriendAmt(v);
+    const n = parseFloat(v);
+    if (!isNaN(n) && n >= 0 && n <= totalAmount) {
+      setMyAmt((totalAmount - n).toFixed(2));
+    }
+  }
+
+  const myN     = parseFloat(myAmt) || 0;
+  const friendN = parseFloat(friendAmt) || 0;
+  const leftover = Math.round((totalAmount - myN - friendN) * 100) / 100;
+  const isValid = Math.abs(leftover) <= 0.02 && myN > 0 && friendN > 0;
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={s2.overlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
+        <View style={s2.sheet}>
+          <View style={s2.handle} />
+          <Text style={s2.title}>Custom Split</Text>
+          <Text style={s2.subtitle}>Total: ₹{totalAmount.toFixed(2)}</Text>
+
+          <View style={s2.row}>
+            <Text style={s2.rowLabel}>{myName}</Text>
+            <View style={s2.inputBox}>
+              <Text style={s2.rupee}>₹</Text>
+              <TextInput
+                style={s2.input}
+                value={myAmt}
+                onChangeText={handleMyAmtChange}
+                keyboardType="decimal-pad"
+                placeholder="0.00"
+                placeholderTextColor={PC.textMuted}
+              />
+            </View>
+          </View>
+
+          <View style={s2.row}>
+            <Text style={s2.rowLabel}>{friendName}</Text>
+            <View style={s2.inputBox}>
+              <Text style={s2.rupee}>₹</Text>
+              <TextInput
+                style={s2.input}
+                value={friendAmt}
+                onChangeText={handleFriendAmtChange}
+                keyboardType="decimal-pad"
+                placeholder="0.00"
+                placeholderTextColor={PC.textMuted}
+              />
+            </View>
+          </View>
+
+          <View style={s2.remainingRow}>
+            <Text style={{ color: PC.textSecondary, fontSize: 13 }}>Remaining</Text>
+            <Text style={{ color: isValid ? PC.positive : PC.warning, fontSize: 13, fontWeight: '600' }}>
+              ₹{leftover.toFixed(2)}
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={[s2.confirmBtn, !isValid && { opacity: 0.5 }]}
+            onPress={() => isValid && onConfirm(myN)}
+            disabled={!isValid}
+            activeOpacity={0.85}>
+            <Text style={s2.confirmBtnText}>Confirm</Text>
+          </TouchableOpacity>
+          <View style={{ height: 20 }} />
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 
@@ -553,9 +711,11 @@ const s = StyleSheet.create({
   textMineMuted:     { color: 'rgba(6,10,9,0.45)' },
 
   bubbleDesc:   { fontSize: 13, marginTop: 3 },
-  bubbleFooter: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
-  bubbleTime:       { fontSize: 10 },
-  bubbleSplitNote:  { fontSize: 10 },
+  bubbleFooter:    { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
+  bubbleTime:      { fontSize: 10 },
+  bubbleSplitNote: { fontSize: 10 },
+  bubbleShareLine: { fontSize: 11, marginTop: 6 },
+  bubbleShareAmt:  { fontSize: 11, fontWeight: '700' },
 
   // ── Input bar ──
   inputBar: {
@@ -578,6 +738,19 @@ const s = StyleSheet.create({
   paidByChipActive: { borderColor: PC.accent, backgroundColor: PC.accent },
   paidByChipText:       { color: PC.textSecondary, fontSize: 12, fontWeight: '500' },
   paidByChipTextActive: { color: '#060A09', fontWeight: '600' },
+
+  customBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: 20, borderWidth: 1,
+    borderColor: PC.borderLight, backgroundColor: 'transparent',
+  },
+  customBtnActive: {
+    borderColor: PC.accent,
+    backgroundColor: PC.accent10,
+  },
+  customBtnText:       { color: PC.textMuted, fontSize: 12, fontWeight: '500' },
+  customBtnTextActive: { color: PC.accent, fontWeight: '700' },
 
   inputRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
 
@@ -630,4 +803,20 @@ const s = StyleSheet.create({
     borderRadius: 20,
   },
   settleConfirmBtnText: { color: '#060A09', fontSize: 12, fontWeight: '600' },
+});
+
+const s2 = StyleSheet.create({
+  overlay:      { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' },
+  sheet:        { backgroundColor: PC.bgCard, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: '70%' },
+  handle:       { width: 36, height: 4, backgroundColor: PC.border, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
+  title:        { color: PC.textPrimary, fontSize: 18, fontWeight: '700', marginBottom: 4 },
+  subtitle:     { color: PC.textSecondary, fontSize: 13, marginBottom: 20 },
+  row:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  rowLabel:     { color: PC.textPrimary, fontSize: 14, fontWeight: '600', flex: 1 },
+  inputBox:     { flexDirection: 'row', alignItems: 'center', backgroundColor: PC.bgInput, borderWidth: 1, borderColor: PC.border, borderRadius: 12, paddingHorizontal: 10, height: 44, width: 130 },
+  rupee:        { color: PC.textPrimary, fontSize: 15, fontWeight: '700', marginRight: 4 },
+  input:        { flex: 1, color: PC.textPrimary, fontSize: 15 },
+  remainingRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderTopWidth: 1, borderTopColor: PC.border, marginBottom: 16 },
+  confirmBtn:     { backgroundColor: PC.accent, borderRadius: 14, height: 52, alignItems: 'center', justifyContent: 'center' },
+  confirmBtnText: { color: '#060A09', fontSize: 15, fontWeight: '700' },
 });

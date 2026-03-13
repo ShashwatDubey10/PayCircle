@@ -6,6 +6,7 @@ const directSplitSchema = new mongoose.Schema(
     otherUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     amount:      { type: Number, required: true, min: 0.01 },
     description: { type: String, trim: true, default: '' },
+    payerShare:  { type: Number, min: 0, default: null },
     date:        { type: Date, default: Date.now },
   },
   { timestamps: true }

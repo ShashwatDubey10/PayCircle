@@ -3,12 +3,15 @@ import React from 'react';
 import { Ionicons } from '@expo/vector-icons';
 
 import { PC, FONTS } from '@/constants/theme';
+import { useBadge } from '@/context/BadgeContext';
 
 function TabIcon({ name, color, size }) {
   return <Ionicons name={name} size={size} color={color} />;
 }
 
 export default function TabLayout() {
+  const { splitBadge } = useBadge();
+
   return (
     <Tabs
       screenOptions={{
@@ -41,6 +44,7 @@ export default function TabLayout() {
         name="groups"
         options={{
           title: 'Split',
+          tabBarBadge: splitBadge > 0 ? splitBadge : undefined,
           tabBarIcon: ({ color, size }) => (
             <TabIcon name="git-branch-outline" color={color} size={size} />
           ),

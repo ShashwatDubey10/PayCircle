@@ -15,6 +15,7 @@ import {
 } from '@expo-google-fonts/roboto';
 
 import { AuthProvider, useAuth } from '@/context/AuthContext';
+import { BadgeProvider } from '@/context/BadgeContext';
 import { updatePushToken } from '@/services/friends';
 
 SplashScreen.preventAutoHideAsync();
@@ -117,6 +118,7 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
+      <BadgeProvider>
       <ThemeProvider value={DarkTheme}>
         <Stack
           screenOptions={{
@@ -135,6 +137,7 @@ export default function RootLayout() {
         <RootGuard />
         <StatusBar style="light" />
       </ThemeProvider>
+      </BadgeProvider>
     </AuthProvider>
   );
 }

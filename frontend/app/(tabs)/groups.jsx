@@ -14,12 +14,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { PC } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
+import { useBadge } from '@/context/BadgeContext';
 import api from '@/services/api';
-import { getFriends } from '@/services/friends';
+import { getFriends, getPendingRequests } from '@/services/friends';
 import { getAllDirectSettlements, getAllDirectBalances } from '@/services/directSplit';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -132,18 +134,33 @@ function SettleRow({ item, myId, onPress, last }) {
 
 // ─── Friend Card ──────────────────────────────────────────────────────────────
 
-function FriendCard({ friend, onPress }) {
+function FriendCard({ friend, onPress, directBalance }) {
+  const fid = (friend._id ?? friend.id)?.toString();
+  const db = directBalance ?? null;
+  const hasBalance = db && Math.abs(db.balance ?? 0) > 0.01;
+  const isPositive = db && (db.balance ?? 0) > 0;
+
   return (
     <TouchableOpacity style={styles.groupCard} activeOpacity={0.75} onPress={onPress}>
-      <View style={styles.friendAvatar}>
+      <View style={[styles.friendAvatar, { position: 'relative' }]}>
         <Text style={styles.friendAvatarText}>{getInitials(friend.name)}</Text>
+        {hasBalance && <View style={styles.avatarDot} />}
       </View>
       <View style={styles.groupInfo}>
         <Text style={styles.groupName}>{friend.name}</Text>
         <Text style={styles.groupMetaText}>@{friend.username || '—'}</Text>
       </View>
       <View style={styles.groupBalance}>
-        <Text style={styles.balanceLabel}>View splits</Text>
+        {hasBalance ? (
+          <>
+            <Text style={[styles.balanceAmount, isPositive ? styles.balPos : styles.balNeg]}>
+              {isPositive ? '+' : ''}₹{Math.abs(db.balance).toLocaleString('en-IN')}
+            </Text>
+            <Text style={styles.balanceLabel}>{isPositive ? 'owed to you' : 'you owe'}</Text>
+          </>
+        ) : (
+          <Text style={styles.balanceLabel}>View splits</Text>
+        )}
         <Ionicons name="chevron-forward" size={14} color={PC.textMuted} style={{ marginTop: 4 }} />
       </View>
     </TouchableOpacity>
@@ -159,8 +176,9 @@ function GroupCard({ group, onPress }) {
 
   return (
     <TouchableOpacity style={styles.groupCard} activeOpacity={0.75} onPress={onPress}>
-      <View style={styles.groupIconBox}>
+      <View style={[styles.groupIconBox, { position: 'relative' }]}>
         <Ionicons name={groupIcon(group.type)} size={20} color={PC.textSecondary} />
+        {Math.abs(group.myBalance ?? 0) > 0.01 && <View style={styles.groupBadgeDot} />}
       </View>
 
       <View style={styles.groupInfo}>
@@ -306,9 +324,12 @@ export default function GroupsScreen() {
   const router     = useRouter();
   const { user }   = useAuth();
 
+  const { setSplitBadge } = useBadge();
+
   const [groups,             setGroups]             = useState([]);
   const [settlements,        setSettlements]        = useState([]);
   const [friends,            setFriends]            = useState([]);
+  const [pendingRequestCount, setPendingRequestCount] = useState(0);
   const [tab,                setTab]                = useState('friends');
   const [settleFilter,       setSettleFilter]       = useState('not_opened');
   const [allDirectSettles,   setAllDirectSettles]   = useState([]);
@@ -322,6 +343,23 @@ export default function GroupsScreen() {
   const [error,              setError]              = useState('');
   const [showGroupModal,     setShowGroupModal]     = useState(false);
   const [showActionSheet,    setShowActionSheet]    = useState(false);
+  const [unseenCount,        setUnseenCount]        = useState(0);
+
+  // ── Compute unseen direct-split conversations ─────────────────────────────
+  const computeUnseen = useCallback(async (friendsList) => {
+    try {
+      const raw = await AsyncStorage.getItem('directLastViewed');
+      const map = raw ? JSON.parse(raw) : {};
+      let count = 0;
+      for (const f of (friendsList || [])) {
+        const fid = (f._id ?? f.id)?.toString();
+        const lastViewed = map[fid] ? new Date(map[fid]) : new Date(0);
+        const lastActivity = f.lastActivity ? new Date(f.lastActivity) : new Date(0);
+        if (lastActivity > lastViewed) count++;
+      }
+      setUnseenCount(count);
+    } catch { /* non-critical */ }
+  }, []);
 
   // ── Fetch groups enriched with each group's balance in one request ──────────
   const fetchGroups = useCallback(async () => {
@@ -380,36 +418,45 @@ export default function GroupsScreen() {
   const fetchFriends = useCallback(async () => {
     setFriendsLoading(true);
     try {
-      const list = await getFriends();
+      const [list, requests] = await Promise.all([getFriends(), getPendingRequests()]);
       setFriends(list || []);
+      setPendingRequestCount((requests || []).length);
+      await computeUnseen(list || []);
     } catch {
       // non-critical
     } finally {
       setFriendsLoading(false);
     }
-  }, []);
+  }, [computeUnseen]);
 
-  // Initial load — fetch groups and friends in parallel (friends is default tab)
+  // Initial load — fetch groups, friends, and direct data in parallel
   useEffect(() => {
     async function init() {
       setLoading(true);
-      await Promise.all([fetchGroups(), fetchFriends()]);
+      await Promise.all([fetchGroups(), fetchFriends(), fetchDirectData()]);
       setLoading(false);
     }
     init();
-  }, [fetchGroups, fetchFriends]);
+  }, [fetchGroups, fetchFriends, fetchDirectData]);
 
-  // Lazy-load settlements + direct data when tab switches and not already loaded.
-  // Only mark as fetched after triggering fetchSettlements so a later re-run
-  // (when groups arrive after the tab was already active) still fires correctly.
+  // Lazy-load settlements when tab switches and not already loaded.
   useEffect(() => {
     if (tab !== 'settlements' || settlementsFetched) return;
-    fetchDirectData();
     if (groups.length > 0) {
       fetchSettlements(groups);
       setSettlementsFetched(true);
     }
-  }, [tab, groups, settlementsFetched, fetchSettlements, fetchDirectData]);
+  }, [tab, groups, settlementsFetched, fetchSettlements]);
+
+  // Re-compute unseen count when screen gains focus (after returning from a chat)
+  useFocusEffect(useCallback(() => {
+    if (friends.length > 0) computeUnseen(friends);
+  }, [computeUnseen, friends]));
+
+  // Sync navbar Split badge with unseen conversation count
+  useEffect(() => {
+    setSplitBadge(unseenCount);
+  }, [unseenCount, setSplitBadge]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -418,9 +465,9 @@ export default function GroupsScreen() {
     setDirectBalances([]);
     setGroupBalanceMaps([]);
     setSettlementsFetched(false);
-    await Promise.all([fetchGroups(), fetchFriends()]);
+    await Promise.all([fetchGroups(), fetchFriends(), fetchDirectData()]);
     setRefreshing(false);
-  }, [fetchGroups, fetchFriends]);
+  }, [fetchGroups, fetchFriends, fetchDirectData]);
 
   function handleGroupCreated(newGroup) {
     setGroups(prev => [{ ...newGroup, myBalance: 0, loadingBalance: false }, ...prev]);
@@ -504,7 +551,14 @@ export default function GroupsScreen() {
         <TouchableOpacity
           style={[styles.toggleBtn, tab === 'friends' && styles.toggleActive]}
           onPress={() => setTab('friends')}>
-          <Text style={[styles.toggleText, tab === 'friends' && styles.toggleTextActive]}>Friends</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={[styles.toggleText, tab === 'friends' && styles.toggleTextActive]}>Friends</Text>
+            {pendingRequestCount > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{pendingRequestCount}</Text>
+              </View>
+            )}
+          </View>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.toggleBtn, tab === 'groups' && styles.toggleActive]}
@@ -514,7 +568,10 @@ export default function GroupsScreen() {
         <TouchableOpacity
           style={[styles.toggleBtn, tab === 'settlements' && styles.toggleActive]}
           onPress={() => setTab('settlements')}>
-          <Text style={[styles.toggleText, tab === 'settlements' && styles.toggleTextActive]}>Settlements</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={[styles.toggleText, tab === 'settlements' && styles.toggleTextActive]}>Settlements</Text>
+            {openSettles.length > 0 && <View style={styles.settleDot} />}
+          </View>
         </TouchableOpacity>
       </View>
 
@@ -575,13 +632,17 @@ export default function GroupsScreen() {
                 <Text style={styles.emptyText}>Go to Profile → Friends to add people</Text>
               </View>
             ) : (
-              friends.map((f) => {
-                const fid = f._id ?? f.id;
+              [...friends].sort((a, b) =>
+                new Date(b.lastActivity || 0) - new Date(a.lastActivity || 0)
+              ).map((f) => {
+                const fid = (f._id ?? f.id)?.toString();
                 if (!fid) return null;
+                const db = directBalances.find(b => b.friendId === fid);
                 return (
                   <FriendCard
                     key={fid}
                     friend={f}
+                    directBalance={db}
                     onPress={() => router.push(`/direct/${fid}`)}
                   />
                 );
@@ -824,6 +885,12 @@ const styles = StyleSheet.create({
   toggleActive:     { backgroundColor: PC.accent10 },
   toggleText:       { color: PC.textMuted, fontSize: 13, fontWeight: '500' },
   toggleTextActive: { color: PC.accent, fontWeight: '600' },
+
+  badge:     { backgroundColor: PC.negative, borderRadius: 8, minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, marginLeft: 4 },
+  badgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  groupBadgeDot: { position: 'absolute', top: 2, right: 2, width: 8, height: 8, borderRadius: 4, backgroundColor: PC.accent },
+  settleDot:     { width: 7, height: 7, borderRadius: 3.5, backgroundColor: PC.negative, marginLeft: 5 },
+  avatarDot:     { position: 'absolute', top: 1, right: 1, width: 8, height: 8, borderRadius: 4, backgroundColor: PC.accent, borderWidth: 1.5, borderColor: PC.bgCard },
 
   scroll:        { flex: 1 },
   scrollContent: { paddingHorizontal: 20, paddingBottom: 32 },

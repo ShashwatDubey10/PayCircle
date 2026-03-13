@@ -36,7 +36,7 @@ const getUserGroups = asyncHandler(async (req, res) => {
   const groups = await Group.find({ members: req.user._id })
     .populate('adminId', 'name email')
     .populate('members', 'name email')
-    .sort({ createdAt: -1 });
+    .sort({ updatedAt: -1 });
 
   logger.debug('GROUP', `Fetched ${groups.length} groups for user`, { userId: req.user._id });
 
