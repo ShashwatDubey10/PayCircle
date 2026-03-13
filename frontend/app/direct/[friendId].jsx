@@ -11,6 +11,7 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -132,6 +133,7 @@ export default function DirectSplitScreen() {
   const [settleLoading, setSettleLoading] = useState(false);
   const [myShare,       setMyShare]       = useState(null);
   const [showSplit,     setShowSplit]     = useState(false);
+  const [refreshing,    setRefreshing]    = useState(false);
 
   // ── Load splits + friend info ──────────────────────────────────────────────
   const load = useCallback(async () => {
@@ -166,6 +168,11 @@ export default function DirectSplitScreen() {
 
   // Reload whenever this screen gains focus — ensures creditor sees pending settle requests
   // Also mark conversation as seen so the navbar badge clears
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    load().finally(() => setRefreshing(false));
+  }, [load]);
+
   useFocusEffect(useCallback(() => {
     load();
     AsyncStorage.getItem('directLastViewed').then(raw => {
@@ -359,7 +366,9 @@ export default function DirectSplitScreen() {
             <ActivityIndicator color={PC.textMuted} />
           </View>
         ) : splits.length === 0 ? (
-          <View style={s.emptyState}>
+          <ScrollView
+            contentContainerStyle={s.emptyState}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={PC.textMuted} />}>
             <View style={s.emptyIcon}>
               <Ionicons name="receipt-outline" size={28} color={PC.textMuted} />
             </View>
@@ -368,7 +377,7 @@ export default function DirectSplitScreen() {
               Record your first shared expense below.{'\n'}
               Each entry is split 50/50.
             </Text>
-          </View>
+          </ScrollView>
         ) : (
           <FlatList
             ref={listRef}
@@ -377,6 +386,7 @@ export default function DirectSplitScreen() {
             renderItem={renderItem}
             contentContainerStyle={s.listContent}
             showsVerticalScrollIndicator={false}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={PC.textMuted} />}
           />
         )}
 

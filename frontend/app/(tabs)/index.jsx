@@ -556,8 +556,8 @@ export default function DashboardScreen() {
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Analytics</Text>
-              <TouchableOpacity onPress={() => router.push('/(tabs)/transactions')}>
-                <Text style={styles.seeAll}>View all →</Text>
+              <TouchableOpacity onPress={() => router.push('/analytics')}>
+                <Text style={styles.seeAll}>View more →</Text>
               </TouchableOpacity>
             </View>
 

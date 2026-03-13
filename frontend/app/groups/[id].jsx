@@ -22,7 +22,8 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 }
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { PC } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
@@ -742,6 +743,15 @@ export default function GroupDetailScreen() {
     }
     init();
   }, [fetchAll]);
+
+  // Mark this group as viewed so navbar badge clears
+  useFocusEffect(useCallback(() => {
+    AsyncStorage.getItem('groupLastViewed').then(raw => {
+      const map = raw ? JSON.parse(raw) : {};
+      map[String(id)] = new Date().toISOString();
+      AsyncStorage.setItem('groupLastViewed', JSON.stringify(map));
+    }).catch(() => {});
+  }, [id]));
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

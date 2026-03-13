@@ -181,7 +181,7 @@ const getFriends = asyncHandler(async (req, res) => {
 
   const enrichedFriends = friends.map(f => ({
     ...f,
-    lastActivity: activityMap[f._id.toString()] ?? f.createdAt,
+    lastActivity: activityMap[f._id.toString()] ?? null,
   }));
 
   logger.debug('FRIEND', `Friends list: ${enrichedFriends.length}`, { userId: meId });

@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   TextInput,
   Alert,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -191,6 +192,7 @@ export default function ProfileScreen() {
   const [netSaved,     setNetSaved]     = useState(null);
   const [friendCount,  setFriendCount]  = useState(null);
   const [statsLoading, setStatsLoading] = useState(true);
+  const [refreshing,   setRefreshing]   = useState(false);
   const [signingOut,   setSigningOut]   = useState(false);
   const [activeModal,  setActiveModal]  = useState(null); // 'privacy' | 'help' | 'about'
 
@@ -222,8 +224,11 @@ export default function ProfileScreen() {
       // Non-critical — stats just stay null and show '—'
     } finally {
       setStatsLoading(false);
+      setRefreshing(false);
     }
   }, []);
+
+  const onRefresh = useCallback(() => { setRefreshing(true); fetchStats(); }, [fetchStats]);
 
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
@@ -326,7 +331,8 @@ export default function ProfileScreen() {
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}>
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={PC.textPrimary} />}>
 
         {/* ── Header ── */}
         <View style={styles.header}>

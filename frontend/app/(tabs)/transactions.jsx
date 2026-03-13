@@ -448,13 +448,13 @@ export default function TransactionsScreen() {
   }
 
   // ── Derived values ────────────────────────────────────────────────────────
-  const totalIncome  = transactions.filter(t => t.type === 'income').reduce((s, t) => s + (t.amount ?? 0), 0);
-  const totalExpense = transactions.filter(t => t.type === 'expense').reduce((s, t) => s + (t.amount ?? 0), 0);
-  const net          = totalIncome - totalExpense;
-
   const allItems = [...transactions, ...settlements, ...directSplits].sort(
     (a, b) => (Date.parse(b.date) || 0) - (Date.parse(a.date) || 0)
   );
+
+  const totalIncome  = allItems.filter(t => t.type === 'income').reduce((s, t) => s + (t.amount ?? 0), 0);
+  const totalExpense = allItems.filter(t => t.type === 'expense').reduce((s, t) => s + (t.amount ?? 0), 0);
+  const net          = totalIncome - totalExpense;
 
   // Confirmed direct settles (normalized for Settled tab)
   const closedDirectSettles = allDirectSettles

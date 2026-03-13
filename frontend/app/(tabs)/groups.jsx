@@ -135,34 +135,25 @@ function SettleRow({ item, myId, onPress, last }) {
 // ─── Friend Card ──────────────────────────────────────────────────────────────
 
 function FriendCard({ friend, onPress, directBalance }) {
-  const fid = (friend._id ?? friend.id)?.toString();
   const db = directBalance ?? null;
   const hasBalance = db && Math.abs(db.balance ?? 0) > 0.01;
   const isPositive = db && (db.balance ?? 0) > 0;
 
   return (
-    <TouchableOpacity style={styles.groupCard} activeOpacity={0.75} onPress={onPress}>
-      <View style={[styles.friendAvatar, { position: 'relative' }]}>
+    <TouchableOpacity style={styles.friendCard} activeOpacity={0.75} onPress={onPress}>
+      <View style={[styles.friendAvatar, hasBalance && styles.friendAvatarActive]}>
         <Text style={styles.friendAvatarText}>{getInitials(friend.name)}</Text>
         {hasBalance && <View style={styles.avatarDot} />}
       </View>
-      <View style={styles.groupInfo}>
-        <Text style={styles.groupName}>{friend.name}</Text>
-        <Text style={styles.groupMetaText}>@{friend.username || '—'}</Text>
+      <View style={styles.friendInfo}>
+        <Text style={styles.friendName}>{friend.name}</Text>
+        <Text style={styles.friendUsername}>@{friend.username || '—'}</Text>
       </View>
-      <View style={styles.groupBalance}>
-        {hasBalance ? (
-          <>
-            <Text style={[styles.balanceAmount, isPositive ? styles.balPos : styles.balNeg]}>
-              {isPositive ? '+' : ''}₹{Math.abs(db.balance).toLocaleString('en-IN')}
-            </Text>
-            <Text style={styles.balanceLabel}>{isPositive ? 'owed to you' : 'you owe'}</Text>
-          </>
-        ) : (
-          <Text style={styles.balanceLabel}>View splits</Text>
-        )}
-        <Ionicons name="chevron-forward" size={14} color={PC.textMuted} style={{ marginTop: 4 }} />
-      </View>
+      {hasBalance && (
+        <Text style={[styles.friendBalance, isPositive ? styles.balPos : styles.balNeg]}>
+          {isPositive ? '+' : ''}₹{Math.abs(db.balance).toLocaleString('en-IN')}
+        </Text>
+      )}
     </TouchableOpacity>
   );
 }
@@ -345,16 +336,27 @@ export default function GroupsScreen() {
   const [showActionSheet,    setShowActionSheet]    = useState(false);
   const [unseenCount,        setUnseenCount]        = useState(0);
 
-  // ── Compute unseen direct-split conversations ─────────────────────────────
-  const computeUnseen = useCallback(async (friendsList) => {
+  // ── Compute unseen direct-split conversations + unseen groups ────────────
+  const computeUnseen = useCallback(async (friendsList, groupsList) => {
     try {
-      const raw = await AsyncStorage.getItem('directLastViewed');
-      const map = raw ? JSON.parse(raw) : {};
+      const [rawDirect, rawGroup] = await Promise.all([
+        AsyncStorage.getItem('directLastViewed'),
+        AsyncStorage.getItem('groupLastViewed'),
+      ]);
+      const directMap = rawDirect ? JSON.parse(rawDirect) : {};
+      const groupMap  = rawGroup  ? JSON.parse(rawGroup)  : {};
+
       let count = 0;
       for (const f of (friendsList || [])) {
         const fid = (f._id ?? f.id)?.toString();
-        const lastViewed = map[fid] ? new Date(map[fid]) : new Date(0);
-        const lastActivity = f.lastActivity ? new Date(f.lastActivity) : new Date(0);
+        const lastViewed   = directMap[fid] ? new Date(directMap[fid]) : new Date(0);
+        const lastActivity = f.lastActivity  ? new Date(f.lastActivity) : new Date(0);
+        if (lastActivity > lastViewed) count++;
+      }
+      for (const g of (groupsList || [])) {
+        const gid = g._id?.toString();
+        const lastViewed   = groupMap[gid] ? new Date(groupMap[gid]) : new Date(0);
+        const lastActivity = g.updatedAt   ? new Date(g.updatedAt)   : new Date(0);
         if (lastActivity > lastViewed) count++;
       }
       setUnseenCount(count);
@@ -421,7 +423,7 @@ export default function GroupsScreen() {
       const [list, requests] = await Promise.all([getFriends(), getPendingRequests()]);
       setFriends(list || []);
       setPendingRequestCount((requests || []).length);
-      await computeUnseen(list || []);
+      await computeUnseen(list || [], groups);
     } catch {
       // non-critical
     } finally {
@@ -448,10 +450,10 @@ export default function GroupsScreen() {
     }
   }, [tab, groups, settlementsFetched, fetchSettlements]);
 
-  // Re-compute unseen count when screen gains focus (after returning from a chat)
+  // Re-compute unseen count when screen gains focus (after returning from a chat or group)
   useFocusEffect(useCallback(() => {
-    if (friends.length > 0) computeUnseen(friends);
-  }, [computeUnseen, friends]));
+    computeUnseen(friends, groups);
+  }, [computeUnseen, friends, groups]));
 
   // Sync navbar Split badge with unseen conversation count
   useEffect(() => {
@@ -474,8 +476,10 @@ export default function GroupsScreen() {
   }
 
   // ── Summary totals ───────────────────────────────────────────────────────
-  const youOweTotal    = groups.filter(g => g.myBalance < 0).reduce((s, g) => s + Math.abs(g.myBalance), 0);
-  const owedToYouTotal = groups.filter(g => g.myBalance > 0).reduce((s, g) => s + g.myBalance, 0);
+  const youOweTotal    = groups.filter(g => g.myBalance < 0).reduce((s, g) => s + Math.abs(g.myBalance), 0)
+                       + directBalances.filter(b => b.balance < 0).reduce((s, b) => s + Math.abs(b.balance), 0);
+  const owedToYouTotal = groups.filter(g => g.myBalance > 0).reduce((s, g) => s + g.myBalance, 0)
+                       + directBalances.filter(b => b.balance > 0).reduce((s, b) => s + b.balance, 0);
 
   // ── Settlement Hub derived values ────────────────────────────────────────
   const meIdStr = user?._id?.toString();
@@ -566,12 +570,10 @@ export default function GroupsScreen() {
           <Text style={[styles.toggleText, tab === 'groups' && styles.toggleTextActive]}>Groups</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.toggleBtn, tab === 'settlements' && styles.toggleActive]}
+          style={[styles.toggleBtn, tab === 'settlements' && styles.toggleActive, { position: 'relative' }]}
           onPress={() => setTab('settlements')}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Text style={[styles.toggleText, tab === 'settlements' && styles.toggleTextActive]}>Settlements</Text>
-            {openSettles.length > 0 && <View style={styles.settleDot} />}
-          </View>
+          <Text style={[styles.toggleText, tab === 'settlements' && styles.toggleTextActive]}>Settlements</Text>
+          {openSettles.length > 0 && <View style={styles.settleDot} />}
         </TouchableOpacity>
       </View>
 
@@ -889,7 +891,7 @@ const styles = StyleSheet.create({
   badge:     { backgroundColor: PC.negative, borderRadius: 8, minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, marginLeft: 4 },
   badgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
   groupBadgeDot: { position: 'absolute', top: 2, right: 2, width: 8, height: 8, borderRadius: 4, backgroundColor: PC.accent },
-  settleDot:     { width: 7, height: 7, borderRadius: 3.5, backgroundColor: PC.negative, marginLeft: 5 },
+  settleDot:     { position: 'absolute', top: 4, right: 6, width: 7, height: 7, borderRadius: 3.5, backgroundColor: PC.negative },
   avatarDot:     { position: 'absolute', top: 1, right: 1, width: 8, height: 8, borderRadius: 4, backgroundColor: PC.accent, borderWidth: 1.5, borderColor: PC.bgCard },
 
   scroll:        { flex: 1 },
@@ -906,8 +908,24 @@ const styles = StyleSheet.create({
   emptyText:  { color: PC.textMuted, fontSize: 13 },
 
   // Friend card
-  friendAvatar:     { width: 44, height: 44, borderRadius: 13, backgroundColor: PC.bgCardElevated, alignItems: 'center', justifyContent: 'center', marginRight: 13 },
-  friendAvatarText: { color: PC.textPrimary, fontSize: 16, fontWeight: '700' },
+  friendCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: PC.bgCard,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: PC.border,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    marginBottom: 8,
+  },
+  friendAvatar:       { width: 42, height: 42, borderRadius: 13, backgroundColor: PC.bgCardElevated, alignItems: 'center', justifyContent: 'center', marginRight: 12, position: 'relative' },
+  friendAvatarActive: { borderWidth: 1.5, borderColor: PC.accent20 },
+  friendAvatarText:   { color: PC.textPrimary, fontSize: 15, fontWeight: '700' },
+  friendInfo:         { flex: 1 },
+  friendName:         { color: PC.textPrimary, fontSize: 14, fontWeight: '600', lineHeight: 19 },
+  friendUsername:     { color: PC.textMuted, fontSize: 11, lineHeight: 14, marginTop: 2 },
+  friendBalance:      { fontSize: 13, fontWeight: '600' },
 
   // Group card
   groupCard: {

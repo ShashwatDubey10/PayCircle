@@ -1,6 +1,7 @@
 const Budget              = require('../models/Budget');
 const Expense             = require('../models/Expense');
 const PersonalTransaction = require('../models/PersonalTransaction');
+const DirectSplit         = require('../models/DirectSplit');
 const Group               = require('../models/Group');
 const asyncHandler        = require('../utils/asyncHandler');
 const logger              = require('../utils/logger');
@@ -94,7 +95,22 @@ const getBudget = asyncHandler(async (req, res) => {
     catSpend[key] = (catSpend[key] || 0) + tx.amount;
   }
 
-  const spent        = parseFloat((groupSpend + personalSpend).toFixed(2));
+  // Direct splits — include user's share regardless of who paid
+  const directSplits = await DirectSplit.find({
+    $or: [{ payerId: userId }, { otherUserId: userId }],
+    date: { $gte: start, $lte: end },
+  });
+  let directSpend = 0;
+  for (const s of directSplits) {
+    const isPayer = s.payerId.toString() === userId.toString();
+    const myShare = isPayer
+      ? (s.payerShare ?? s.amount / 2)
+      : s.amount - (s.payerShare ?? s.amount / 2);
+    directSpend += myShare;
+    catSpend['miscellaneous'] = (catSpend['miscellaneous'] || 0) + myShare;
+  }
+
+  const spent        = parseFloat((groupSpend + personalSpend + directSpend).toFixed(2));
   const budgetAmount = budget?.amount || 0;
   const remaining    = parseFloat((budgetAmount - spent).toFixed(2));
   const usagePct     = budgetAmount > 0 ? parseFloat(((spent / budgetAmount) * 100).toFixed(1)) : 0;
