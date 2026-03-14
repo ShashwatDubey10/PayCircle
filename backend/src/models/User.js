@@ -46,6 +46,11 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    upiId: {
+      type: String,
+      trim: true,
+      default: '',
+    },
   },
   { timestamps: true }
 );

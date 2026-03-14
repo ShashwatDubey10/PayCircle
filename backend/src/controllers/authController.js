@@ -99,4 +99,20 @@ const getMe = asyncHandler(async (req, res) => {
   res.json({ success: true, user: req.user });
 });
 
-module.exports = { register, login, getMe };
+// PATCH /api/auth/me
+const updateMe = asyncHandler(async (req, res) => {
+  const { upiId } = req.body;
+  const updates = {};
+  if (upiId !== undefined) updates.upiId = upiId.trim();
+
+  const user = await User.findByIdAndUpdate(
+    req.user._id,
+    updates,
+    { new: true, select: '-password' }
+  );
+
+  logger.info('AUTH', `Profile updated: ${user.email}`, { userId: user._id });
+  res.json({ success: true, user });
+});
+
+module.exports = { register, login, getMe, updateMe };

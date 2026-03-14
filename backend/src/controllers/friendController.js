@@ -156,12 +156,12 @@ const getFriends = asyncHandler(async (req, res) => {
     status: 'accepted',
     $or: [{ requester: meId }, { recipient: meId }],
   })
-    .populate('requester', 'name username avatar createdAt')
-    .populate('recipient', 'name username avatar createdAt');
+    .populate('requester', 'name username avatar createdAt upiId')
+    .populate('recipient', 'name username avatar createdAt upiId');
 
   const friends = friendships.map(f => {
     const other = f.requester._id.toString() === meId.toString() ? f.recipient : f.requester;
-    return { _id: other._id, name: other.name, username: other.username, avatar: other.avatar, createdAt: other.createdAt };
+    return { _id: other._id, name: other.name, username: other.username, avatar: other.avatar, createdAt: other.createdAt, upiId: other.upiId || '' };
   });
 
   // Compute lastActivity per friend from DirectSplit

@@ -29,6 +29,7 @@ import { PC } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
 import { getFriends } from '@/services/friends';
+import PayWithUPIButton from '@/components/PayWithUPIButton';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -524,12 +525,13 @@ function AddMemberModal({ visible, onClose, groupId, existingMemberIds, onAdded 
 // ─── Record Settlement Modal ──────────────────────────────────────────────────
 
 function RecordSettlementModal({ visible, onClose, groupId, members, currentUserId, onRecorded }) {
-  const [fromId,  setFromId]  = useState(currentUserId ?? '');
-  const [toId,    setToId]    = useState('');
-  const [amount,  setAmount]  = useState('');
-  const [notes,   setNotes]   = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState('');
+  const [fromId,        setFromId]        = useState(currentUserId ?? '');
+  const [toId,          setToId]          = useState('');
+  const [amount,        setAmount]        = useState('');
+  const [notes,         setNotes]         = useState('');
+  const [loading,       setLoading]       = useState(false);
+  const [error,         setError]         = useState('');
+  const [paymentMethod, setPaymentMethod] = useState(null); // null | 'upi' | 'outside'
 
   // Auto-reset toId if it collides with fromId
   function handleFromChange(id) {
@@ -571,6 +573,7 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
     setAmount('');
     setNotes('');
     setError('');
+    setPaymentMethod(null);
     onClose();
   }
 
@@ -656,6 +659,57 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
             />
           </View>
 
+          {/* Payment method */}
+          <Text style={styles.modalLabel}>How was it paid?</Text>
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
+            <TouchableOpacity
+              style={[styles.payerChip, paymentMethod === 'upi' && styles.payerChipActive, { flexDirection: 'row', gap: 6, paddingHorizontal: 14, paddingVertical: 10 }]}
+              onPress={() => setPaymentMethod('upi')}
+              disabled={loading}>
+              <Ionicons name="qr-code-outline" size={15} color={paymentMethod === 'upi' ? '#060A09' : PC.textSecondary} />
+              <Text style={[styles.payerName, paymentMethod === 'upi' && styles.payerNameActive]}>UPI</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.payerChip, paymentMethod === 'outside' && styles.payerChipActive, { flexDirection: 'row', gap: 6, paddingHorizontal: 14, paddingVertical: 10 }]}
+              onPress={() => setPaymentMethod('outside')}
+              disabled={loading}>
+              <Ionicons name="swap-horizontal-outline" size={15} color={paymentMethod === 'outside' ? '#060A09' : PC.textSecondary} />
+              <Text style={[styles.payerName, paymentMethod === 'outside' && styles.payerNameActive]}>Outside App</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* UPI pay button — shown when UPI selected and receiver has a UPI ID */}
+          {paymentMethod === 'upi' && toId && (() => {
+            const receiver = members.find(m => m.id === toId || m.id?.toString() === toId);
+            const amt = parseFloat(amount);
+            if (receiver?.upiId && !isNaN(amt) && amt > 0) {
+              return (
+                <View style={{ marginBottom: 16 }}>
+                  <PayWithUPIButton
+                    upiId={receiver.upiId}
+                    name={receiver.name}
+                    amount={amt}
+                    note="Group settlement"
+                  />
+                  <Text style={{ color: PC.textMuted, fontSize: 12, marginTop: 8 }}>
+                    After paying, tap "Record Settlement" to log it.
+                  </Text>
+                </View>
+              );
+            }
+            if (!receiver?.upiId) {
+              return (
+                <View style={{ marginBottom: 16, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Ionicons name="information-circle-outline" size={14} color={PC.textMuted} />
+                  <Text style={{ color: PC.textMuted, fontSize: 12, flex: 1 }}>
+                    {receiver?.name?.split(' ')[0] || 'Receiver'} hasn't set a UPI ID yet.
+                  </Text>
+                </View>
+              );
+            }
+            return null;
+          })()}
+
           {/* Notes */}
           <Text style={styles.modalLabel}>Notes (optional)</Text>
           <View style={[styles.modalInputBox, { height: 72, alignItems: 'flex-start', paddingTop: 12 }]}>
@@ -724,6 +778,7 @@ export default function GroupDetailScreen() {
           id:    m._id,
           name:  m.name,
           email: m.email,
+          upiId: m.upiId || '',
           role:  m._id === g.adminId?._id || m._id === g.adminId ? 'Admin' : 'Member',
         }))
       );

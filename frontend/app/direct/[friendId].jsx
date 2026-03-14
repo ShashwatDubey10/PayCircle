@@ -22,6 +22,7 @@ import { PC } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { getDirectSplits, addDirectSplit, requestSettle, confirmSettle } from '@/services/directSplit';
 import { getFriends } from '@/services/friends';
+import { openUPIPayment } from '@/utils/upiPayment';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -131,6 +132,7 @@ export default function DirectSplitScreen() {
   const [inputError,    setInputError]    = useState('');
   const [pendingSettle, setPendingSettle] = useState(null);
   const [settleLoading, setSettleLoading] = useState(false);
+  const [showPayModal,  setShowPayModal]  = useState(false);
   const [myShare,       setMyShare]       = useState(null);
   const [showSplit,     setShowSplit]     = useState(false);
   const [refreshing,    setRefreshing]    = useState(false);
@@ -341,7 +343,7 @@ export default function DirectSplitScreen() {
           {iAmDebtor && (
             <TouchableOpacity
               style={[s.settleChip, myPendingSettle && s.settleChipMuted]}
-              onPress={!myPendingSettle && !settleLoading ? handleRequestSettle : undefined}
+              onPress={!myPendingSettle && !settleLoading ? () => setShowPayModal(true) : undefined}
               disabled={!!myPendingSettle || settleLoading}
               activeOpacity={0.75}>
               {settleLoading && !myPendingSettle
@@ -505,6 +507,62 @@ export default function DirectSplitScreen() {
           setShowSplit(false);
         }}
       />
+
+      {/* ── Payment method modal ── */}
+      <Modal visible={showPayModal} transparent animationType="slide" onRequestClose={() => setShowPayModal(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setShowPayModal(false)} />
+          <View style={{ backgroundColor: PC.bgCard, borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, borderBottomWidth: 0, borderColor: PC.border, padding: 24 }}>
+            <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: PC.border, alignSelf: 'center', marginBottom: 20 }} />
+            <Text style={{ color: PC.textPrimary, fontSize: 17, fontWeight: '700', marginBottom: 6 }}>How are you paying?</Text>
+            <Text style={{ color: PC.textSecondary, fontSize: 13, marginBottom: 20 }}>
+              Settling ₹{balAbs.toLocaleString('en-IN')} with {friendFirst}
+            </Text>
+
+            {/* UPI option */}
+            {(() => { const friendHasUpi = !!(friend?.upiId); return (
+            <TouchableOpacity
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: PC.bgCardElevated, borderRadius: 14, borderWidth: 1, borderColor: PC.border, padding: 16, marginBottom: 10, ...(!friendHasUpi && { opacity: 0.45 }) }}
+              disabled={!friendHasUpi}
+              onPress={async () => {
+                setShowPayModal(false);
+                await openUPIPayment({ upiId: friend.upiId, name: friendFirst, amount: balAbs, note: 'Settlement via PayCircle' });
+                await handleRequestSettle();
+              }}
+              activeOpacity={0.8}>
+              <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,229,190,0.12)', alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="qr-code-outline" size={20} color={PC.positive} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: PC.textPrimary, fontSize: 14, fontWeight: '600' }}>Pay via UPI</Text>
+                <Text style={{ color: PC.textSecondary, fontSize: 12, marginTop: 2 }}>
+                  {friendHasUpi ? `Opens UPI app · ${friend.upiId}` : `Ask ${friendFirst} to add their UPI ID in PayCircle profile`}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={PC.textMuted} />
+            </TouchableOpacity>
+            ); })()}
+
+            {/* Outside App option */}
+            <TouchableOpacity
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: PC.bgCardElevated, borderRadius: 14, borderWidth: 1, borderColor: PC.border, padding: 16, marginBottom: 24 }}
+              onPress={async () => {
+                setShowPayModal(false);
+                await handleRequestSettle();
+              }}
+              activeOpacity={0.8}>
+              <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(148,163,184,0.12)', alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="swap-horizontal-outline" size={20} color={PC.textSecondary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: PC.textPrimary, fontSize: 14, fontWeight: '600' }}>Paid outside app</Text>
+                <Text style={{ color: PC.textSecondary, fontSize: 12, marginTop: 2 }}>Cash, bank transfer, or other</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={PC.textMuted} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

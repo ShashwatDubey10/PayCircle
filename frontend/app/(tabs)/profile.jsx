@@ -202,6 +202,12 @@ export default function ProfileScreen() {
   const [usernameLoading,   setUsernameLoading]   = useState(false);
   const [usernameError,     setUsernameError]     = useState('');
 
+  // UPI ID modal
+  const [showUpiModal, setShowUpiModal] = useState(false);
+  const [upiInput,     setUpiInput]     = useState('');
+  const [upiLoading,   setUpiLoading]   = useState(false);
+  const [upiError,     setUpiError]     = useState('');
+
   // ── Fetch stats ───────────────────────────────────────────────────────────
   const fetchStats = useCallback(async () => {
     try {
@@ -231,6 +237,28 @@ export default function ProfileScreen() {
   const onRefresh = useCallback(() => { setRefreshing(true); fetchStats(); }, [fetchStats]);
 
   useEffect(() => { fetchStats(); }, [fetchStats]);
+
+  // ── Set UPI ID ────────────────────────────────────────────────────────────
+  async function handleSetUpiId() {
+    setUpiError('');
+    const cleaned = upiInput.trim();
+    if (cleaned && !/^[\w.\-]+@[\w]+$/.test(cleaned)) {
+      setUpiError('Enter a valid UPI ID (e.g. name@bank)');
+      return;
+    }
+    setUpiLoading(true);
+    try {
+      const { data } = await api.patch('/api/auth/me', { upiId: cleaned });
+      await updateUser(data?.user ?? { upiId: cleaned });
+      setShowUpiModal(false);
+      setUpiInput('');
+      Alert.alert('UPI ID saved!', cleaned ? `Your UPI ID is now ${cleaned}` : 'UPI ID cleared.');
+    } catch (err) {
+      setUpiError(err?.message || 'Failed to save UPI ID');
+    } finally {
+      setUpiLoading(false);
+    }
+  }
 
   // ── Set username ──────────────────────────────────────────────────────────
   async function handleSetUsername() {
@@ -355,6 +383,18 @@ export default function ProfileScreen() {
             <Ionicons name="at" size={13} color={user?.username ? PC.accent : PC.warning} />
             <Text style={[styles.usernameDisplay, !user?.username && styles.usernameUnset]}>
               {user?.username ? user.username : 'Set username'}
+            </Text>
+            <Ionicons name="pencil-outline" size={12} color={PC.textMuted} />
+          </TouchableOpacity>
+
+          {/* UPI ID — always visible, tappable to set/change */}
+          <TouchableOpacity
+            style={[styles.usernameRow, { marginTop: 6, borderColor: user?.upiId ? PC.positive : PC.border }]}
+            onPress={() => { setUpiInput(user?.upiId || ''); setShowUpiModal(true); }}
+            activeOpacity={0.7}>
+            <Ionicons name="qr-code-outline" size={13} color={user?.upiId ? PC.positive : PC.textMuted} />
+            <Text style={[styles.usernameDisplay, { color: user?.upiId ? PC.positive : PC.textMuted }, !user?.upiId && styles.usernameUnset]}>
+              {user?.upiId ? user.upiId : 'Add UPI ID'}
             </Text>
             <Ionicons name="pencil-outline" size={12} color={PC.textMuted} />
           </TouchableOpacity>
@@ -491,6 +531,53 @@ export default function ProfileScreen() {
               }
             </TouchableOpacity>
             <TouchableOpacity style={styles.cancelBtn} onPress={() => { setShowUsernameModal(false); setUsernameError(''); }} disabled={usernameLoading}>
+              <Text style={styles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+      {/* ── Set UPI ID Modal ── */}
+      <Modal visible={showUpiModal} transparent animationType="slide" onRequestClose={() => { setShowUpiModal(false); setUpiError(''); }}>
+        <View style={modalStyles.overlay}>
+          <View style={modalStyles.sheet}>
+            <View style={modalStyles.handle} />
+            <Text style={modalStyles.title}>{user?.upiId ? 'Change UPI ID' : 'Add UPI ID'}</Text>
+            <Text style={[modalStyles.itemBody, { marginBottom: 16 }]}>
+              {user?.upiId
+                ? `Current: ${user.upiId}. Update or clear your UPI ID.`
+                : 'Your UPI ID lets friends pay you directly via UPI apps like GPay or PhonePe.'
+              }
+            </Text>
+            {upiError ? (
+              <View style={styles.errorBox}>
+                <Ionicons name="alert-circle-outline" size={14} color={PC.negative} />
+                <Text style={styles.errorText}>{upiError}</Text>
+              </View>
+            ) : null}
+            <View style={styles.usernameInputBox}>
+              <Ionicons name="qr-code-outline" size={17} color={PC.textMuted} style={{ marginRight: 8 }} />
+              <TextInput
+                style={styles.usernameInput}
+                placeholder="yourname@bank"
+                placeholderTextColor={PC.textMuted}
+                value={upiInput}
+                onChangeText={(v) => { setUpiInput(v); setUpiError(''); }}
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!upiLoading}
+              />
+            </View>
+            <TouchableOpacity
+              style={[modalStyles.closeBtn, upiLoading && { opacity: 0.6 }]}
+              onPress={handleSetUpiId}
+              disabled={upiLoading}
+              activeOpacity={0.85}>
+              {upiLoading
+                ? <ActivityIndicator color="#060A09" size="small" />
+                : <Text style={modalStyles.closeBtnText}>Save UPI ID</Text>
+              }
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.cancelBtn} onPress={() => { setShowUpiModal(false); setUpiError(''); }} disabled={upiLoading}>
               <Text style={styles.cancelText}>Cancel</Text>
             </TouchableOpacity>
           </View>

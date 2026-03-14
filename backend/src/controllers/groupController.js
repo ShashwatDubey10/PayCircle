@@ -62,7 +62,7 @@ const getUserGroups = asyncHandler(async (req, res) => {
 // GET /api/groups/:id
 const getGroup = asyncHandler(async (req, res) => {
   const group = await Group.findById(req.params.id)
-    .populate('members', 'name email')
+    .populate('members', 'name email upiId')
     .populate('adminId', 'name email');
   if (!group) return res.status(404).json({ success: false, message: 'Group not found' });
 
@@ -128,7 +128,7 @@ const addMember = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     message: `${userToAdd.name} added to group`,
-    member: { id: userToAdd._id, name: userToAdd.name, email: userToAdd.email, role: 'Member' },
+    member: { id: userToAdd._id, name: userToAdd.name, email: userToAdd.email, upiId: userToAdd.upiId || '', role: 'Member' },
   });
 });
 

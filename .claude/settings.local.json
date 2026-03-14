@@ -21,7 +21,9 @@
       "Bash(find \"D:\\\\Coding Workspace\\\\projects\\\\PayCircle\\\\frontend\" -name \"*direct*\" -type f 2>/dev/null | head -20)",
       "Bash(wc -l \"D:\\\\Coding Workspace\\\\projects\\\\PayCircle\\\\frontend\\\\app\\\\\\(tabs\\)\\\\groups.jsx\")",
       "Bash(cat -n \"D:\\\\Coding Workspace\\\\projects\\\\PayCircle\\\\frontend\\\\app\\\\\\(tabs\\)\\\\groups.jsx\" 2>/dev/null | head -300)",
-      "Bash(wc -l \"D:\\\\Coding Workspace\\\\projects\\\\PayCircle\\\\frontend\\\\app\\\\\\(tabs\\)\\\\groups.jsx\" \"D:\\\\Coding Workspace\\\\projects\\\\PayCircle\\\\frontend\\\\app\\\\groups\\\\[id].jsx\")"
+      "Bash(wc -l \"D:\\\\Coding Workspace\\\\projects\\\\PayCircle\\\\frontend\\\\app\\\\\\(tabs\\)\\\\groups.jsx\" \"D:\\\\Coding Workspace\\\\projects\\\\PayCircle\\\\frontend\\\\app\\\\groups\\\\[id].jsx\")",
+      "Bash(find \"/d/Coding Workspace/projects/PayCircle/frontend\" -type f -name \"*.jsx\" | xargs grep -l \"StyleSheet\\\\|Button\\\\|Pressable\" 2>/dev/null | head -15)",
+      "Bash(tree -L 2 -I 'node_modules|.expo|android' \"/d/Coding Workspace/projects/PayCircle/frontend/\" 2>/dev/null || find \"/d/Coding Workspace/projects/PayCircle/frontend\" -maxdepth 2 -type d -not -path '*/node_modules/*' -not -path '*/.expo/*' -not -path '*/android/*' | sort)"
     ]
   }
 }
