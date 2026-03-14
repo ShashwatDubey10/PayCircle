@@ -1,9 +1,11 @@
 const mongoose     = require('mongoose');
 const DirectSplit  = require('../models/DirectSplit');
 const DirectSettle = require('../models/DirectSettle');
+const Group        = require('../models/Group');
 const asyncHandler = require('../utils/asyncHandler');
 const logger       = require('../utils/logger');
-const { areFriends } = require('./friendController');
+const { areFriends }            = require('./friendController');
+const { calculateGroupBalances } = require('../services/balanceService');
 
 // POST /api/users/me/direct/:friendId
 const addDirectSplit = asyncHandler(async (req, res) => {
@@ -309,4 +311,65 @@ const getAllDirectBalances = asyncHandler(async (req, res) => {
   res.json({ success: true, balances });
 });
 
-module.exports = { addDirectSplit, getDirectSplits, getAllDirectSplits, requestSettle, confirmSettle, getAllDirectSettlements, getAllDirectBalances };
+// DELETE /api/users/me/direct/:friendId/settle/:requestId
+const cancelOrRejectSettle = asyncHandler(async (req, res) => {
+  const { friendId, requestId } = req.params;
+  const meId = req.user._id;
+
+  if (!mongoose.Types.ObjectId.isValid(requestId))
+    return res.status(400).json({ success: false, message: 'Invalid requestId' });
+  if (!mongoose.Types.ObjectId.isValid(friendId))
+    return res.status(400).json({ success: false, message: 'Invalid friendId' });
+
+  const settle = await DirectSettle.findById(requestId);
+  if (!settle)
+    return res.status(404).json({ success: false, message: 'Settle request not found' });
+  if (settle.status !== 'pending')
+    return res.status(400).json({ success: false, message: 'Only pending requests can be cancelled' });
+
+  const isDebtor   = settle.fromUserId.equals(meId);
+  const isCreditor = settle.toUserId.equals(meId);
+  if (!isDebtor && !isCreditor)
+    return res.status(403).json({ success: false, message: 'Forbidden' });
+
+  await settle.deleteOne();
+  const action = isDebtor ? 'cancelled' : 'rejected';
+  logger.info('DIRECT', `Settle ${action}`, { requestId, by: meId });
+  res.json({ success: true });
+});
+
+// GET /api/users/me/direct/:friendId/group-balances
+const getGroupDebtsWithFriend = asyncHandler(async (req, res) => {
+  const { friendId } = req.params;
+  const meId  = req.user._id;
+  const meStr = meId.toString();
+
+  if (!mongoose.Types.ObjectId.isValid(friendId))
+    return res.status(400).json({ success: false, message: 'Invalid friendId' });
+
+  const friendObjId = new mongoose.Types.ObjectId(friendId);
+
+  // Groups where both users are members
+  const groups = await Group.find({ members: { $all: [meId, friendObjId] } });
+
+  const groupDebts = [];
+  for (const group of groups) {
+    const { debts } = await calculateGroupBalances(group._id);
+    const debt = debts.find(d =>
+      (d.from.id === meStr && d.to.id === friendId) ||
+      (d.from.id === friendId && d.to.id === meStr)
+    );
+    if (debt) {
+      groupDebts.push({
+        groupId:   group._id.toString(),
+        groupName: group.name,
+        amount:    debt.amount,
+        iOwe:      debt.from.id === meStr,
+      });
+    }
+  }
+
+  res.json({ success: true, groupDebts });
+});
+
+module.exports = { addDirectSplit, getDirectSplits, getAllDirectSplits, requestSettle, confirmSettle, getAllDirectSettlements, getAllDirectBalances, cancelOrRejectSettle, getGroupDebtsWithFriend };

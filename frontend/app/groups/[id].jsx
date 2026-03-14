@@ -50,6 +50,22 @@ function formatDate(dateStr) {
   });
 }
 
+function formatExpDateLabel(dateStr) {
+  const d = new Date(dateStr);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return 'Today';
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function formatExpTime(dateStr) {
+  return new Date(dateStr).toLocaleTimeString('en-IN', {
+    hour: '2-digit', minute: '2-digit', hour12: true,
+  });
+}
+
 function formatShortDate(dateStr) {
   return new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
@@ -57,6 +73,20 @@ function formatShortDate(dateStr) {
 function initials(name) {
   if (!name) return '?';
   return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+}
+
+// ─── Expense bubble components ────────────────────────────────────────────────
+
+const CAT_EMOJI = { Food: '🍽', Travel: '✈', Utilities: '⚡', Miscellaneous: '📦' };
+
+function ExpDateSeparator({ label }) {
+  return (
+    <View style={styles.expDateSep}>
+      <View style={styles.expDateSepLine} />
+      <Text style={styles.expDateSepText}>{label}</Text>
+      <View style={styles.expDateSepLine} />
+    </View>
+  );
 }
 
 // ─── Add Expense Modal ────────────────────────────────────────────────────────
@@ -950,82 +980,129 @@ export default function GroupDetailScreen() {
               <Text style={styles.emptyText}>Add the first expense to get started</Text>
             </View>
           ) : (
-            expenses.map((exp) => {
+            expenses.map((exp, idx) => {
+              const meId = user._id?.toString();
+              const paidByMe = exp.payerId?._id?.toString() === meId || exp.payerId?.id?.toString() === meId;
               const myShare = exp.splits?.find(s =>
-                s.userId?._id?.toString() === user._id?.toString() ||
-                s.userId?.id?.toString()  === user._id?.toString()
+                s.userId?._id?.toString() === meId || s.userId?.id?.toString() === meId
               );
-              const paidByMe = exp.payerId?._id?.toString() === user._id?.toString() ||
-                               exp.payerId?.id?.toString()  === user._id?.toString();
               const isExpanded = expandedExpId === exp._id;
+              const prevExp = idx > 0 ? expenses[idx - 1] : null;
+              const showDate = !prevExp || formatExpDateLabel(exp.date) !== formatExpDateLabel(prevExp.date);
+              const payerFirstName = (exp.payerId?.name ?? 'Unknown').split(' ')[0];
+
               return (
-                <TouchableOpacity
-                  key={exp._id}
-                  activeOpacity={0.85}
-                  onPress={() => {
-                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                    setExpandedExpId(isExpanded ? null : exp._id);
-                  }}>
-                  <View style={[styles.expenseCard, isExpanded && styles.expenseCardExpanded]}>
-                    <View style={styles.expCatIcon}>
-                      <Ionicons name={CAT_ICONS[exp.category] || 'grid-outline'} size={18} color={PC.textSecondary} />
-                    </View>
-                    <View style={styles.expInfo}>
-                      <Text style={styles.expTitle}>{exp.notes || exp.category}</Text>
-                      <Text style={styles.expMeta}>
-                        Paid by {paidByMe ? 'You' : exp.payerId?.name ?? 'Unknown'} · {formatShortDate(exp.date)}
-                      </Text>
-                    </View>
-                    <View style={styles.expAmounts}>
-                      <Text style={styles.expTotal}>₹{exp.amount.toLocaleString('en-IN')}</Text>
-                      {myShare ? (
-                        <Text style={[
-                          styles.expShare,
-                          paidByMe ? { color: PC.positive } : { color: PC.negative },
-                        ]}>
-                          {paidByMe ? 'lent' : 'owe'} ₹{myShare.amount.toLocaleString('en-IN')}
-                        </Text>
-                      ) : null}
-                    </View>
-                    <Ionicons
-                      name={isExpanded ? 'chevron-up' : 'chevron-down'}
-                      size={14}
-                      color={PC.textMuted}
-                      style={{ marginLeft: 6 }}
-                    />
-                  </View>
-                  {isExpanded && (
-                    <View style={styles.expSplitList}>
-                      <View style={styles.expSplitHeader}>
-                        <Ionicons name="receipt-outline" size={11} color={PC.textMuted} />
-                        <Text style={styles.expSplitHeaderText}>Split breakdown</Text>
+                <View key={exp._id}>
+                  {showDate && <ExpDateSeparator label={formatExpDateLabel(exp.date)} />}
+                  <View style={[styles.expBubbleRow, paidByMe ? styles.expBubbleRowRight : styles.expBubbleRowLeft]}>
+                    {!paidByMe && (
+                      <View style={styles.expBubbleAvatar}>
+                        <Text style={styles.expBubbleAvatarText}>{initials(payerFirstName)}</Text>
                       </View>
-                      {exp.splits?.map((s, si) => {
-                        const memberId = s.userId?._id?.toString() ?? s.userId?.toString();
-                        const memberName = members.find(m => m.id === memberId)?.name ?? s.userId?.name ?? 'Unknown';
-                        const isMe = memberId === user._id?.toString();
-                        const isPayer = exp.payerId?._id?.toString() === memberId || exp.payerId?.toString() === memberId;
-                        return (
-                          <React.Fragment key={memberId}>
-                            {si > 0 && <View style={styles.expSplitDivider} />}
-                            <View style={[styles.expSplitRow, isPayer && styles.expSplitRowPayer]}>
-                              <View style={styles.memberAvatarSm}>
-                                <Text style={styles.memberInitials}>{initials(memberName)}</Text>
-                              </View>
-                              <Text style={[styles.expSplitName, isMe && { color: PC.textPrimary, fontWeight: '600' }]}>
-                                {isMe ? 'You' : memberName.split(' ')[0]}
-                              </Text>
-                              {isPayer && <View style={styles.payerTag}><Text style={styles.payerTagText}>paid</Text></View>}
-                              <Text style={[styles.expSplitAmt, isPayer ? { color: PC.positive } : { color: PC.textSecondary }]}>
-                                ₹{s.amount.toFixed(2)}
-                              </Text>
+                    )}
+                    <View style={{ maxWidth: '78%' }}>
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        onPress={() => {
+                          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                          setExpandedExpId(isExpanded ? null : exp._id);
+                        }}
+                        style={[styles.expBubble, paidByMe ? styles.expBubbleMine : styles.expBubbleFriend]}>
+
+                        {/* Paid line */}
+                        <View style={styles.expBubbleAmtRow}>
+                          <Text style={[styles.expBubblePaidBy, paidByMe ? styles.expTMineSecondary : { color: PC.textSecondary }]}>
+                            {paidByMe ? 'You' : payerFirstName} paid
+                          </Text>
+                          <Text style={[styles.expBubbleAmt, paidByMe ? styles.expTMine : { color: PC.textPrimary }]}>
+                            {'  '}₹{exp.amount.toLocaleString('en-IN')}
+                          </Text>
+                        </View>
+
+                        {/* Notes */}
+                        {exp.notes ? (
+                          <Text style={[styles.expBubbleDesc, paidByMe ? styles.expTMineSecondary : { color: PC.textSecondary }]}>
+                            {exp.notes}
+                          </Text>
+                        ) : null}
+
+                        {/* Your Share */}
+                        {myShare ? (
+                          <Text style={[styles.expBubbleShareLine, paidByMe ? styles.expTMineSecondary : { color: PC.textSecondary }]}>
+                            {'Your Share : '}
+                            <Text style={[styles.expBubbleShareAmt, paidByMe ? styles.expTMine : { color: PC.textPrimary }]}>
+                              ₹{myShare.amount.toLocaleString('en-IN')}
+                            </Text>
+                          </Text>
+                        ) : null}
+
+                        {/* Time */}
+                        <Text style={[styles.expBubbleTime, paidByMe ? styles.expTMineMuted : { color: PC.textMuted }, { marginTop: 4 }]}>
+                          {formatExpTime(exp.date)}
+                        </Text>
+                      </TouchableOpacity>
+
+                      {/* Expanded receipt-style split breakdown */}
+                      {isExpanded && (
+                        <View style={[styles.splitCard, paidByMe ? styles.splitCardMine : styles.splitCardFriend]}>
+
+                          {/* Header */}
+                          <View style={[styles.splitCardHeader, paidByMe ? styles.splitCardHeaderMine : styles.splitCardHeaderFriend]}>
+                            <Ionicons name="receipt-outline" size={10} color={PC.textMuted} />
+                            <Text style={styles.splitCardHeaderLabel}>SPLIT BREAKDOWN</Text>
+                            <Text style={styles.splitCardHeaderCount}>{exp.splits?.length} people</Text>
+                          </View>
+
+                          {/* Member rows */}
+                          {exp.splits?.map((s, si) => {
+                            const memberId = s.userId?._id?.toString() ?? s.userId?.toString();
+                            const memberName = members.find(m => m.id === memberId)?.name ?? s.userId?.name ?? 'Unknown';
+                            const isMe = memberId === meId;
+                            const isPayer = exp.payerId?._id?.toString() === memberId || exp.payerId?.toString() === memberId;
+                            return (
+                              <React.Fragment key={memberId ?? si}>
+                                {si > 0 && <View style={[styles.splitRowDivider, paidByMe ? styles.splitRowDividerMine : styles.splitRowDividerFriend]} />}
+                                <View style={styles.splitRow}>
+                                  {isPayer && <View style={styles.splitPayerBar} />}
+                                  <View style={[styles.splitAvatar, isPayer ? styles.splitAvatarPayer : isMe ? styles.splitAvatarMe : {}]}>
+                                    <Text style={[styles.splitAvatarText, isPayer && { color: '#060A09' }]}>
+                                      {initials(memberName)}
+                                    </Text>
+                                  </View>
+                                  <Text style={[styles.splitName, isPayer ? styles.splitNamePayer : isMe ? styles.splitNameMe : {}]}>
+                                    {isMe ? 'You' : memberName.split(' ')[0]}
+                                  </Text>
+                                  {isPayer && (
+                                    <View style={styles.splitPaidBadge}>
+                                      <Text style={styles.splitPaidBadgeText}>PAID</Text>
+                                    </View>
+                                  )}
+                                  <View style={styles.splitLeader}>
+                                    {[...Array(10)].map((_, di) => <View key={di} style={styles.splitLeaderDot} />)}
+                                  </View>
+                                  <Text style={[styles.splitAmt, isPayer ? styles.splitAmtPayer : isMe ? styles.splitAmtMe : styles.splitAmtOwer]}>
+                                    {isPayer ? '+' : '−'}₹{s.amount.toFixed(2)}
+                                  </Text>
+                                </View>
+                              </React.Fragment>
+                            );
+                          })}
+
+                          {/* Total footer */}
+                          <View style={[styles.splitTotalRow, paidByMe ? styles.splitTotalRowMine : styles.splitTotalRowFriend]}>
+                            <Text style={styles.splitTotalLabel}>TOTAL</Text>
+                            <View style={styles.splitLeader}>
+                              {[...Array(10)].map((_, di) => <View key={di} style={styles.splitLeaderDot} />)}
                             </View>
-                          </React.Fragment>
-                        );
-                      })}
+                            <Text style={[styles.splitTotalAmt, paidByMe ? { color: PC.positive } : { color: PC.textPrimary }]}>
+                              ₹{exp.amount.toLocaleString('en-IN')}
+                            </Text>
+                          </View>
+                        </View>
+                      )}
                     </View>
-                  )}
-                </TouchableOpacity>
+                  </View>
+                </View>
               );
             })
           )
@@ -1435,4 +1512,132 @@ const styles = StyleSheet.create({
   customSplitMember: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
   customSplitInput:  { flexDirection: 'row', alignItems: 'center', backgroundColor: PC.bgInput, borderWidth: 1, borderColor: PC.border, borderRadius: 12, paddingHorizontal: 10, height: 44, width: 110 },
   remainingBar:      { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderTopWidth: 1, borderTopColor: PC.border },
+
+  // ── Expense chat-bubble styles ──────────────────────────────────────────────
+  expDateSep:     { flexDirection: 'row', alignItems: 'center', marginVertical: 14, gap: 10 },
+  expDateSepLine: { flex: 1, height: 1, backgroundColor: PC.border },
+  expDateSepText: { color: PC.textMuted, fontSize: 11, fontWeight: '500' },
+
+  expBubbleRow:      { flexDirection: 'row', marginBottom: 6, alignItems: 'flex-end' },
+  expBubbleRowRight: { justifyContent: 'flex-end' },
+  expBubbleRowLeft:  { justifyContent: 'flex-start', gap: 8 },
+
+  expBubbleAvatar: {
+    width: 30, height: 30, borderRadius: 10,
+    backgroundColor: PC.bgCardElevated, borderWidth: 1, borderColor: PC.border,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 2,
+  },
+  expBubbleAvatarText: { color: PC.textPrimary, fontSize: 10, fontWeight: '700' },
+
+  expBubble: {
+    maxWidth: '100%', borderRadius: 16,
+    paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1,
+  },
+  expBubbleMine:   { backgroundColor: PC.accent, borderColor: PC.accent, borderBottomRightRadius: 4 },
+  expBubbleFriend: { backgroundColor: PC.bgCard,  borderColor: PC.border, borderBottomLeftRadius: 4 },
+
+  // Content inside expense bubble — mirrors direct screen Bubble structure exactly
+  expBubbleAmtRow:   { flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap' },
+  expBubblePaidBy:   { fontSize: 12 },
+  expBubbleAmt:      { fontSize: 17, fontWeight: '700' },
+  expBubbleDesc:     { fontSize: 13, marginTop: 3 },
+  expBubbleShareLine:{ fontSize: 11, marginTop: 6 },
+  expBubbleShareAmt: { fontSize: 11, fontWeight: '700' },
+  expBubbleTime:     { fontSize: 10 },
+
+  // dark text on mint bubble
+  expTMine:          { color: '#060A09' },
+  expTMineSecondary: { color: 'rgba(6,10,9,0.65)' },
+  expTMineMuted:     { color: 'rgba(6,10,9,0.45)' },
+
+  expBubbleSplits: {
+    borderRadius: 14, borderTopLeftRadius: 0, borderTopRightRadius: 0,
+    borderWidth: 1, borderTopWidth: 0, overflow: 'hidden', marginBottom: 10,
+  },
+  expBubbleSplitsMine:   { backgroundColor: 'rgba(0,229,190,0.08)', borderColor: PC.accent },
+  expBubbleSplitsFriend: { backgroundColor: PC.bgCard, borderColor: PC.border },
+
+  // ── Receipt-style split card ─────────────────────────────────────────────────
+  splitCard: {
+    borderBottomLeftRadius: 14, borderBottomRightRadius: 14,
+    overflow: 'hidden', marginBottom: 10,
+    borderWidth: 1, borderTopWidth: 0,
+  },
+  splitCardFriend: { backgroundColor: '#0A110E', borderColor: PC.border },
+  splitCardMine:   { backgroundColor: 'rgba(0,229,190,0.04)', borderColor: 'rgba(0,229,190,0.28)' },
+
+  splitCardHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 12, paddingVertical: 8,
+    borderBottomWidth: 1,
+  },
+  splitCardHeaderFriend: { borderBottomColor: PC.border },
+  splitCardHeaderMine:   { borderBottomColor: 'rgba(0,229,190,0.16)' },
+  splitCardHeaderLabel:  { flex: 1, color: PC.textMuted, fontSize: 9, fontWeight: '700', letterSpacing: 1.4 },
+  splitCardHeaderCount:  { color: PC.textMuted, fontSize: 9, fontWeight: '500' },
+
+  splitRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 12, paddingVertical: 9,
+    position: 'relative',
+  },
+  splitRowDivider:       { height: 1, marginLeft: 52 },
+  splitRowDividerFriend: { backgroundColor: PC.border },
+  splitRowDividerMine:   { backgroundColor: 'rgba(0,229,190,0.10)' },
+
+  splitPayerBar: {
+    position: 'absolute', left: 0, top: 0, bottom: 0,
+    width: 3, backgroundColor: PC.accent,
+  },
+
+  splitAvatar: {
+    width: 28, height: 28, borderRadius: 8,
+    backgroundColor: PC.bgCardElevated,
+    borderWidth: 1, borderColor: PC.border,
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: 10,
+  },
+  splitAvatarPayer: { backgroundColor: PC.accent, borderColor: PC.accent },
+  splitAvatarMe:    { borderColor: PC.borderLight, backgroundColor: 'rgba(239,249,246,0.08)' },
+  splitAvatarText:  { color: PC.textPrimary, fontSize: 10, fontWeight: '700' },
+
+  splitName:      { color: PC.textSecondary, fontSize: 13, fontWeight: '500' },
+  splitNamePayer: { color: PC.accent, fontWeight: '700' },
+  splitNameMe:    { color: PC.textPrimary, fontWeight: '600' },
+
+  splitPaidBadge: {
+    marginLeft: 7,
+    paddingHorizontal: 5, paddingVertical: 2,
+    backgroundColor: 'rgba(0,229,190,0.12)',
+    borderRadius: 4, borderWidth: 1, borderColor: 'rgba(0,229,190,0.30)',
+  },
+  splitPaidBadgeText: { color: PC.accent, fontSize: 8, fontWeight: '700', letterSpacing: 0.8 },
+
+  splitLeader: {
+    flex: 1, flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'center', gap: 3,
+    paddingHorizontal: 8, overflow: 'hidden',
+  },
+  splitLeaderDot: { width: 2, height: 2, borderRadius: 1, backgroundColor: PC.border },
+
+  splitAmt: {
+    fontSize: 12, fontWeight: '700', minWidth: 66, textAlign: 'right',
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
+  splitAmtPayer: { color: PC.positive },
+  splitAmtMe:    { color: PC.negative },
+  splitAmtOwer:  { color: PC.textSecondary },
+
+  splitTotalRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 12, paddingVertical: 9,
+    borderTopWidth: 1,
+  },
+  splitTotalRowFriend: { borderTopColor: PC.borderLight },
+  splitTotalRowMine:   { borderTopColor: 'rgba(0,229,190,0.16)' },
+  splitTotalLabel:     { color: PC.textMuted, fontSize: 9, fontWeight: '700', letterSpacing: 1.4 },
+  splitTotalAmt: {
+    fontSize: 13, fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
 });

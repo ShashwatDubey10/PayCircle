@@ -23,3 +23,9 @@ export const getAllDirectSettlements = () =>
 
 export const getAllDirectBalances = () =>
   api.get('/api/users/me/direct/balances').then(r => r.data);
+
+export const cancelOrRejectSettle = (friendId, requestId) =>
+  api.delete(`/api/users/me/direct/${friendId}/settle/${requestId}`).then(r => r.data);
+
+export const getGroupDebtsWithFriend = (friendId) =>
+  api.get(`/api/users/me/direct/${friendId}/group-balances`).then(r => r.data);

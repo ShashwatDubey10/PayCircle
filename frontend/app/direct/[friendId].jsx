@@ -12,6 +12,8 @@ import {
   Modal,
   Platform,
   RefreshControl,
+  LayoutAnimation,
+  UIManager,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,9 +22,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { PC } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
-import { getDirectSplits, addDirectSplit, requestSettle, confirmSettle } from '@/services/directSplit';
+import { getDirectSplits, addDirectSplit, requestSettle, confirmSettle, cancelOrRejectSettle, getGroupDebtsWithFriend } from '@/services/directSplit';
 import { getFriends } from '@/services/friends';
 import { openUPIPayment } from '@/utils/upiPayment';
+import api from '@/services/api';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -130,23 +137,37 @@ export default function DirectSplitScreen() {
   const [paidByMe,      setPaidByMe]      = useState(true);
   const [sending,       setSending]       = useState(false);
   const [inputError,    setInputError]    = useState('');
-  const [pendingSettle, setPendingSettle] = useState(null);
-  const [settleLoading, setSettleLoading] = useState(false);
-  const [showPayModal,  setShowPayModal]  = useState(false);
+  const [pendingSettle,  setPendingSettle]  = useState(null);
+  const [settleLoading,  setSettleLoading]  = useState(false);
+  const [cancelLoading,  setCancelLoading]  = useState(false);
+  const [showPayModal,   setShowPayModal]   = useState(false);
+  const [groupDebts,     setGroupDebts]     = useState([]);
+  const [settleAllMode,      setSettleAllMode]      = useState(false);
+  const [groupDebtsExpanded, setGroupDebtsExpanded] = useState(false);
+  const [settleCustomAmt,    setSettleCustomAmt]    = useState('');
   const [myShare,       setMyShare]       = useState(null);
   const [showSplit,     setShowSplit]     = useState(false);
   const [refreshing,    setRefreshing]    = useState(false);
 
+  // Initialise custom amount to full balance whenever direct-settle modal opens
+  useEffect(() => {
+    if (showPayModal && !settleAllMode) {
+      setSettleCustomAmt(Math.abs(balance).toFixed(2));
+    }
+  }, [showPayModal]);
+
   // ── Load splits + friend info ──────────────────────────────────────────────
   const load = useCallback(async () => {
     try {
-      const [data, friends] = await Promise.all([
+      const [data, friends, debtsData] = await Promise.all([
         getDirectSplits(friendId),
         getFriends(),
+        getGroupDebtsWithFriend(friendId).catch(() => ({ groupDebts: [] })),
       ]);
       setSplits(data.splits || []);
       setBalance(data.balance ?? 0);
       setPendingSettle(data.pendingSettle || null);
+      setGroupDebts(debtsData.groupDebts || []);
       let f = (friends || []).find(f =>
         String(f._id) === String(friendId) ||
         String(f.id)  === String(friendId)
@@ -227,15 +248,58 @@ export default function DirectSplitScreen() {
   }
 
   // ── Settle Up ─────────────────────────────────────────────────────────────
-  async function handleRequestSettle() {
+  async function handleSettleAll() {
+    const meId = user?._id?.toString() ?? user?.id?.toString();
     setSettleLoading(true);
     try {
-      const data = await requestSettle(friendId, Math.abs(balance));
+      // Record a group settlement for every group debt I owe
+      await Promise.all(
+        groupDebts.filter(gd => gd.iOwe).map(gd =>
+          api.post(`/api/groups/${gd.groupId}/settlements`, {
+            fromUserId: meId,
+            toUserId:   friendId,
+            amount:     gd.amount,
+            date:       new Date().toISOString(),
+            notes:      'Settled via PayCircle',
+          })
+        )
+      );
+      // Also send a direct settle request if I owe directly
+      if (iAmDebtor && balAbs > 0.01) {
+        const data = await requestSettle(friendId, balAbs);
+        setPendingSettle(data.pendingSettle);
+      }
+      await load();
+    } catch (err) {
+      setInputError(err?.message || 'Failed to settle');
+    } finally {
+      setSettleLoading(false);
+    }
+  }
+
+  async function handleRequestSettle(overrideAmt) {
+    const amt = overrideAmt ?? Math.abs(balance);
+    setSettleLoading(true);
+    try {
+      const data = await requestSettle(friendId, amt);
       setPendingSettle(data.pendingSettle);
     } catch (err) {
       setInputError(err?.message || 'Failed to send settle request');
     } finally {
       setSettleLoading(false);
+    }
+  }
+
+  async function handleCancelOrReject() {
+    if (!pendingSettle) return;
+    setCancelLoading(true);
+    try {
+      await cancelOrRejectSettle(friendId, pendingSettle._id);
+      setPendingSettle(null);
+    } catch (err) {
+      setInputError(err?.message || 'Failed');
+    } finally {
+      setCancelLoading(false);
     }
   }
 
@@ -339,20 +403,116 @@ export default function DirectSplitScreen() {
             }
           </Text>
 
-          {/* Settle Up chip — shown to debtor */}
-          {iAmDebtor && (
+          {/* Settle Up / Cancel chip — shown to debtor */}
+          {iAmDebtor && myPendingSettle ? (
+            <>
+              <View style={[s.settleChip, s.settleChipMuted]}>
+                <Text style={[s.settleChipText, s.settleChipTextMuted]}>Pending…</Text>
+              </View>
+              <TouchableOpacity
+                style={s.cancelChip}
+                onPress={handleCancelOrReject}
+                disabled={cancelLoading}
+                activeOpacity={0.75}>
+                {cancelLoading
+                  ? <ActivityIndicator size="small" color={PC.negative} />
+                  : <Ionicons name="close" size={13} color={PC.negative} />
+                }
+              </TouchableOpacity>
+            </>
+          ) : iAmDebtor ? (
             <TouchableOpacity
-              style={[s.settleChip, myPendingSettle && s.settleChipMuted]}
-              onPress={!myPendingSettle && !settleLoading ? () => setShowPayModal(true) : undefined}
-              disabled={!!myPendingSettle || settleLoading}
+              style={[s.settleChip, settleLoading && { opacity: 0.5 }]}
+              onPress={!settleLoading ? () => setShowPayModal(true) : undefined}
+              disabled={settleLoading}
               activeOpacity={0.75}>
-              {settleLoading && !myPendingSettle
+              {settleLoading
                 ? <ActivityIndicator size="small" color={PC.textMuted} />
-                : <Text style={[s.settleChipText, myPendingSettle && s.settleChipTextMuted]}>
-                    {myPendingSettle ? 'Pending…' : 'Settle Up'}
-                  </Text>
+                : <Text style={s.settleChipText}>Settle Up</Text>
               }
             </TouchableOpacity>
+          ) : null}
+        </View>
+      )}
+
+      {/* ── Group Debts accordion ── */}
+      {groupDebts.length > 0 && (
+        <View style={s.gdPanel}>
+          {/* Header — tap to expand / collapse */}
+          <TouchableOpacity
+            style={s.gdHeader}
+            onPress={() => {
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+              setGroupDebtsExpanded(v => !v);
+            }}
+            activeOpacity={0.8}>
+            <View style={s.gdHeaderLeft}>
+              <Ionicons name="layers-outline" size={14} color={PC.accent} />
+              <Text style={s.gdHeaderTitle}>Group Debts</Text>
+              <View style={s.gdHeaderBadge}>
+                <Text style={s.gdHeaderBadgeText}>{groupDebts.length}</Text>
+              </View>
+            </View>
+            <View style={s.gdHeaderRight}>
+              {(() => {
+                const owe = groupDebts.filter(d => d.iOwe).reduce((a, d) => a + d.amount, 0);
+                const owed = groupDebts.filter(d => !d.iOwe).reduce((a, d) => a + d.amount, 0);
+                if (owe > 0.01)  return <Text style={[s.gdHeaderNet, { color: PC.negative }]}>−₹{owe.toLocaleString('en-IN')}</Text>;
+                if (owed > 0.01) return <Text style={[s.gdHeaderNet, { color: PC.positive }]}>+₹{owed.toLocaleString('en-IN')}</Text>;
+                return null;
+              })()}
+              <Ionicons
+                name={groupDebtsExpanded ? 'chevron-up' : 'chevron-down'}
+                size={15}
+                color={PC.textMuted}
+              />
+            </View>
+          </TouchableOpacity>
+
+          {/* Expanded body */}
+          {groupDebtsExpanded && (
+            <View style={s.gdBody}>
+              {groupDebts.map((item, idx) => (
+                <View key={item.groupId} style={[s.gdRow, idx > 0 && s.gdRowBorder]}>
+                  <View style={[s.gdRowBar, { backgroundColor: item.iOwe ? PC.negative : PC.positive }]} />
+                  <View style={{ flex: 1, paddingLeft: 12 }}>
+                    <Text style={s.gdRowName} numberOfLines={1}>{item.groupName}</Text>
+                    <Text style={[s.gdRowDir, { color: item.iOwe ? PC.negative : PC.positive }]}>
+                      {item.iOwe ? 'you owe' : 'they owe'}
+                    </Text>
+                  </View>
+                  <Text style={[s.gdRowAmt, { color: item.iOwe ? PC.negative : PC.positive }]}>
+                    {item.iOwe ? '−' : '+'}₹{item.amount.toLocaleString('en-IN')}
+                  </Text>
+                  <TouchableOpacity
+                    style={s.gdRowNavBtn}
+                    onPress={() => router.push(`/groups/${item.groupId}`)}
+                    activeOpacity={0.8}>
+                    <Ionicons name="arrow-forward" size={13} color={PC.accent} />
+                  </TouchableOpacity>
+                </View>
+              ))}
+
+              {/* Settle All footer — when there's combined debt I owe */}
+              {(() => {
+                const groupIOweTotal = groupDebts.filter(d => d.iOwe).reduce((a, d) => a + d.amount, 0);
+                const directOwed = iAmDebtor ? balAbs : 0;
+                const combined = groupIOweTotal + directOwed;
+                if (combined < 0.01) return null;
+                return (
+                  <TouchableOpacity
+                    style={[s.settleAllBtn, (settleLoading || !!pendingSettle) && { opacity: 0.5 }]}
+                    disabled={settleLoading || !!pendingSettle}
+                    onPress={() => { setSettleAllMode(true); setShowPayModal(true); }}
+                    activeOpacity={0.8}>
+                    <Ionicons name="checkmark-done-outline" size={15} color="#060A09" />
+                    <Text style={s.settleAllBtnText}>
+                      Settle All · ₹{combined.toLocaleString('en-IN')}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })()}
+            </View>
           )}
         </View>
       )}
@@ -402,9 +562,19 @@ export default function DirectSplitScreen() {
               </Text>
             </View>
             <TouchableOpacity
-              style={[s.settleConfirmBtn, settleLoading && { opacity: 0.5 }]}
+              style={[s.settleRejectBtn, (settleLoading || cancelLoading) && { opacity: 0.5 }]}
+              onPress={handleCancelOrReject}
+              disabled={settleLoading || cancelLoading}
+              activeOpacity={0.8}>
+              {cancelLoading
+                ? <ActivityIndicator size="small" color={PC.negative} />
+                : <Text style={s.settleRejectBtnText}>Reject</Text>
+              }
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[s.settleConfirmBtn, (settleLoading || cancelLoading) && { opacity: 0.5 }]}
               onPress={handleConfirmSettle}
-              disabled={settleLoading}
+              disabled={settleLoading || cancelLoading}
               activeOpacity={0.8}>
               {settleLoading
                 ? <ActivityIndicator size="small" color="#060A09" />
@@ -509,15 +679,90 @@ export default function DirectSplitScreen() {
       />
 
       {/* ── Payment method modal ── */}
-      <Modal visible={showPayModal} transparent animationType="slide" onRequestClose={() => setShowPayModal(false)}>
+      <Modal visible={showPayModal} transparent animationType="slide" onRequestClose={() => { setShowPayModal(false); setSettleAllMode(false); }}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setShowPayModal(false)} />
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => { setShowPayModal(false); setSettleAllMode(false); }} />
           <View style={{ backgroundColor: PC.bgCard, borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, borderBottomWidth: 0, borderColor: PC.border, padding: 24 }}>
             <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: PC.border, alignSelf: 'center', marginBottom: 20 }} />
             <Text style={{ color: PC.textPrimary, fontSize: 17, fontWeight: '700', marginBottom: 6 }}>How are you paying?</Text>
-            <Text style={{ color: PC.textSecondary, fontSize: 13, marginBottom: 20 }}>
-              Settling ₹{balAbs.toLocaleString('en-IN')} with {friendFirst}
-            </Text>
+            {settleAllMode ? (() => {
+              const groupIOweTotal = groupDebts.filter(d => d.iOwe).reduce((a, d) => a + d.amount, 0);
+              const combined = (iAmDebtor ? balAbs : 0) + groupIOweTotal;
+              return (
+                <View style={{ marginBottom: 20 }}>
+                  <Text style={{ color: PC.textSecondary, fontSize: 13, marginBottom: 6 }}>
+                    Combined total with {friendFirst}
+                  </Text>
+                  {iAmDebtor && balAbs > 0.01 ? (
+                    <Text style={{ color: PC.textMuted, fontSize: 12, marginBottom: 2 }}>
+                      Direct: ₹{balAbs.toLocaleString('en-IN')} (pending confirmation)
+                    </Text>
+                  ) : null}
+                  {groupDebts.filter(d => d.iOwe).map(d => (
+                    <Text key={d.groupId} style={{ color: PC.textMuted, fontSize: 12, marginBottom: 2 }}>
+                      {d.groupName}: ₹{d.amount.toLocaleString('en-IN')} (settled now)
+                    </Text>
+                  ))}
+                  <Text style={{ color: PC.textPrimary, fontSize: 15, fontWeight: '700', marginTop: 4 }}>
+                    Total: ₹{combined.toLocaleString('en-IN')}
+                  </Text>
+                </View>
+              );
+            })() : (
+              /* ── Custom amount selector (direct settle only) ── */
+              <View style={s.customAmtBlock}>
+                {/* Amount display row */}
+                <View style={s.customAmtRow}>
+                  <Text style={s.customAmtRupee}>₹</Text>
+                  <TextInput
+                    style={s.customAmtInput}
+                    value={settleCustomAmt}
+                    onChangeText={v => setSettleCustomAmt(v)}
+                    keyboardType="decimal-pad"
+                    selectTextOnFocus
+                    placeholder={balAbs.toFixed(2)}
+                    placeholderTextColor={PC.textMuted}
+                  />
+                  <Text style={s.customAmtOfLabel}>
+                    of ₹{balAbs.toLocaleString('en-IN')}
+                  </Text>
+                </View>
+
+                {/* Preset chips */}
+                <View style={s.customAmtPresets}>
+                  {[25, 50, 75, 100].map(pct => {
+                    const presetVal = pct === 100 ? balAbs : parseFloat((balAbs * pct / 100).toFixed(2));
+                    const isActive  = Math.abs((parseFloat(settleCustomAmt) || 0) - presetVal) < 0.01;
+                    return (
+                      <TouchableOpacity
+                        key={pct}
+                        style={[s.customAmtPresetBtn, isActive && s.customAmtPresetBtnActive]}
+                        onPress={() => setSettleCustomAmt(presetVal.toFixed(2))}
+                        activeOpacity={0.75}>
+                        <Text style={[s.customAmtPresetText, isActive && s.customAmtPresetTextActive]}>
+                          {pct === 100 ? 'Full' : `${pct}%`}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {/* Remaining balance hint */}
+                {(() => {
+                  const custom = parseFloat(settleCustomAmt) || 0;
+                  const remaining = Math.round((balAbs - custom) * 100) / 100;
+                  if (remaining > 0.01) return (
+                    <View style={s.customAmtRemainingRow}>
+                      <Ionicons name="time-outline" size={12} color={PC.textMuted} />
+                      <Text style={s.customAmtRemainingText}>
+                        ₹{remaining.toLocaleString('en-IN')} still owed after this
+                      </Text>
+                    </View>
+                  );
+                  return null;
+                })()}
+              </View>
+            )}
 
             {/* UPI option */}
             {(() => { const friendHasUpi = !!(friend?.upiId); return (
@@ -526,8 +771,12 @@ export default function DirectSplitScreen() {
               disabled={!friendHasUpi}
               onPress={async () => {
                 setShowPayModal(false);
-                await openUPIPayment({ upiId: friend.upiId, name: friendFirst, amount: balAbs, note: 'Settlement via PayCircle' });
-                await handleRequestSettle();
+                const customAmt = parseFloat(settleCustomAmt) || balAbs;
+                const payAmt = settleAllMode
+                  ? (iAmDebtor ? balAbs : 0) + groupDebts.filter(d => d.iOwe).reduce((a, d) => a + d.amount, 0)
+                  : customAmt;
+                await openUPIPayment({ upiId: friend.upiId, name: friendFirst, amount: payAmt, note: 'Settlement via PayCircle' });
+                if (settleAllMode) { await handleSettleAll(); } else { await handleRequestSettle(customAmt); }
               }}
               activeOpacity={0.8}>
               <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,229,190,0.12)', alignItems: 'center', justifyContent: 'center' }}>
@@ -548,7 +797,8 @@ export default function DirectSplitScreen() {
               style={{ flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: PC.bgCardElevated, borderRadius: 14, borderWidth: 1, borderColor: PC.border, padding: 16, marginBottom: 24 }}
               onPress={async () => {
                 setShowPayModal(false);
-                await handleRequestSettle();
+                const customAmt = parseFloat(settleCustomAmt) || balAbs;
+                if (settleAllMode) { await handleSettleAll(); } else { await handleRequestSettle(customAmt); }
               }}
               activeOpacity={0.8}>
               <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(148,163,184,0.12)', alignItems: 'center', justifyContent: 'center' }}>
@@ -854,16 +1104,32 @@ const s = StyleSheet.create({
   settleChipText:      { color: PC.textPrimary, fontSize: 11, fontWeight: '600' },
   settleChipTextMuted: { color: PC.textMuted },
 
+  // ── Cancel chip (next to Pending chip, for debtor) ──
+  cancelChip: {
+    width: 28, height: 28, borderRadius: 14,
+    borderWidth: 1, borderColor: 'rgba(224,90,90,0.4)',
+    backgroundColor: 'rgba(224,90,90,0.08)',
+    alignItems: 'center', justifyContent: 'center',
+    marginLeft: 4,
+  },
+
   // ── Settle confirmation bar (shown to creditor) ──
   settleConfirmBar: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 14, paddingVertical: 10,
     borderTopWidth: 1, borderTopColor: 'rgba(0,229,190,0.25)',
     backgroundColor: 'rgba(0,229,190,0.07)',
-    gap: 10,
+    gap: 8,
   },
   settleConfirmTitle: { color: PC.positive, fontSize: 12, fontWeight: '600', marginBottom: 2 },
   settleConfirmSub:   { color: PC.textSecondary, fontSize: 12 },
+  settleRejectBtn: {
+    paddingHorizontal: 12, paddingVertical: 7,
+    borderRadius: 20, borderWidth: 1,
+    borderColor: 'rgba(224,90,90,0.5)',
+    backgroundColor: 'rgba(224,90,90,0.08)',
+  },
+  settleRejectBtnText: { color: PC.negative, fontSize: 12, fontWeight: '600' },
   settleConfirmBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     backgroundColor: PC.positive,
@@ -871,6 +1137,127 @@ const s = StyleSheet.create({
     borderRadius: 20,
   },
   settleConfirmBtnText: { color: '#060A09', fontSize: 12, fontWeight: '600' },
+
+  // ── Group Debts section ──
+  groupDebtsSection: {
+    paddingHorizontal: 16, paddingVertical: 10,
+    borderBottomWidth: 1, borderBottomColor: PC.border,
+    backgroundColor: PC.bgCard,
+  },
+  groupDebtsSectionLabel: {
+    color: PC.textSecondary, fontSize: 10, fontWeight: '700',
+    textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8,
+  },
+  groupDebtCard: {
+    backgroundColor: PC.bgCardElevated, borderRadius: 14,
+    borderWidth: 1, borderColor: PC.border,
+    paddingHorizontal: 14, paddingVertical: 10,
+    minWidth: 140,
+  },
+  groupDebtName: { color: PC.textPrimary, fontSize: 13, fontWeight: '600', marginBottom: 4 },
+  groupDebtAmt:  { fontSize: 16, fontWeight: '700', marginBottom: 2 },
+  groupDebtDir:  { fontSize: 11, marginBottom: 8 },
+  groupDebtBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: 20, borderWidth: 1,
+    borderColor: PC.accent, backgroundColor: PC.accent10,
+  },
+  groupDebtBtnText: { color: PC.accent, fontSize: 11, fontWeight: '600' },
+
+  // ── Settle All button ──
+  settleAllBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+    margin: 12, marginTop: 10, backgroundColor: PC.accent, borderRadius: 12,
+    paddingVertical: 11, paddingHorizontal: 16,
+  },
+  settleAllBtnText: { color: '#060A09', fontSize: 14, fontWeight: '700' },
+
+  // ── Group Debts accordion panel ──────────────────────────────────────────────
+  gdPanel: {
+    borderBottomWidth: 1, borderBottomColor: PC.border,
+    backgroundColor: PC.bgCard,
+  },
+  gdHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 11,
+  },
+  gdHeaderLeft:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  gdHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  gdHeaderTitle: { color: PC.textPrimary, fontSize: 13, fontWeight: '600' },
+  gdHeaderBadge: {
+    minWidth: 18, height: 18, borderRadius: 9,
+    backgroundColor: 'rgba(0,229,190,0.15)', borderWidth: 1, borderColor: 'rgba(0,229,190,0.30)',
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4,
+  },
+  gdHeaderBadgeText: { color: PC.accent, fontSize: 10, fontWeight: '700' },
+  gdHeaderNet:       { fontSize: 13, fontWeight: '700' },
+
+  gdBody: {
+    borderTopWidth: 1, borderTopColor: PC.border,
+  },
+  gdRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingRight: 12, paddingVertical: 11,
+    position: 'relative',
+  },
+  gdRowBorder: { borderTopWidth: 1, borderTopColor: PC.border },
+  gdRowBar: { width: 3, alignSelf: 'stretch', borderRadius: 2, marginRight: 0 },
+  gdRowName:  { color: PC.textPrimary, fontSize: 13, fontWeight: '600', marginBottom: 2 },
+  gdRowDir:   { fontSize: 11, fontWeight: '500' },
+  gdRowAmt: { fontSize: 14, fontWeight: '700', marginRight: 10,
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace' },
+  gdRowNavBtn: {
+    width: 30, height: 30, borderRadius: 9,
+    backgroundColor: 'rgba(0,229,190,0.10)', borderWidth: 1, borderColor: 'rgba(0,229,190,0.25)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+
+  // ── Custom settle amount block (inside payment modal) ─────────────────────
+  customAmtBlock: { marginBottom: 20 },
+
+  customAmtRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: PC.bgCardElevated,
+    borderWidth: 1, borderColor: PC.borderLight,
+    borderRadius: 14, paddingHorizontal: 16, paddingVertical: 10,
+    marginBottom: 10,
+  },
+  customAmtRupee: {
+    color: PC.accent, fontSize: 22, fontWeight: '700', marginRight: 4,
+  },
+  customAmtInput: {
+    flex: 1, color: PC.textPrimary, fontSize: 26, fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+    paddingVertical: 0,
+  },
+  customAmtOfLabel: {
+    color: PC.textMuted, fontSize: 12, alignSelf: 'flex-end', paddingBottom: 2,
+  },
+
+  customAmtPresets: {
+    flexDirection: 'row', gap: 8, marginBottom: 10,
+  },
+  customAmtPresetBtn: {
+    flex: 1, paddingVertical: 8, borderRadius: 10,
+    borderWidth: 1, borderColor: PC.border,
+    backgroundColor: PC.bgCardElevated,
+    alignItems: 'center',
+  },
+  customAmtPresetBtnActive: {
+    borderColor: PC.accent, backgroundColor: 'rgba(0,229,190,0.12)',
+  },
+  customAmtPresetText:       { color: PC.textSecondary, fontSize: 13, fontWeight: '600' },
+  customAmtPresetTextActive: { color: PC.accent },
+
+  customAmtRemainingRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: 'rgba(255,80,85,0.08)',
+    borderWidth: 1, borderColor: 'rgba(255,80,85,0.20)',
+    borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6,
+  },
+  customAmtRemainingText: { color: PC.negative, fontSize: 12, fontWeight: '500' },
 });
 
 const s2 = StyleSheet.create({
