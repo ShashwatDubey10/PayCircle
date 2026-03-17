@@ -29,7 +29,7 @@ import { PC } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
 import { getFriends } from '@/services/friends';
-import PayWithUPIButton from '@/components/PayWithUPIButton';
+import UpiQrModal from '@/components/UpiQrModal';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -562,6 +562,8 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
   const [loading,       setLoading]       = useState(false);
   const [error,         setError]         = useState('');
   const [paymentMethod, setPaymentMethod] = useState(null); // null | 'upi' | 'outside'
+  const [qrData,        setQrData]        = useState(null);
+  const [showQr,        setShowQr]        = useState(false);
 
   // Auto-reset toId if it collides with fromId
   function handleFromChange(id) {
@@ -588,8 +590,22 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
         fromUserId: fromId, toUserId: toId, amount: amt,
         date: today, notes: notes.trim(),
       });
+
+      const receiver = members.find(m => m.id === toId || m.id?.toString() === toId);
+      const isUpiQr = paymentMethod === 'upi' && receiver?.upiId && !isNaN(amt) && amt > 0;
+
       onRecorded(data.settlement);
-      resetAndClose();
+
+      if (isUpiQr) {
+        setQrData({
+          upiId: receiver.upiId, name: receiver.name, amount: amt,
+          note: notes.trim() || 'Group settlement',
+          txnId: 'PC' + data.settlement._id,
+        });
+        setShowQr(true);
+      } else {
+        resetAndClose();
+      }
     } catch (err) {
       setError(err.message || 'Failed to record settlement.');
     } finally {
@@ -604,6 +620,8 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
     setNotes('');
     setError('');
     setPaymentMethod(null);
+    setQrData(null);
+    setShowQr(false);
     onClose();
   }
 
@@ -708,21 +726,15 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
             </TouchableOpacity>
           </View>
 
-          {/* UPI pay button — shown when UPI selected and receiver has a UPI ID */}
+          {/* UPI QR info — shown when UPI selected */}
           {paymentMethod === 'upi' && toId && (() => {
             const receiver = members.find(m => m.id === toId || m.id?.toString() === toId);
             const amt = parseFloat(amount);
             if (receiver?.upiId && !isNaN(amt) && amt > 0) {
               return (
                 <View style={{ marginBottom: 16 }}>
-                  <PayWithUPIButton
-                    upiId={receiver.upiId}
-                    name={receiver.name}
-                    amount={amt}
-                    note="Group settlement"
-                  />
-                  <Text style={{ color: PC.textMuted, fontSize: 12, marginTop: 8 }}>
-                    After paying, tap "Record Settlement" to log it.
+                  <Text style={{ color: PC.textMuted, fontSize: 12 }}>
+                    A QR code will appear after recording. Show it to the payer to scan.
                   </Text>
                 </View>
               );
@@ -754,19 +766,39 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
             />
           </View>
 
-          <TouchableOpacity
-            style={[styles.createBtn, loading && styles.createBtnDisabled]}
-            onPress={handleSubmit}
-            disabled={loading}
-            activeOpacity={0.85}>
-            {loading
-              ? <ActivityIndicator color="#060A09" size="small" />
-              : <Text style={styles.createBtnText}>Record Settlement</Text>
-            }
-          </TouchableOpacity>
+          {(() => {
+            const canUpiQr = paymentMethod === 'upi'
+              && !!members.find(m => m.id === toId || m.id?.toString() === toId)?.upiId
+              && !isNaN(parseFloat(amount)) && parseFloat(amount) > 0;
+            return (
+              <TouchableOpacity
+                style={[styles.createBtn, loading && styles.createBtnDisabled]}
+                onPress={handleSubmit}
+                disabled={loading}
+                activeOpacity={0.85}>
+                {loading
+                  ? <ActivityIndicator color="#060A09" size="small" />
+                  : <Text style={styles.createBtnText}>{canUpiQr ? 'Generate QR & Record' : 'Record Settlement'}</Text>
+                }
+              </TouchableOpacity>
+            );
+          })()}
           <View style={{ height: 20 }} />
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {qrData && (
+        <UpiQrModal
+          visible={showQr}
+          onClose={() => { setShowQr(false); setQrData(null); resetAndClose(); }}
+          upiId={qrData.upiId}
+          name={qrData.name}
+          amount={qrData.amount}
+          note={qrData.note}
+          txnId={qrData.txnId}
+          fromName={members.find(m => m.id === fromId)?.name || 'You'}
+        />
+      )}
     </Modal>
   );
 }

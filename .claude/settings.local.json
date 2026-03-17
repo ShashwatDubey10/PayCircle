@@ -28,7 +28,8 @@
       "Bash(wc:*)",
       "Bash(grep:*)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(head:*)"
+      "Bash(head:*)",
+      "Bash(npm install:*)"
     ]
   }
 }

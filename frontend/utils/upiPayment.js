@@ -17,6 +17,18 @@ export function buildUpiUrl({ upiId, name, amount, note }) {
  * Opens a UPI payment deep link in the installed UPI app.
  * @param {{ upiId: string, name: string, amount: number, note: string }} params
  */
+export function buildUpiQrPayload({ upiId, name, amount, note, txnId }) {
+  if (!upiId || !name || !amount) throw new Error('upiId, name, and amount are required');
+  const pa = encodeURIComponent(upiId.trim());
+  const pn = encodeURIComponent((name || '').trim());
+  const am = parseFloat(amount).toFixed(2);
+  const tn = encodeURIComponent((note || 'Payment via PayCircle').trim());
+  const tr = encodeURIComponent(txnId || `PC${Date.now()}`);
+  const payload = `upi://pay?pa=${pa}&pn=${pn}&am=${am}&cu=INR&tn=${tn}&tr=${tr}&mc=0000`;
+  console.log('[UPI QR] Payload:', payload);
+  return payload;
+}
+
 export const openUPIPayment = async ({ upiId, name, amount, note }) => {
   let url;
   try {
