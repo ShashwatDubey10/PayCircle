@@ -470,6 +470,9 @@ export default function DashboardScreen() {
           <TouchableOpacity style={[styles.avatarBtn, { marginRight: 10 }]} onPress={() => router.push('/friends')}>
             <Ionicons name="people-outline" size={20} color={PC.textPrimary} />
           </TouchableOpacity>
+          <TouchableOpacity style={[styles.avatarBtn, styles.scanBtn, { marginRight: 10 }]} onPress={() => router.push('/qr-scanner')}>
+            <Ionicons name="scan-outline" size={20} color={PC.accent} />
+          </TouchableOpacity>
           <TouchableOpacity style={styles.avatarBtn} onPress={() => router.push('/(tabs)/profile')}>
             <Text style={styles.avatarText}>{getInitials(user?.name)}</Text>
           </TouchableOpacity>
@@ -692,6 +695,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   avatarText: { color: PC.accent, fontSize: 14, fontWeight: '700' },
+  scanBtn: { borderColor: PC.accent + 'AA', backgroundColor: PC.accent + '14' },
 
   // ── Budget Hero
   budgetHero: {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -24,7 +24,7 @@ import { PC } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { getDirectSplits, addDirectSplit, requestSettle, confirmSettle, cancelOrRejectSettle, getGroupDebtsWithFriend } from '@/services/directSplit';
 import { getFriends } from '@/services/friends';
-import { openUPIPayment } from '@/utils/upiPayment';
+import UpiQrModal from '@/components/UpiQrModal';
 import api from '@/services/api';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -148,6 +148,8 @@ export default function DirectSplitScreen() {
   const [myShare,       setMyShare]       = useState(null);
   const [showSplit,     setShowSplit]     = useState(false);
   const [refreshing,    setRefreshing]    = useState(false);
+  const [showUpiQr,     setShowUpiQr]     = useState(false);
+  const [upiQrData,     setUpiQrData]     = useState(null);
 
   // Initialise custom amount to full balance whenever direct-settle modal opens
   useEffect(() => {
@@ -315,6 +317,24 @@ export default function DirectSplitScreen() {
     } finally {
       setSettleLoading(false);
     }
+  }
+
+  // ── UPI QR txnId — stable for same friend + same amount ──────────────────
+  const directTxnId = useMemo(() => {
+    const balAbs_ = Math.abs(balance);
+    const iAmDebtor_ = balance <= 0;
+    const payAmt = settleAllMode
+      ? (iAmDebtor_ ? balAbs_ : 0) + groupDebts.filter(d => d.iOwe).reduce((a, d) => a + d.amount, 0)
+      : (parseFloat(settleCustomAmt) || balAbs_);
+    return `PC-${String(friendId).slice(-8)}-${Math.round(payAmt * 100)}`;
+  }, [friendId, settleCustomAmt, settleAllMode, balance, groupDebts]);
+
+  async function handleQrAndSettle() {
+    setShowUpiQr(false);
+    setUpiQrData(null);
+    const customAmt = parseFloat(settleCustomAmt) || Math.abs(balance);
+    if (settleAllMode) { await handleSettleAll(); }
+    else               { await handleRequestSettle(customAmt); }
   }
 
   // ── Render bubble with date separator ─────────────────────────────────────
@@ -769,23 +789,27 @@ export default function DirectSplitScreen() {
             <TouchableOpacity
               style={{ flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: PC.bgCardElevated, borderRadius: 14, borderWidth: 1, borderColor: PC.border, padding: 16, marginBottom: 10, ...(!friendHasUpi && { opacity: 0.45 }) }}
               disabled={!friendHasUpi}
-              onPress={async () => {
-                setShowPayModal(false);
+              onPress={() => {
                 const customAmt = parseFloat(settleCustomAmt) || balAbs;
                 const payAmt = settleAllMode
                   ? (iAmDebtor ? balAbs : 0) + groupDebts.filter(d => d.iOwe).reduce((a, d) => a + d.amount, 0)
                   : customAmt;
-                await openUPIPayment({ upiId: friend.upiId, name: friendFirst, amount: payAmt, note: 'Settlement via PayCircle' });
-                if (settleAllMode) { await handleSettleAll(); } else { await handleRequestSettle(customAmt); }
+                setShowPayModal(false);
+                setUpiQrData({
+                  upiId: friend.upiId, name: friendFirst,
+                  amount: payAmt, note: 'Settlement via PayCircle',
+                  txnId: directTxnId,
+                });
+                setShowUpiQr(true);
               }}
               activeOpacity={0.8}>
               <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,229,190,0.12)', alignItems: 'center', justifyContent: 'center' }}>
                 <Ionicons name="qr-code-outline" size={20} color={PC.positive} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ color: PC.textPrimary, fontSize: 14, fontWeight: '600' }}>Pay via UPI</Text>
+                <Text style={{ color: PC.textPrimary, fontSize: 14, fontWeight: '600' }}>Show Payment QR</Text>
                 <Text style={{ color: PC.textSecondary, fontSize: 12, marginTop: 2 }}>
-                  {friendHasUpi ? `Opens UPI app · ${friend.upiId}` : `Ask ${friendFirst} to add their UPI ID in PayCircle profile`}
+                  {friendHasUpi ? `Scan QR to pay · ${friend.upiId}` : `Ask ${friendFirst} to add their UPI ID in PayCircle profile`}
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={16} color={PC.textMuted} />
@@ -813,6 +837,20 @@ export default function DirectSplitScreen() {
           </View>
         </View>
       </Modal>
+
+      {upiQrData && (
+        <UpiQrModal
+          visible={showUpiQr}
+          onClose={() => { setShowUpiQr(false); setUpiQrData(null); }}
+          onPaid={handleQrAndSettle}
+          upiId={upiQrData.upiId}
+          name={upiQrData.name}
+          amount={upiQrData.amount}
+          note={upiQrData.note}
+          txnId={upiQrData.txnId}
+          fromName={user?.name || 'You'}
+        />
+      )}
     </SafeAreaView>
   );
 }
