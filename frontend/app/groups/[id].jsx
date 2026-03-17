@@ -330,9 +330,11 @@ function CustomSplitModal({ visible, onClose, members, payerId, totalAmount, onC
   useEffect(() => {
     if (!visible) return;
     if (!members.length || !totalAmount) return;
-    const equal = (totalAmount / members.length).toFixed(2);
+    const base = parseFloat((totalAmount / members.length).toFixed(2));
+    const distributed = parseFloat((base * (members.length - 1)).toFixed(2));
+    const last = parseFloat((totalAmount - distributed).toFixed(2));
     const init = {};
-    members.forEach(m => { init[m.id] = equal; });
+    members.forEach((m, i) => { init[m.id] = String(i === members.length - 1 ? last : base); });
     setAmounts(init);
     setLockedIds(new Set());
   }, [visible]);
@@ -352,8 +354,10 @@ function CustomSplitModal({ visible, onClose, members, payerId, totalAmount, onC
     const unlocked = members.filter(m => !newLocked.has(m.id));
 
     if (unlocked.length > 0) {
-      const each = (remaining / unlocked.length).toFixed(2);
-      unlocked.forEach(m => { newAmounts[m.id] = each; });
+      const base = parseFloat((remaining / unlocked.length).toFixed(2));
+      const distributed = parseFloat((base * (unlocked.length - 1)).toFixed(2));
+      const last = parseFloat((remaining - distributed).toFixed(2));
+      unlocked.forEach((m, i) => { newAmounts[m.id] = String(i === unlocked.length - 1 ? last : base); });
     }
 
     setAmounts(newAmounts);
@@ -362,11 +366,20 @@ function CustomSplitModal({ visible, onClose, members, payerId, totalAmount, onC
 
   function resetEqual() {
     if (!members.length || !totalAmount) return;
-    const equal = (totalAmount / members.length).toFixed(2);
+    const base = parseFloat((totalAmount / members.length).toFixed(2));
+    const distributed = parseFloat((base * (members.length - 1)).toFixed(2));
+    const last = parseFloat((totalAmount - distributed).toFixed(2));
     const init = {};
-    members.forEach(m => { init[m.id] = equal; });
+    members.forEach((m, i) => { init[m.id] = String(i === members.length - 1 ? last : base); });
     setAmounts(init);
     setLockedIds(new Set());
+  }
+
+  function handleAssignAll(memberId) {
+    const newAmounts = {};
+    members.forEach(m => { newAmounts[m.id] = m.id === memberId ? String(totalAmount) : '0'; });
+    setAmounts(newAmounts);
+    setLockedIds(new Set(members.map(m => m.id)));
   }
 
   const totalEntered = members.reduce((sum, m) => sum + (parseFloat(amounts[m.id]) || 0), 0);
@@ -391,7 +404,21 @@ function CustomSplitModal({ visible, onClose, members, payerId, totalAmount, onC
         <ScrollView style={styles.modalSheet} bounces={false} keyboardShouldPersistTaps="handled">
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Custom Split</Text>
-          <Text style={[styles.modalLabel, { marginBottom: 16 }]}>Total: ₹{totalAmount.toFixed(2)}</Text>
+          <Text style={[styles.modalLabel, { marginBottom: 10 }]}>Total: ₹{totalAmount.toFixed(2)}</Text>
+
+          <Text style={[styles.modalLabel, { marginBottom: 8 }]}>Assign all to →</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+            <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 2 }}>
+              {members.map(m => (
+                <TouchableOpacity
+                  key={m.id}
+                  style={styles.assignAllChip}
+                  onPress={() => handleAssignAll(m.id)}>
+                  <Text style={styles.assignAllChipText}>{m.name.split(' ')[0]}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
 
           {members.map(m => {
             const isPayer = m.id === payerId;
@@ -1543,6 +1570,8 @@ const styles = StyleSheet.create({
   customSplitRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   customSplitMember: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
   customSplitInput:  { flexDirection: 'row', alignItems: 'center', backgroundColor: PC.bgInput, borderWidth: 1, borderColor: PC.border, borderRadius: 12, paddingHorizontal: 10, height: 44, width: 110 },
+  assignAllChip:     { paddingHorizontal: 14, paddingVertical: 8, backgroundColor: PC.bgCardElevated, borderWidth: 1, borderColor: PC.border, borderRadius: 20 },
+  assignAllChipText: { color: PC.textPrimary, fontSize: 13, fontWeight: '600' },
   remainingBar:      { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderTopWidth: 1, borderTopColor: PC.border },
 
   // ── Expense chat-bubble styles ──────────────────────────────────────────────

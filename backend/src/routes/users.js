@@ -4,7 +4,7 @@ const router  = express.Router();
 const { protect } = require('../middleware/auth');
 
 const { getUserSummary }                       = require('../controllers/balanceController');
-const { getDashboard }                         = require('../controllers/dashboardController');
+const { getDashboard, getSpendingHistory }      = require('../controllers/dashboardController');
 const { setBudget, setCategoryBudgets, getBudget } = require('../controllers/budgetController');
 const { addTransaction, getTransactions, deleteTransaction } = require('../controllers/personalTransactionController');
 const {
@@ -17,6 +17,7 @@ router.use(protect);
 
 router.get('/me/summary',               getUserSummary);
 router.get('/me/dashboard',             getDashboard);
+router.get('/me/spending-history',      getSpendingHistory);
 router.post('/me/budget',               setBudget);
 router.post('/me/budget/categories',    setCategoryBudgets);
 router.get ('/me/budget',               getBudget);
