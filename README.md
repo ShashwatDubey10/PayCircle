@@ -1,6 +1,6 @@
 # PayCircle
 
-A group expense management and personal finance tracking app for college students sharing living expenses. Split bills, track balances, record personal income/expenses, and stay on budget — all in one place.
+A group expense management and personal finance tracking app for college students sharing living expenses. Split bills, track balances, record personal income/expenses, manage direct 1-on-1 splits with friends, and stay on budget — all in one place.
 
 > **Type:** Minor Project — React Native + Node.js
 > **Target:** Hostel students, co-living groups, and travel groups
@@ -20,6 +20,7 @@ A group expense management and personal finance tracking app for college student
 | Auth | JWT + bcryptjs |
 | HTTP Client | Axios |
 | Local Storage | AsyncStorage |
+| UPI Payments | expo-linking (deep link to UPI apps) |
 
 ---
 
@@ -32,11 +33,31 @@ PayCircle/
 │   │   ├── index.js              # Entry point, HTTP logger, route registration
 │   │   ├── config/db.js          # MongoDB connection
 │   │   ├── middleware/           # auth (JWT protect), groupAuth (isMember), errorHandler
-│   │   ├── models/               # User, Group, Expense, PersonalTransaction, Settlement, Budget
-│   │   ├── controllers/          # authController, groupController, expenseController,
-│   │   │                         # personalTransactionController, settlementController,
-│   │   │                         # balanceController, dashboardController, budgetController
-│   │   ├── routes/               # auth.js, groups.js, users.js
+│   │   ├── models/
+│   │   │   ├── User.js
+│   │   │   ├── Group.js
+│   │   │   ├── Expense.js
+│   │   │   ├── PersonalTransaction.js
+│   │   │   ├── Settlement.js
+│   │   │   ├── Budget.js
+│   │   │   ├── Friendship.js     # Friend requests + friendship state
+│   │   │   ├── DirectSplit.js    # 1-on-1 expense splits between friends
+│   │   │   └── DirectSettle.js   # Direct settlement requests between friends
+│   │   ├── controllers/
+│   │   │   ├── authController.js
+│   │   │   ├── groupController.js
+│   │   │   ├── expenseController.js
+│   │   │   ├── settlementController.js
+│   │   │   ├── balanceController.js
+│   │   │   ├── dashboardController.js
+│   │   │   ├── budgetController.js
+│   │   │   ├── personalTransactionController.js
+│   │   │   ├── friendController.js       # Friend search, requests, UPI ID
+│   │   │   └── directSplitController.js  # Direct splits + settle flow
+│   │   ├── routes/
+│   │   │   ├── auth.js           # POST /register /login, GET /me
+│   │   │   ├── groups.js         # Groups, members, expenses, balances, settlements
+│   │   │   └── users.js          # Dashboard, budget, transactions, friends, direct
 │   │   ├── services/balanceService.js  # Core balance + debt-simplification algorithm
 │   │   └── utils/                # asyncHandler, logger
 │   └── .env.example              # Required environment variables
@@ -45,22 +66,30 @@ PayCircle/
 │   ├── app/
 │   │   ├── _layout.jsx           # Root: AuthProvider + RootGuard (auth redirects)
 │   │   ├── auth/
-│   │   │   ├── login.jsx         # Login with email/password + logo
-│   │   │   └── register.jsx      # Registration with validation + logo
+│   │   │   ├── login.jsx         # Login screen — full wordmark logo, corner accent design
+│   │   │   └── register.jsx      # Registration screen — full wordmark logo, centered layout
 │   │   ├── (tabs)/
-│   │   │   ├── _layout.jsx       # Bottom tab bar (Dashboard, Groups, Transactions, Profile)
+│   │   │   ├── _layout.jsx       # Bottom tab bar (Dashboard, Split, Transactions, Profile)
 │   │   │   ├── index.jsx         # Dashboard — balances, spend stats, budget, recent activity
-│   │   │   ├── groups.jsx        # Groups list with live balances + settlements history tab
+│   │   │   ├── groups.jsx        # Split tab — Friends / Groups / Settlements sub-tabs
 │   │   │   ├── transactions.jsx  # Personal income/expense tracker
 │   │   │   └── profile.jsx       # User profile + functional settings
 │   │   ├── budget.jsx            # Full budget page — overall limit + custom category budgets
-│   │   └── groups/[id].jsx       # Group detail — expenses, balances, members, settlements
+│   │   ├── friends.jsx           # Friends management — search, add, accept/reject requests
+│   │   ├── groups/[id].jsx       # Group detail — expenses, balances, members, settlements
+│   │   └── direct/[friendId].jsx # Direct split detail — 1-on-1 expenses + settle flow
 │   ├── assets/images/
-│   │   ├── PayCircleLogo.png     # Full logo with text (used on login screen)
-│   │   └── PayCircleIcon.png     # Icon-only logo (used on register screen)
-│   ├── context/AuthContext.jsx   # Global auth state, session restore on launch
-│   ├── services/api.js           # Axios instance with dynamic BASE_URL + JWT interceptor
-│   ├── services/auth.js          # AsyncStorage helpers for token/user persistence
+│   │   └── PayCircleLogo.png-removebg-preview.png  # Full wordmark logo (used on all auth screens)
+│   ├── context/
+│   │   ├── AuthContext.jsx       # Global auth state, session restore on launch
+│   │   └── BadgeContext.jsx      # Pending settlement badge count for Split tab
+│   ├── services/
+│   │   ├── api.js                # Axios instance with dynamic BASE_URL + JWT interceptor
+│   │   ├── auth.js               # AsyncStorage helpers for token/user persistence
+│   │   ├── friends.js            # Friend search, requests, friend list API calls
+│   │   └── directSplit.js        # Direct split + settle API calls
+│   ├── utils/
+│   │   └── upiPayment.js         # UPI deep link builder (opens installed UPI apps)
 │   └── constants/theme.js        # PC design tokens (all UI colors)
 │
 └── docs/                         # Feature blueprint, MVP spec, integration plan
@@ -102,23 +131,55 @@ The app auto-detects your machine's LAN IP from Expo's Metro host — no manual 
 
 All endpoints under `/api/auth/` are public. Everything else requires `Authorization: Bearer <token>`.
 
-| Resource | Method | Endpoint |
-|---|---|---|
-| Auth | `POST` | `/api/auth/register` · `/api/auth/login` |
-| Auth | `GET` | `/api/auth/me` |
-| Groups | `GET · POST` | `/api/groups` |
-| Group | `GET` | `/api/groups/:id` |
-| Members | `GET · POST` | `/api/groups/:id/members` |
-| Members | `DELETE` | `/api/groups/:id/members/:userId` |
-| Group Expenses | `GET · POST` | `/api/groups/:id/expenses` |
-| Balances | `GET` | `/api/groups/:id/balances` |
-| Settlements | `GET · POST` | `/api/groups/:id/settlements` |
-| Personal Balance Summary | `GET` | `/api/users/me/summary` |
-| Personal Transactions | `GET · POST` | `/api/users/me/transactions` |
-| Personal Transaction | `DELETE` | `/api/users/me/transactions/:id` |
-| Dashboard | `GET` | `/api/users/me/dashboard` |
-| Budget | `GET · POST` | `/api/users/me/budget` |
-| Category Budgets | `POST` | `/api/users/me/budget/categories` |
+### Auth
+| Method | Endpoint |
+|---|---|
+| `POST` | `/api/auth/register` · `/api/auth/login` |
+| `GET` | `/api/auth/me` |
+
+### Groups & Expenses
+| Method | Endpoint |
+|---|---|
+| `GET · POST` | `/api/groups` |
+| `GET` | `/api/groups/:id` |
+| `GET · POST` | `/api/groups/:id/members` |
+| `DELETE` | `/api/groups/:id/members/:userId` |
+| `GET · POST` | `/api/groups/:id/expenses` |
+| `GET` | `/api/groups/:id/balances` |
+| `GET · POST` | `/api/groups/:id/settlements` |
+
+### Personal Finance
+| Method | Endpoint |
+|---|---|
+| `GET` | `/api/users/me/summary` |
+| `GET` | `/api/users/me/dashboard` |
+| `GET · POST` | `/api/users/me/transactions` |
+| `DELETE` | `/api/users/me/transactions/:id` |
+| `GET · POST` | `/api/users/me/budget` |
+| `POST` | `/api/users/me/budget/categories` |
+
+### Friends
+| Method | Endpoint |
+|---|---|
+| `GET` | `/api/users/search?q=...` |
+| `PUT` | `/api/users/me/username` |
+| `PUT` | `/api/users/me/push-token` |
+| `POST` | `/api/users/me/friends/requests` |
+| `GET` | `/api/users/me/friends/requests` |
+| `PUT` | `/api/users/me/friends/requests/:id` |
+| `GET` | `/api/users/me/friends` |
+
+### Direct Splits (1-on-1)
+| Method | Endpoint |
+|---|---|
+| `GET` | `/api/users/me/direct` |
+| `GET` | `/api/users/me/direct/settlements` |
+| `GET` | `/api/users/me/direct/balances` |
+| `GET` | `/api/users/me/direct/:friendId/group-balances` |
+| `POST · GET` | `/api/users/me/direct/:friendId` |
+| `POST` | `/api/users/me/direct/:friendId/settle` |
+| `PUT` | `/api/users/me/direct/:friendId/settle/:requestId/confirm` |
+| `DELETE` | `/api/users/me/direct/:friendId/settle/:requestId` |
 
 Group expense and balance endpoints require group membership (`isMember` middleware). The `isMember` middleware loads the full group document into `req.group` — controllers do not re-fetch it.
 
@@ -129,7 +190,8 @@ Group expense and balance endpoints require group membership (`isMember` middlew
 **Two separate data scopes:**
 - *Group expenses* — always tied to a `groupId`, split equally or by exact amounts among members
 - *Personal transactions* — tied to a `userId` only, track independent income and personal spending
-- Both are aggregated together in the dashboard and budget spend calculations
+- *Direct splits* — tied to a pair of friend `userId`s, for 1-on-1 expense sharing outside groups
+- All scopes are aggregated together in the dashboard and budget spend calculations
 
 **Balance algorithm** (`services/balanceService.js`):
 Computes `credit[user] - debit[user]` across all group expenses and settlements, then runs a greedy debt-simplification pass to produce a minimal `debts[]` list. This is the single source of truth — all balance-related endpoints call `calculateGroupBalances()`.
@@ -139,14 +201,35 @@ Computes `credit[user] - debit[user]` across all group expenses and settlements,
 **Dynamic API base URL** (`services/api.js`):
 `BASE_URL` is derived at runtime from `expo-constants` `hostUri` (the Metro bundler host IP), so the app always hits the correct dev machine on LAN without manual configuration.
 
+**UPI deep link** (`utils/upiPayment.js`):
+Builds a `upi://pay?...` URL and opens it via `expo-linking`. Works with any installed UPI app (GPay, PhonePe, Paytm, etc.). Falls back to an alert if no UPI app is detected.
+
 ---
 
 ## Features
 
 ### Authentication
-- Register with name, email, and password (validated: 8+ chars, letters + numbers)
-- Login with JWT session that persists across app restarts via AsyncStorage
+- Register with name, username, email, and password
+  - Username: 3–20 chars, lowercase letters, numbers, underscore only
+  - Password: 8+ characters with at least one letter and one number
+  - Confirm password field with inline mismatch feedback
+- Login with email + password; JWT session persists across app restarts via AsyncStorage
 - Session restored on launch via `GET /api/auth/me` — no re-login needed
+
+### Friends
+- Search users by name or username
+- Send, accept, and reject friend requests
+- Friends list shows your accepted connections
+- Pending request badge on the Split tab
+
+### Direct Splits (1-on-1)
+- Add expenses directly with a friend outside any group
+- Equal split auto-calculated; or enter custom amounts
+- Per-friend balance summary (you owe / they owe)
+- **Settle up flow:** request a settlement → friend confirms or rejects → balance clears
+- Cancel a pending settlement request before it's confirmed
+- View combined group + direct balances with any friend
+- UPI payment deep link on settle — opens the user's installed UPI app with amount pre-filled
 
 ### Groups
 - Create groups with a name and type (Roommates, Trip, Mess, Miscellaneous)
@@ -164,6 +247,12 @@ Computes `credit[user] - debit[user]` across all group expenses and settlements,
 - Simplified debts list: greedy algorithm minimises "who owes whom" relationships
 - Member balance table: total paid, total owed, net for every member
 - **Record Settlement** modal in the Balances tab: pick payer + receiver from member avatars, enter amount and optional notes — updates balances immediately
+
+### Split Tab (bottom nav)
+Three sub-tabs in one screen:
+- **Friends** — friends list with per-friend direct balance; tap to open direct split detail
+- **Groups** — group list with per-group net balance; tap to open group detail
+- **Settlements** — unified settlement history (group + direct), pending settlement requests
 
 ### Personal Transactions
 - Log personal income (Salary, Freelance, Investment, Miscellaneous) and expenses (Food, Travel, Utilities, Entertainment, Health, Shopping, Miscellaneous)
@@ -193,12 +282,12 @@ Computes `credit[user] - debit[user]` across all group expenses and settlements,
 - Pull-to-refresh on the budget page
 
 ### Profile
-- Displays name, email, join date, groups count, total transactions, and net saved
+- Displays name, username, email, join date, groups count, total transactions, and net saved
 - **Notifications** — alert with upcoming feature info
 - **Privacy & Security** — bottom sheet with data storage, password hashing, and JWT session details
 - **Currency (INR)** — alert confirming INR-only with multi-currency roadmap note
 - **Appearance** — alert confirming dark mode with light mode roadmap note
-- **Help & FAQ** — bottom sheet with 6 common Q&A (groups, splits, settlements, budget, transactions, adding members)
+- **Help & FAQ** — bottom sheet with common Q&A (groups, splits, settlements, budget, transactions, adding members)
 - **About PayCircle** — bottom sheet with version, description, tech stack, and support info
 - Sign out with confirmation dialog
 
@@ -208,23 +297,25 @@ Computes `credit[user] - debit[user]` across all group expenses and settlements,
 
 ### ✅ Complete — MVP 1.0
 
-All 12 MVP features are fully implemented and wired end-to-end:
-
 | # | Feature | Status |
 |---|---|---|
-| 1 | User registration and login | ✅ |
-| 2 | Create and join groups | ✅ |
-| 3 | Add and manage group members | ✅ |
-| 4 | Add expense (amount, payer, category, notes) | ✅ |
-| 5 | Equal split | ✅ |
-| 6 | Automatic real-time balance calculation | ✅ |
-| 7 | You owe / You are owed summary | ✅ |
-| 8 | Group balance overview (who owes whom) | ✅ |
-| 9 | Record settlements (manual settle-up) | ✅ |
-| 10 | Expense history | ✅ |
-| 11 | Personal dashboard | ✅ |
-| 12 | Monthly budget with usage indicator | ✅ |
-| 13 | Custom category budgets (user-defined) | ✅ |
+| 1 | User registration and login (with username) | ✅ |
+| 2 | Friends — search, add, accept/reject requests | ✅ |
+| 3 | Direct splits — 1-on-1 expense sharing with friends | ✅ |
+| 4 | Direct settlements — request, confirm, cancel settle-up | ✅ |
+| 5 | Create and join groups | ✅ |
+| 6 | Add and manage group members | ✅ |
+| 7 | Add expense (amount, payer, category, notes) | ✅ |
+| 8 | Equal split | ✅ |
+| 9 | Automatic real-time balance calculation | ✅ |
+| 10 | You owe / You are owed summary | ✅ |
+| 11 | Group balance overview (who owes whom) | ✅ |
+| 12 | Record group settlements (manual settle-up) | ✅ |
+| 13 | Expense history | ✅ |
+| 14 | Personal dashboard | ✅ |
+| 15 | Monthly budget with usage indicator | ✅ |
+| 16 | Custom category budgets (user-defined) | ✅ |
+| 17 | UPI payment deep link on settle-up | ✅ |
 
 ---
 
@@ -241,7 +332,6 @@ All 12 MVP features are fully implemented and wired end-to-end:
 - Spending charts and analytics (bar, pie, line)
 - Behavioural insights ("You spent 42% on food this month")
 - Data export — PDF and CSV
-- UPI payment links for settlements
 - UI animations and micro-interactions
 
 ---

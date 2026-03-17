@@ -26,7 +26,9 @@
       "Bash(tree -L 2 -I 'node_modules|.expo|android' \"/d/Coding Workspace/projects/PayCircle/frontend/\" 2>/dev/null || find \"/d/Coding Workspace/projects/PayCircle/frontend\" -maxdepth 2 -type d -not -path '*/node_modules/*' -not -path '*/.expo/*' -not -path '*/android/*' | sort)",
       "Bash(cat:*)",
       "Bash(wc:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(head:*)"
     ]
   }
 }
