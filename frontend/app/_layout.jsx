@@ -133,6 +133,7 @@ export default function RootLayout() {
           <Stack.Screen name="budget" />
           <Stack.Screen name="friends" />
           <Stack.Screen name="direct/[friendId]" />
+          <Stack.Screen name="qr-scanner" options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }} />
         </Stack>
         <RootGuard />
         <StatusBar style="light" />
