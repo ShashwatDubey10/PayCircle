@@ -1,27 +1,40 @@
-// PayCircle Design Tokens
-export const PC = {
-  // Backgrounds
-  bg: '#0A0A0A',
-  bgCard: '#141414',
-  bgCardElevated: '#1E1E1E',
-  bgInput: '#181818',
+// PayCircle Design Tokens — Mint Terminal Edition
 
-  // Borders
-  border: '#252525',
-  borderLight: '#303030',
+// Font families — Roboto loaded globally so iOS matches Android
+export const FONTS = {
+  regular: 'Roboto_400Regular',
+  medium:  'Roboto_500Medium',
+  bold:    'Roboto_700Bold',
+};
+
+export const PC = {
+  // Backgrounds — deep near-black with subtle teal warmth
+  bg:             '#060A09',
+  bgCard:         '#0C1210',
+  bgCardElevated: '#131A17',
+  bgInput:        '#0C1210',
+
+  // Borders — teal-tinted dark
+  border:      '#1C2822',
+  borderLight: '#243328',
 
   // Text
-  textPrimary: '#FFFFFF',
-  textSecondary: '#888888',
-  textMuted: '#444444',
+  textPrimary:   '#EFF9F6',   // Off-white with green tint
+  textSecondary: '#637870',   // Muted teal-gray
+  textMuted:     '#4A6058',   // ~3.2:1 on bg — visible for secondary/hint text
 
-  // Status colors
-  positive: '#5CB85C',
-  negative: '#E05A5A',
-  warning: '#F5A623',
+  // Accent — Electric Mint
+  accent:   '#00E5BE',
+  accent10: 'rgba(0,229,190,0.10)',
+  accent20: 'rgba(0,229,190,0.20)',
 
-  // Transparent white
-  white10: 'rgba(255,255,255,0.10)',
-  white20: 'rgba(255,255,255,0.20)',
-  white05: 'rgba(255,255,255,0.05)',
+  // Status
+  positive: '#00E5BE',  // Mint — income, credit, owed-to-you
+  negative: '#FF5055',  // Vibrant red
+  warning:  '#FFB020',  // Amber
+
+  // Transparent utilities
+  white10: 'rgba(239,249,246,0.10)',
+  white20: 'rgba(239,249,246,0.20)',
+  white05: 'rgba(239,249,246,0.05)',
 };

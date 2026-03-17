@@ -12,14 +12,24 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  LayoutAnimation,
+  UIManager,
 } from 'react-native';
+
+// Enable LayoutAnimation on Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { PC } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
+import { getFriends } from '@/services/friends';
+import PayWithUPIButton from '@/components/PayWithUPIButton';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -40,6 +50,22 @@ function formatDate(dateStr) {
   });
 }
 
+function formatExpDateLabel(dateStr) {
+  const d = new Date(dateStr);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return 'Today';
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function formatExpTime(dateStr) {
+  return new Date(dateStr).toLocaleTimeString('en-IN', {
+    hour: '2-digit', minute: '2-digit', hour12: true,
+  });
+}
+
 function formatShortDate(dateStr) {
   return new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
@@ -47,6 +73,20 @@ function formatShortDate(dateStr) {
 function initials(name) {
   if (!name) return '?';
   return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+}
+
+// ─── Expense bubble components ────────────────────────────────────────────────
+
+const CAT_EMOJI = { Food: '🍽', Travel: '✈', Utilities: '⚡', Miscellaneous: '📦' };
+
+function ExpDateSeparator({ label }) {
+  return (
+    <View style={styles.expDateSep}>
+      <View style={styles.expDateSepLine} />
+      <Text style={styles.expDateSepText}>{label}</Text>
+      <View style={styles.expDateSepLine} />
+    </View>
+  );
 }
 
 // ─── Add Expense Modal ────────────────────────────────────────────────────────
@@ -58,13 +98,20 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
   const [category,  setCategory]  = useState('Food');
   const [notes,     setNotes]     = useState('');
   const [payerId,   setPayerId]   = useState(user?._id ?? '');
-  const [loading,   setLoading]   = useState(false);
-  const [error,     setError]     = useState('');
+  const [loading,      setLoading]      = useState(false);
+  const [error,        setError]        = useState('');
+  const [splitType,    setSplitType]    = useState('equal');
+  const [customSplits, setCustomSplits] = useState([]);
+  const [showCustom,   setShowCustom]   = useState(false);
 
   async function handleSubmit() {
     const amt = parseFloat(amount);
     if (!amount || isNaN(amt) || amt <= 0) {
       setError('Enter a valid amount.');
+      return;
+    }
+    if (splitType === 'exact' && customSplits.length === 0) {
+      setError('Configure the custom split first.');
       return;
     }
     setLoading(true);
@@ -77,13 +124,16 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
         date: today,
         category,
         notes: notes.trim(),
-        splitType: 'equal',
+        splitType,
+        ...(splitType === 'exact' ? { splits: customSplits } : {}),
       });
       onAdded(data.expense);
       setAmount('');
       setNotes('');
       setPayerId(user?._id ?? '');
       setCategory('Food');
+      setSplitType('equal');
+      setCustomSplits([]);
       onClose();
     } catch (err) {
       setError(err.message);
@@ -99,6 +149,8 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
     setPayerId(user?._id ?? '');
     setCategory('Food');
     setError('');
+    setSplitType('equal');
+    setCustomSplits([]);
     onClose();
   }
 
@@ -106,7 +158,7 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <KeyboardAvoidingView
         style={styles.modalOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
         <ScrollView style={styles.modalSheet} bounces={false} keyboardShouldPersistTaps="handled">
           <View style={styles.modalHandle} />
@@ -128,7 +180,7 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
               placeholder="0.00"
               placeholderTextColor={PC.textMuted}
               value={amount}
-              onChangeText={(v) => { setAmount(v); setError(''); }}
+              onChangeText={(v) => { setAmount(v); setError(''); setCustomSplits([]); setSplitType('equal'); }}
               keyboardType="decimal-pad"
               editable={!loading}
             />
@@ -166,7 +218,7 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
                   onPress={() => setPayerId(m.id)}
                   disabled={loading}>
                   <View style={[styles.payerAvatar, selected && styles.payerAvatarActive]}>
-                    <Text style={[styles.payerInitials, selected && { color: PC.bg }]}>
+                    <Text style={[styles.payerInitials, selected && { color: '#060A09' }]}>
                       {initials(m.name)}
                     </Text>
                   </View>
@@ -192,10 +244,53 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
             />
           </View>
 
-          <Text style={styles.splitNote}>
-            <Ionicons name="information-circle-outline" size={13} color={PC.textMuted} />{' '}
-            Amount will be split equally among all {members.length} members
-          </Text>
+          {/* Split type toggle */}
+          <Text style={styles.modalLabel}>Split</Text>
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+            <TouchableOpacity
+              style={[styles.chip, splitType === 'equal' && styles.chipActive]}
+              onPress={() => { setSplitType('equal'); setCustomSplits([]); }}
+              disabled={loading}>
+              <Ionicons name="people-outline" size={14} color={splitType === 'equal' ? PC.textPrimary : PC.textMuted} style={{ marginRight: 4 }} />
+              <Text style={[styles.chipText, splitType === 'equal' && styles.chipTextActive]}>Equal</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.chip, splitType === 'exact' && styles.chipActive]}
+              onPress={() => {
+                if (!amount || isNaN(parseFloat(amount))) {
+                  setError('Enter the amount before customising the split.');
+                  return;
+                }
+                setSplitType('exact');
+                setShowCustom(true);
+              }}
+              disabled={loading}>
+              <Ionicons name="options-outline" size={14} color={splitType === 'exact' ? PC.textPrimary : PC.textMuted} style={{ marginRight: 4 }} />
+              <Text style={[styles.chipText, splitType === 'exact' && styles.chipTextActive]}>Custom</Text>
+            </TouchableOpacity>
+          </View>
+
+          {splitType === 'exact' && customSplits.length > 0 && (
+            <TouchableOpacity onPress={() => setShowCustom(true)} style={styles.splitPreviewBox}>
+              {customSplits.map(s => {
+                const member = members.find(m => m.id === s.userId);
+                return (
+                  <View key={s.userId} style={styles.splitPreviewRow}>
+                    <Text style={styles.splitPreviewName}>{member?.name?.split(' ')[0]}</Text>
+                    <Text style={styles.splitPreviewAmt}>₹{s.amount.toFixed(2)}</Text>
+                  </View>
+                );
+              })}
+              <Text style={styles.splitPreviewEdit}>Tap to edit</Text>
+            </TouchableOpacity>
+          )}
+
+          {splitType === 'equal' && (
+            <Text style={styles.splitNote}>
+              <Ionicons name="information-circle-outline" size={13} color={PC.textMuted} />{' '}
+              Amount will be split equally among all {members.length} members
+            </Text>
+          )}
 
           <TouchableOpacity
             style={[styles.createBtn, loading && styles.createBtnDisabled]}
@@ -203,9 +298,150 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
             disabled={loading}
             activeOpacity={0.85}>
             {loading
-              ? <ActivityIndicator color={PC.bg} size="small" />
+              ? <ActivityIndicator color="#060A09" size="small" />
               : <Text style={styles.createBtnText}>Add Expense</Text>
             }
+          </TouchableOpacity>
+          <View style={{ height: 20 }} />
+        </ScrollView>
+
+        <CustomSplitModal
+          visible={showCustom}
+          onClose={() => setShowCustom(false)}
+          members={members}
+          payerId={payerId}
+          totalAmount={parseFloat(amount) || 0}
+          onConfirm={(splits) => {
+            setCustomSplits(splits);
+            setShowCustom(false);
+          }}
+        />
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+// ─── Custom Split Modal ───────────────────────────────────────────────────────
+
+function CustomSplitModal({ visible, onClose, members, payerId, totalAmount, onConfirm }) {
+  const [amounts,   setAmounts]   = useState({});
+  const [lockedIds, setLockedIds] = useState(new Set());
+
+  useEffect(() => {
+    if (!visible) return;
+    if (!members.length || !totalAmount) return;
+    const equal = (totalAmount / members.length).toFixed(2);
+    const init = {};
+    members.forEach(m => { init[m.id] = equal; });
+    setAmounts(init);
+    setLockedIds(new Set());
+  }, [visible]);
+
+  function handleChange(memberId, rawValue) {
+    const newLocked = new Set(lockedIds);
+    newLocked.add(memberId);
+
+    const newAmounts = { ...amounts, [memberId]: rawValue };
+
+    let sumLocked = 0;
+    for (const id of newLocked) {
+      sumLocked += parseFloat(newAmounts[id]) || 0;
+    }
+
+    const remaining = totalAmount - sumLocked;
+    const unlocked = members.filter(m => !newLocked.has(m.id));
+
+    if (unlocked.length > 0) {
+      const each = (remaining / unlocked.length).toFixed(2);
+      unlocked.forEach(m => { newAmounts[m.id] = each; });
+    }
+
+    setAmounts(newAmounts);
+    setLockedIds(newLocked);
+  }
+
+  function resetEqual() {
+    if (!members.length || !totalAmount) return;
+    const equal = (totalAmount / members.length).toFixed(2);
+    const init = {};
+    members.forEach(m => { init[m.id] = equal; });
+    setAmounts(init);
+    setLockedIds(new Set());
+  }
+
+  const totalEntered = members.reduce((sum, m) => sum + (parseFloat(amounts[m.id]) || 0), 0);
+  const leftover = Math.round((totalAmount - totalEntered) * 100) / 100;
+  const isValid = Math.abs(leftover) <= 0.02;
+
+  function handleConfirm() {
+    if (!isValid) return;
+    const splits = members.map(m => ({
+      userId: m.id,
+      amount: parseFloat(amounts[m.id]) || 0,
+    }));
+    onConfirm(splits);
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
+        <ScrollView style={styles.modalSheet} bounces={false} keyboardShouldPersistTaps="handled">
+          <View style={styles.modalHandle} />
+          <Text style={styles.modalTitle}>Custom Split</Text>
+          <Text style={[styles.modalLabel, { marginBottom: 16 }]}>Total: ₹{totalAmount.toFixed(2)}</Text>
+
+          {members.map(m => {
+            const isPayer = m.id === payerId;
+            return (
+              <View
+                key={m.id}
+                style={[
+                  styles.customSplitRow,
+                  isPayer && { backgroundColor: PC.accent10, borderRadius: 10, padding: 8, marginHorizontal: -8 },
+                ]}>
+                <View style={styles.customSplitMember}>
+                  <View style={styles.memberAvatar}>
+                    <Text style={styles.memberInitials}>{initials(m.name)}</Text>
+                  </View>
+                  <Text style={{ color: PC.textPrimary, fontSize: 14, fontWeight: '600' }}>
+                    {m.name.split(' ')[0]}{isPayer ? ' (paid)' : ''}
+                  </Text>
+                </View>
+                <View style={styles.customSplitInput}>
+                  <Text style={styles.rupeePrefix}>₹</Text>
+                  <TextInput
+                    style={[styles.modalInput, { flex: 1 }]}
+                    value={amounts[m.id] ?? ''}
+                    onChangeText={v => handleChange(m.id, v)}
+                    keyboardType="decimal-pad"
+                    placeholder="0.00"
+                    placeholderTextColor={PC.textMuted}
+                  />
+                </View>
+              </View>
+            );
+          })}
+
+          <View style={styles.remainingBar}>
+            <Text style={{ color: PC.textSecondary, fontSize: 13 }}>Remaining</Text>
+            <Text style={{ color: isValid ? PC.positive : PC.warning, fontSize: 13, fontWeight: '600' }}>
+              ₹{leftover.toFixed(2)}
+            </Text>
+          </View>
+
+          <TouchableOpacity onPress={resetEqual} style={{ alignItems: 'center', marginBottom: 16 }}>
+            <Text style={{ color: PC.accent, fontSize: 13 }}>Reset to equal</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.createBtn, !isValid && styles.createBtnDisabled]}
+            onPress={handleConfirm}
+            disabled={!isValid}
+            activeOpacity={0.85}>
+            <Text style={styles.createBtnText}>Confirm Split</Text>
           </TouchableOpacity>
           <View style={{ height: 20 }} />
         </ScrollView>
@@ -216,43 +452,52 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
 
 // ─── Add Member Modal ─────────────────────────────────────────────────────────
 
-function AddMemberModal({ visible, onClose, groupId, onAdded }) {
-  const [email,   setEmail]   = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState('');
+function AddMemberModal({ visible, onClose, groupId, existingMemberIds, onAdded }) {
+  const [friends,     setFriends]     = useState([]);
+  const [loadingList, setLoadingList] = useState(false);
+  const [addingId,    setAddingId]    = useState(null);
+  const [error,       setError]       = useState('');
 
-  async function handleAdd() {
-    if (!email.trim()) { setError('Enter an email address.'); return; }
-    setLoading(true);
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    setError('');
+    setLoadingList(true);
+    getFriends()
+      .then(frs => {
+        if (!cancelled)
+          setFriends((frs || []).filter(f => !existingMemberIds.includes(f.id)));
+      })
+      .catch(() => { if (!cancelled) setError('Could not load friends list.'); })
+      .finally(() => { if (!cancelled) setLoadingList(false); });
+    return () => { cancelled = true; };
+  }, [visible, existingMemberIds]);
+
+  async function handleAdd(friend) {
+    setAddingId(friend.id);
     setError('');
     try {
-      const { data } = await api.post(`/api/groups/${groupId}/members`, {
-        email: email.trim().toLowerCase(),
-      });
+      const { data } = await api.post(`/api/groups/${groupId}/members`, { userId: friend.id });
       onAdded(data.member);
-      setEmail('');
       onClose();
     } catch (err) {
       setError(err.message);
     } finally {
-      setLoading(false);
+      setAddingId(null);
     }
   }
 
   function handleClose() {
-    if (loading) return;
-    setEmail('');
+    if (addingId) return;
     setError('');
     onClose();
   }
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
-      <KeyboardAvoidingView
-        style={styles.modalOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={styles.modalOverlay}>
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
-        <View style={styles.modalSheet}>
+        <View style={[styles.modalSheet, { maxHeight: '70%' }]}>
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Add Member</Text>
 
@@ -263,37 +508,46 @@ function AddMemberModal({ visible, onClose, groupId, onAdded }) {
             </View>
           ) : null}
 
-          <Text style={styles.modalLabel}>Member's Email</Text>
-          <View style={styles.modalInputBox}>
-            <Ionicons name="mail-outline" size={17} color={PC.textMuted} style={{ marginRight: 10 }} />
-            <TextInput
-              style={[styles.modalInput, { flex: 1 }]}
-              placeholder="friend@example.com"
-              placeholderTextColor={PC.textMuted}
-              value={email}
-              onChangeText={(v) => { setEmail(v); setError(''); }}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              editable={!loading}
-            />
-          </View>
-          <Text style={styles.splitNote}>
-            The person must already have a PayCircle account.
-          </Text>
-
-          <TouchableOpacity
-            style={[styles.createBtn, loading && styles.createBtnDisabled]}
-            onPress={handleAdd}
-            disabled={loading}
-            activeOpacity={0.85}>
-            {loading
-              ? <ActivityIndicator color={PC.bg} size="small" />
-              : <Text style={styles.createBtnText}>Add Member</Text>
-            }
-          </TouchableOpacity>
+          {loadingList ? (
+            <ActivityIndicator color={PC.textMuted} style={{ marginVertical: 24 }} />
+          ) : friends.length === 0 ? (
+            <View style={{ alignItems: 'center', paddingVertical: 28 }}>
+              <Ionicons name="people-outline" size={32} color={PC.textMuted} style={{ marginBottom: 10 }} />
+              <Text style={[styles.splitNote, { textAlign: 'center' }]}>
+                No friends available to add.{'\n'}Add friends first from your Profile.
+              </Text>
+            </View>
+          ) : (
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {friends.map((f, i) => (
+                <View key={f.id}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 12 }}>
+                    <View style={styles.memberAvatar}>
+                      <Text style={styles.memberInitials}>{initials(f.name)}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: PC.textPrimary, fontSize: 14, fontWeight: '600' }}>{f.name}</Text>
+                      {f.username ? <Text style={{ color: PC.textMuted, fontSize: 12 }}>@{f.username}</Text> : null}
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.createBtn, { paddingHorizontal: 16, height: 36, borderRadius: 10, width: 'auto' }, addingId === f.id && styles.createBtnDisabled]}
+                      onPress={() => handleAdd(f)}
+                      disabled={!!addingId}
+                      activeOpacity={0.85}>
+                      {addingId === f.id
+                        ? <ActivityIndicator color="#060A09" size="small" />
+                        : <Text style={styles.createBtnText}>Add</Text>
+                      }
+                    </TouchableOpacity>
+                  </View>
+                  {i < friends.length - 1 && <View style={{ height: 1, backgroundColor: PC.border }} />}
+                </View>
+              ))}
+              <View style={{ height: 16 }} />
+            </ScrollView>
+          )}
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
@@ -301,12 +555,13 @@ function AddMemberModal({ visible, onClose, groupId, onAdded }) {
 // ─── Record Settlement Modal ──────────────────────────────────────────────────
 
 function RecordSettlementModal({ visible, onClose, groupId, members, currentUserId, onRecorded }) {
-  const [fromId,  setFromId]  = useState(currentUserId ?? '');
-  const [toId,    setToId]    = useState('');
-  const [amount,  setAmount]  = useState('');
-  const [notes,   setNotes]   = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState('');
+  const [fromId,        setFromId]        = useState(currentUserId ?? '');
+  const [toId,          setToId]          = useState('');
+  const [amount,        setAmount]        = useState('');
+  const [notes,         setNotes]         = useState('');
+  const [loading,       setLoading]       = useState(false);
+  const [error,         setError]         = useState('');
+  const [paymentMethod, setPaymentMethod] = useState(null); // null | 'upi' | 'outside'
 
   // Auto-reset toId if it collides with fromId
   function handleFromChange(id) {
@@ -348,6 +603,7 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
     setAmount('');
     setNotes('');
     setError('');
+    setPaymentMethod(null);
     onClose();
   }
 
@@ -357,7 +613,7 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <KeyboardAvoidingView
         style={styles.modalOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
         <ScrollView style={styles.modalSheet} bounces={false} keyboardShouldPersistTaps="handled">
           <View style={styles.modalHandle} />
@@ -382,7 +638,7 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
                   onPress={() => handleFromChange(m.id)}
                   disabled={loading}>
                   <View style={[styles.payerAvatar, selected && styles.payerAvatarActive]}>
-                    <Text style={[styles.payerInitials, selected && { color: PC.bg }]}>
+                    <Text style={[styles.payerInitials, selected && { color: '#060A09' }]}>
                       {initials(m.name)}
                     </Text>
                   </View>
@@ -406,7 +662,7 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
                   onPress={() => handleToChange(m.id)}
                   disabled={loading}>
                   <View style={[styles.payerAvatar, selected && styles.payerAvatarActive]}>
-                    <Text style={[styles.payerInitials, selected && { color: PC.bg }]}>
+                    <Text style={[styles.payerInitials, selected && { color: '#060A09' }]}>
                       {initials(m.name)}
                     </Text>
                   </View>
@@ -433,6 +689,57 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
             />
           </View>
 
+          {/* Payment method */}
+          <Text style={styles.modalLabel}>How was it paid?</Text>
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
+            <TouchableOpacity
+              style={[styles.payerChip, paymentMethod === 'upi' && styles.payerChipActive, { flexDirection: 'row', gap: 6, paddingHorizontal: 14, paddingVertical: 10 }]}
+              onPress={() => setPaymentMethod('upi')}
+              disabled={loading}>
+              <Ionicons name="qr-code-outline" size={15} color={paymentMethod === 'upi' ? '#060A09' : PC.textSecondary} />
+              <Text style={[styles.payerName, paymentMethod === 'upi' && styles.payerNameActive]}>UPI</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.payerChip, paymentMethod === 'outside' && styles.payerChipActive, { flexDirection: 'row', gap: 6, paddingHorizontal: 14, paddingVertical: 10 }]}
+              onPress={() => setPaymentMethod('outside')}
+              disabled={loading}>
+              <Ionicons name="swap-horizontal-outline" size={15} color={paymentMethod === 'outside' ? '#060A09' : PC.textSecondary} />
+              <Text style={[styles.payerName, paymentMethod === 'outside' && styles.payerNameActive]}>Outside App</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* UPI pay button — shown when UPI selected and receiver has a UPI ID */}
+          {paymentMethod === 'upi' && toId && (() => {
+            const receiver = members.find(m => m.id === toId || m.id?.toString() === toId);
+            const amt = parseFloat(amount);
+            if (receiver?.upiId && !isNaN(amt) && amt > 0) {
+              return (
+                <View style={{ marginBottom: 16 }}>
+                  <PayWithUPIButton
+                    upiId={receiver.upiId}
+                    name={receiver.name}
+                    amount={amt}
+                    note="Group settlement"
+                  />
+                  <Text style={{ color: PC.textMuted, fontSize: 12, marginTop: 8 }}>
+                    After paying, tap "Record Settlement" to log it.
+                  </Text>
+                </View>
+              );
+            }
+            if (!receiver?.upiId) {
+              return (
+                <View style={{ marginBottom: 16, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Ionicons name="information-circle-outline" size={14} color={PC.textMuted} />
+                  <Text style={{ color: PC.textMuted, fontSize: 12, flex: 1 }}>
+                    {receiver?.name?.split(' ')[0] || 'Receiver'} hasn't set a UPI ID yet.
+                  </Text>
+                </View>
+              );
+            }
+            return null;
+          })()}
+
           {/* Notes */}
           <Text style={styles.modalLabel}>Notes (optional)</Text>
           <View style={[styles.modalInputBox, { height: 72, alignItems: 'flex-start', paddingTop: 12 }]}>
@@ -453,7 +760,7 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
             disabled={loading}
             activeOpacity={0.85}>
             {loading
-              ? <ActivityIndicator color={PC.bg} size="small" />
+              ? <ActivityIndicator color="#060A09" size="small" />
               : <Text style={styles.createBtnText}>Record Settlement</Text>
             }
           </TouchableOpacity>
@@ -483,6 +790,7 @@ export default function GroupDetailScreen() {
   const [showAddExpense,    setShowAddExpense]    = useState(false);
   const [showAddMember,     setShowAddMember]     = useState(false);
   const [showSettlement,    setShowSettlement]    = useState(false);
+  const [expandedExpId,     setExpandedExpId]     = useState(null);
 
   // ── Fetch all group data ──────────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
@@ -500,6 +808,7 @@ export default function GroupDetailScreen() {
           id:    m._id,
           name:  m.name,
           email: m.email,
+          upiId: m.upiId || '',
           role:  m._id === g.adminId?._id || m._id === g.adminId ? 'Admin' : 'Member',
         }))
       );
@@ -519,6 +828,15 @@ export default function GroupDetailScreen() {
     }
     init();
   }, [fetchAll]);
+
+  // Mark this group as viewed so navbar badge clears
+  useFocusEffect(useCallback(() => {
+    AsyncStorage.getItem('groupLastViewed').then(raw => {
+      const map = raw ? JSON.parse(raw) : {};
+      map[String(id)] = new Date().toISOString();
+      AsyncStorage.setItem('groupLastViewed', JSON.stringify(map));
+    }).catch(() => {});
+  }, [id]));
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -550,7 +868,7 @@ export default function GroupDetailScreen() {
   }
 
   // ── My balance in this group ──────────────────────────────────────────────
-  const myBalance = balances.members?.find(m => m.user.id === user._id);
+  const myBalance = balances.members?.find(m => m.user.id === user._id?.toString());
 
   if (loading) {
     return (
@@ -662,30 +980,127 @@ export default function GroupDetailScreen() {
               <Text style={styles.emptyText}>Add the first expense to get started</Text>
             </View>
           ) : (
-            expenses.map((exp) => {
-              const myShare = exp.splits?.find(s => s.userId?._id === user._id || s.userId?.id === user._id);
-              const paidByMe = exp.payerId?._id === user._id || exp.payerId?.id === user._id;
+            expenses.map((exp, idx) => {
+              const meId = user._id?.toString();
+              const paidByMe = exp.payerId?._id?.toString() === meId || exp.payerId?.id?.toString() === meId;
+              const myShare = exp.splits?.find(s =>
+                s.userId?._id?.toString() === meId || s.userId?.id?.toString() === meId
+              );
+              const isExpanded = expandedExpId === exp._id;
+              const prevExp = idx > 0 ? expenses[idx - 1] : null;
+              const showDate = !prevExp || formatExpDateLabel(exp.date) !== formatExpDateLabel(prevExp.date);
+              const payerFirstName = (exp.payerId?.name ?? 'Unknown').split(' ')[0];
+
               return (
-                <View key={exp._id} style={styles.expenseCard}>
-                  <View style={styles.expCatIcon}>
-                    <Ionicons name={CAT_ICONS[exp.category] || 'grid-outline'} size={18} color={PC.textSecondary} />
-                  </View>
-                  <View style={styles.expInfo}>
-                    <Text style={styles.expTitle}>{exp.notes || exp.category}</Text>
-                    <Text style={styles.expMeta}>
-                      Paid by {paidByMe ? 'You' : exp.payerId?.name ?? 'Unknown'} · {formatShortDate(exp.date)}
-                    </Text>
-                  </View>
-                  <View style={styles.expAmounts}>
-                    <Text style={styles.expTotal}>₹{exp.amount.toLocaleString('en-IN')}</Text>
-                    {myShare ? (
-                      <Text style={[
-                        styles.expShare,
-                        paidByMe ? { color: PC.positive } : { color: PC.negative },
-                      ]}>
-                        {paidByMe ? 'lent' : 'owe'} ₹{myShare.amount.toLocaleString('en-IN')}
-                      </Text>
-                    ) : null}
+                <View key={exp._id}>
+                  {showDate && <ExpDateSeparator label={formatExpDateLabel(exp.date)} />}
+                  <View style={[styles.expBubbleRow, paidByMe ? styles.expBubbleRowRight : styles.expBubbleRowLeft]}>
+                    {!paidByMe && (
+                      <View style={styles.expBubbleAvatar}>
+                        <Text style={styles.expBubbleAvatarText}>{initials(payerFirstName)}</Text>
+                      </View>
+                    )}
+                    <View style={{ maxWidth: '78%' }}>
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        onPress={() => {
+                          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                          setExpandedExpId(isExpanded ? null : exp._id);
+                        }}
+                        style={[styles.expBubble, paidByMe ? styles.expBubbleMine : styles.expBubbleFriend]}>
+
+                        {/* Paid line */}
+                        <View style={styles.expBubbleAmtRow}>
+                          <Text style={[styles.expBubblePaidBy, paidByMe ? styles.expTMineSecondary : { color: PC.textSecondary }]}>
+                            {paidByMe ? 'You' : payerFirstName} paid
+                          </Text>
+                          <Text style={[styles.expBubbleAmt, paidByMe ? styles.expTMine : { color: PC.textPrimary }]}>
+                            {'  '}₹{exp.amount.toLocaleString('en-IN')}
+                          </Text>
+                        </View>
+
+                        {/* Notes */}
+                        {exp.notes ? (
+                          <Text style={[styles.expBubbleDesc, paidByMe ? styles.expTMineSecondary : { color: PC.textSecondary }]}>
+                            {exp.notes}
+                          </Text>
+                        ) : null}
+
+                        {/* Your Share */}
+                        {myShare ? (
+                          <Text style={[styles.expBubbleShareLine, paidByMe ? styles.expTMineSecondary : { color: PC.textSecondary }]}>
+                            {'Your Share : '}
+                            <Text style={[styles.expBubbleShareAmt, paidByMe ? styles.expTMine : { color: PC.textPrimary }]}>
+                              ₹{myShare.amount.toLocaleString('en-IN')}
+                            </Text>
+                          </Text>
+                        ) : null}
+
+                        {/* Time */}
+                        <Text style={[styles.expBubbleTime, paidByMe ? styles.expTMineMuted : { color: PC.textMuted }, { marginTop: 4 }]}>
+                          {formatExpTime(exp.date)}
+                        </Text>
+                      </TouchableOpacity>
+
+                      {/* Expanded receipt-style split breakdown */}
+                      {isExpanded && (
+                        <View style={[styles.splitCard, paidByMe ? styles.splitCardMine : styles.splitCardFriend]}>
+
+                          {/* Header */}
+                          <View style={[styles.splitCardHeader, paidByMe ? styles.splitCardHeaderMine : styles.splitCardHeaderFriend]}>
+                            <Ionicons name="receipt-outline" size={10} color={PC.textMuted} />
+                            <Text style={styles.splitCardHeaderLabel}>SPLIT BREAKDOWN</Text>
+                            <Text style={styles.splitCardHeaderCount}>{exp.splits?.length} people</Text>
+                          </View>
+
+                          {/* Member rows */}
+                          {exp.splits?.map((s, si) => {
+                            const memberId = s.userId?._id?.toString() ?? s.userId?.toString();
+                            const memberName = members.find(m => m.id === memberId)?.name ?? s.userId?.name ?? 'Unknown';
+                            const isMe = memberId === meId;
+                            const isPayer = exp.payerId?._id?.toString() === memberId || exp.payerId?.toString() === memberId;
+                            return (
+                              <React.Fragment key={memberId ?? si}>
+                                {si > 0 && <View style={[styles.splitRowDivider, paidByMe ? styles.splitRowDividerMine : styles.splitRowDividerFriend]} />}
+                                <View style={styles.splitRow}>
+                                  {isPayer && <View style={styles.splitPayerBar} />}
+                                  <View style={[styles.splitAvatar, isPayer ? styles.splitAvatarPayer : isMe ? styles.splitAvatarMe : {}]}>
+                                    <Text style={[styles.splitAvatarText, isPayer && { color: '#060A09' }]}>
+                                      {initials(memberName)}
+                                    </Text>
+                                  </View>
+                                  <Text style={[styles.splitName, isPayer ? styles.splitNamePayer : isMe ? styles.splitNameMe : {}]}>
+                                    {isMe ? 'You' : memberName.split(' ')[0]}
+                                  </Text>
+                                  {isPayer && (
+                                    <View style={styles.splitPaidBadge}>
+                                      <Text style={styles.splitPaidBadgeText}>PAID</Text>
+                                    </View>
+                                  )}
+                                  <View style={styles.splitLeader}>
+                                    {[...Array(10)].map((_, di) => <View key={di} style={styles.splitLeaderDot} />)}
+                                  </View>
+                                  <Text style={[styles.splitAmt, isPayer ? styles.splitAmtPayer : isMe ? styles.splitAmtMe : styles.splitAmtOwer]}>
+                                    {isPayer ? '+' : '−'}₹{s.amount.toFixed(2)}
+                                  </Text>
+                                </View>
+                              </React.Fragment>
+                            );
+                          })}
+
+                          {/* Total footer */}
+                          <View style={[styles.splitTotalRow, paidByMe ? styles.splitTotalRowMine : styles.splitTotalRowFriend]}>
+                            <Text style={styles.splitTotalLabel}>TOTAL</Text>
+                            <View style={styles.splitLeader}>
+                              {[...Array(10)].map((_, di) => <View key={di} style={styles.splitLeaderDot} />)}
+                            </View>
+                            <Text style={[styles.splitTotalAmt, paidByMe ? { color: PC.positive } : { color: PC.textPrimary }]}>
+                              ₹{exp.amount.toLocaleString('en-IN')}
+                            </Text>
+                          </View>
+                        </View>
+                      )}
+                    </View>
                   </View>
                 </View>
               );
@@ -700,7 +1115,7 @@ export default function GroupDetailScreen() {
               style={styles.settleBtn}
               onPress={() => setShowSettlement(true)}
               activeOpacity={0.85}>
-              <Ionicons name="checkmark-done-outline" size={17} color={PC.bg} style={{ marginRight: 7 }} />
+              <Ionicons name="checkmark-done-outline" size={17} color={PC.accent} style={{ marginRight: 7 }} />
               <Text style={styles.settleBtnText}>Record Settlement</Text>
             </TouchableOpacity>
 
@@ -708,8 +1123,8 @@ export default function GroupDetailScreen() {
               <>
                 <Text style={styles.sectionLabel}>Simplified Debts</Text>
                 {balances.debts.map((d, i) => {
-                  const fromMe = d.from.id === user._id;
-                  const toMe   = d.to.id   === user._id;
+                  const fromMe = d.from.id === user._id?.toString();
+                  const toMe   = d.to.id   === user._id?.toString();
                   return (
                     <View key={i} style={styles.debtCard}>
                       <View style={styles.debtAvatarGroup}>
@@ -757,7 +1172,7 @@ export default function GroupDetailScreen() {
                 </View>
                 <View style={{ flex: 1, marginLeft: 12 }}>
                   <Text style={styles.memberName}>
-                    {m.user.id === user._id ? 'You' : m.user.name}
+                    {m.user.id === user._id?.toString() ? 'You' : m.user.name}
                   </Text>
                   <Text style={styles.memberEmail}>{m.user.email}</Text>
                 </View>
@@ -798,7 +1213,7 @@ export default function GroupDetailScreen() {
       {/* ── Add Expense FAB ── */}
       {tab === 'expenses' && (
         <TouchableOpacity style={styles.fab} onPress={() => setShowAddExpense(true)} activeOpacity={0.85}>
-          <Ionicons name="add" size={24} color={PC.bg} />
+          <Ionicons name="add" size={24} color="#060A09" />
           <Text style={styles.fabText}>Add Expense</Text>
         </TouchableOpacity>
       )}
@@ -814,6 +1229,7 @@ export default function GroupDetailScreen() {
         visible={showAddMember}
         onClose={() => setShowAddMember(false)}
         groupId={id}
+        existingMemberIds={members.map(m => m.id)}
         onAdded={handleMemberAdded}
       />
       <RecordSettlementModal
@@ -847,7 +1263,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: PC.bgCard,
     borderWidth: 1,
-    borderColor: PC.border,
+    borderColor: PC.borderLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -870,7 +1286,7 @@ const styles = StyleSheet.create({
   },
   balanceStat:      { flex: 1, alignItems: 'center' },
   balanceStatLabel: { color: PC.textSecondary, fontSize: 11, marginBottom: 4 },
-  balanceStatVal:   { color: PC.textPrimary, fontSize: 16, fontWeight: '700' },
+  balanceStatVal:   { color: PC.textPrimary, fontSize: 16, fontWeight: '700', fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace' },
   balanceDivider:   { width: 1, backgroundColor: PC.border },
 
   // Tabs
@@ -885,9 +1301,9 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   tabBtn:        { flex: 1, paddingVertical: 9, alignItems: 'center', borderRadius: 9 },
-  tabActive:     { backgroundColor: PC.bgCardElevated },
+  tabActive:     { backgroundColor: PC.accent10 },
   tabText:       { color: PC.textMuted, fontSize: 13, fontWeight: '500' },
-  tabTextActive: { color: PC.textPrimary },
+  tabTextActive: { color: PC.accent, fontWeight: '600' },
 
   scroll:        { flex: 1 },
   scrollContent: { paddingHorizontal: 20, paddingBottom: 100 },
@@ -908,12 +1324,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: PC.textPrimary,
+    backgroundColor: PC.accent10,
+    borderWidth: 1,
+    borderColor: PC.accent,
     borderRadius: 14,
     paddingVertical: 13,
     marginBottom: 20,
   },
-  settleBtnText: { color: PC.bg, fontSize: 14, fontWeight: '700' },
+  settleBtnText: { color: PC.accent, fontSize: 14, fontWeight: '700' },
 
   // Expense card
   expenseCard: {
@@ -949,7 +1367,7 @@ const styles = StyleSheet.create({
   debtAvatarGroup: { flexDirection: 'row', alignItems: 'center' },
   debtInfo:        { flex: 1 },
   debtLabel:       { fontSize: 13 },
-  debtAmount:      { color: PC.textPrimary, fontSize: 15, fontWeight: '600' },
+  debtAmount:      { color: PC.textPrimary, fontSize: 15, fontWeight: '600', fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace' },
 
   // Member balance card
   memberBalCard: {
@@ -970,9 +1388,9 @@ const styles = StyleSheet.create({
   memberNetBal:    { fontSize: 15, fontWeight: '700' },
 
   roleBadge:      { paddingHorizontal: 8, paddingVertical: 3, backgroundColor: PC.bgCardElevated, borderRadius: 8, borderWidth: 1, borderColor: PC.border },
-  roleBadgeAdmin: { borderColor: PC.textPrimary, backgroundColor: 'rgba(255,255,255,0.05)' },
+  roleBadgeAdmin: { borderColor: PC.accent, backgroundColor: PC.accent10 },
   roleText:       { color: PC.textMuted, fontSize: 11, fontWeight: '500' },
-  roleTextAdmin:  { color: PC.textPrimary },
+  roleTextAdmin:  { color: PC.accent },
 
   // FAB
   fab: {
@@ -981,18 +1399,18 @@ const styles = StyleSheet.create({
     right: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: PC.textPrimary,
+    backgroundColor: PC.accent,
     paddingVertical: 14,
     paddingHorizontal: 20,
     borderRadius: 16,
     gap: 6,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
+    elevation: 6,
+    shadowColor: PC.accent,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
   },
-  fabText: { color: PC.bg, fontSize: 15, fontWeight: '700' },
+  fabText: { color: '#060A09', fontSize: 15, fontWeight: '700' },
 
   // Modal
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' },
@@ -1022,23 +1440,23 @@ const styles = StyleSheet.create({
 
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
   chip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: PC.border, backgroundColor: PC.bgCardElevated },
-  chipActive:     { borderColor: PC.textPrimary, backgroundColor: 'rgba(255,255,255,0.07)' },
+  chipActive:     { borderColor: PC.accent, backgroundColor: PC.accent10 },
   chipText:       { color: PC.textMuted, fontSize: 13 },
-  chipTextActive: { color: PC.textPrimary },
+  chipTextActive: { color: PC.accent },
 
   payerChip:        { alignItems: 'center', marginRight: 14 },
   payerChipActive:  {},
   payerAvatar:      { width: 44, height: 44, borderRadius: 14, backgroundColor: PC.bgCardElevated, borderWidth: 1, borderColor: PC.border, alignItems: 'center', justifyContent: 'center', marginBottom: 5 },
-  payerAvatarActive: { backgroundColor: PC.textPrimary, borderColor: PC.textPrimary },
+  payerAvatarActive: { backgroundColor: PC.accent, borderColor: PC.accent },
   payerInitials:    { color: PC.textPrimary, fontSize: 14, fontWeight: '700' },
   payerName:        { color: PC.textMuted, fontSize: 12 },
   payerNameActive:  { color: PC.textPrimary, fontWeight: '600' },
 
   splitNote: { color: PC.textMuted, fontSize: 12, marginBottom: 24, lineHeight: 18 },
 
-  createBtn:         { backgroundColor: PC.textPrimary, borderRadius: 14, height: 52, alignItems: 'center', justifyContent: 'center' },
+  createBtn:         { backgroundColor: PC.accent, borderRadius: 14, height: 52, alignItems: 'center', justifyContent: 'center' },
   createBtnDisabled: { opacity: 0.6 },
-  createBtnText:     { color: PC.bg, fontSize: 15, fontWeight: '700' },
+  createBtnText:     { color: '#060A09', fontSize: 15, fontWeight: '700' },
 
   errorBox: {
     flexDirection: 'row',
@@ -1053,4 +1471,173 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   errorText: { flex: 1, color: PC.negative, fontSize: 13 },
+
+  expenseCardExpanded: { borderBottomLeftRadius: 0, borderBottomRightRadius: 0, marginBottom: 0 },
+  expSplitList: {
+    backgroundColor: PC.bgCard,
+    borderRadius: 14,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+    borderWidth: 1,
+    borderTopWidth: 0,
+    borderColor: PC.border,
+    marginBottom: 10,
+    overflow: 'hidden',
+  },
+  expSplitHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: PC.border,
+  },
+  expSplitHeaderText: { color: PC.textMuted, fontSize: 10, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  expSplitRow:        { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10 },
+  expSplitRowPayer:   { backgroundColor: PC.accent10, borderLeftWidth: 3, borderLeftColor: PC.accent },
+  expSplitDivider:    { height: 1, backgroundColor: PC.border },
+  expSplitName: { flex: 1, color: PC.textSecondary, fontSize: 13 },
+  expSplitAmt:  { fontSize: 13, fontWeight: '700' },
+  payerTag:     { paddingHorizontal: 6, paddingVertical: 2, backgroundColor: PC.accent, borderRadius: 6 },
+  payerTagText: { color: '#060A09', fontSize: 10, fontWeight: '700' },
+
+  splitPreviewBox:   { borderWidth: 1, borderColor: PC.borderLight, borderRadius: 10, padding: 12, marginBottom: 16 },
+  splitPreviewRow:   { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
+  splitPreviewName:  { color: PC.textSecondary, fontSize: 13 },
+  splitPreviewAmt:   { color: PC.textPrimary, fontSize: 13, fontWeight: '600' },
+  splitPreviewEdit:  { color: PC.accent, fontSize: 11, textAlign: 'right', marginTop: 6 },
+  customSplitRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  customSplitMember: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
+  customSplitInput:  { flexDirection: 'row', alignItems: 'center', backgroundColor: PC.bgInput, borderWidth: 1, borderColor: PC.border, borderRadius: 12, paddingHorizontal: 10, height: 44, width: 110 },
+  remainingBar:      { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderTopWidth: 1, borderTopColor: PC.border },
+
+  // ── Expense chat-bubble styles ──────────────────────────────────────────────
+  expDateSep:     { flexDirection: 'row', alignItems: 'center', marginVertical: 14, gap: 10 },
+  expDateSepLine: { flex: 1, height: 1, backgroundColor: PC.border },
+  expDateSepText: { color: PC.textMuted, fontSize: 11, fontWeight: '500' },
+
+  expBubbleRow:      { flexDirection: 'row', marginBottom: 6, alignItems: 'flex-end' },
+  expBubbleRowRight: { justifyContent: 'flex-end' },
+  expBubbleRowLeft:  { justifyContent: 'flex-start', gap: 8 },
+
+  expBubbleAvatar: {
+    width: 30, height: 30, borderRadius: 10,
+    backgroundColor: PC.bgCardElevated, borderWidth: 1, borderColor: PC.border,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 2,
+  },
+  expBubbleAvatarText: { color: PC.textPrimary, fontSize: 10, fontWeight: '700' },
+
+  expBubble: {
+    maxWidth: '100%', borderRadius: 16,
+    paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1,
+  },
+  expBubbleMine:   { backgroundColor: PC.accent, borderColor: PC.accent, borderBottomRightRadius: 4 },
+  expBubbleFriend: { backgroundColor: PC.bgCard,  borderColor: PC.border, borderBottomLeftRadius: 4 },
+
+  // Content inside expense bubble — mirrors direct screen Bubble structure exactly
+  expBubbleAmtRow:   { flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap' },
+  expBubblePaidBy:   { fontSize: 12 },
+  expBubbleAmt:      { fontSize: 17, fontWeight: '700' },
+  expBubbleDesc:     { fontSize: 13, marginTop: 3 },
+  expBubbleShareLine:{ fontSize: 11, marginTop: 6 },
+  expBubbleShareAmt: { fontSize: 11, fontWeight: '700' },
+  expBubbleTime:     { fontSize: 10 },
+
+  // dark text on mint bubble
+  expTMine:          { color: '#060A09' },
+  expTMineSecondary: { color: 'rgba(6,10,9,0.65)' },
+  expTMineMuted:     { color: 'rgba(6,10,9,0.45)' },
+
+  expBubbleSplits: {
+    borderRadius: 14, borderTopLeftRadius: 0, borderTopRightRadius: 0,
+    borderWidth: 1, borderTopWidth: 0, overflow: 'hidden', marginBottom: 10,
+  },
+  expBubbleSplitsMine:   { backgroundColor: 'rgba(0,229,190,0.08)', borderColor: PC.accent },
+  expBubbleSplitsFriend: { backgroundColor: PC.bgCard, borderColor: PC.border },
+
+  // ── Receipt-style split card ─────────────────────────────────────────────────
+  splitCard: {
+    borderBottomLeftRadius: 14, borderBottomRightRadius: 14,
+    overflow: 'hidden', marginBottom: 10,
+    borderWidth: 1, borderTopWidth: 0,
+  },
+  splitCardFriend: { backgroundColor: '#0A110E', borderColor: PC.border },
+  splitCardMine:   { backgroundColor: 'rgba(0,229,190,0.04)', borderColor: 'rgba(0,229,190,0.28)' },
+
+  splitCardHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 12, paddingVertical: 8,
+    borderBottomWidth: 1,
+  },
+  splitCardHeaderFriend: { borderBottomColor: PC.border },
+  splitCardHeaderMine:   { borderBottomColor: 'rgba(0,229,190,0.16)' },
+  splitCardHeaderLabel:  { flex: 1, color: PC.textMuted, fontSize: 9, fontWeight: '700', letterSpacing: 1.4 },
+  splitCardHeaderCount:  { color: PC.textMuted, fontSize: 9, fontWeight: '500' },
+
+  splitRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 12, paddingVertical: 9,
+    position: 'relative',
+  },
+  splitRowDivider:       { height: 1, marginLeft: 52 },
+  splitRowDividerFriend: { backgroundColor: PC.border },
+  splitRowDividerMine:   { backgroundColor: 'rgba(0,229,190,0.10)' },
+
+  splitPayerBar: {
+    position: 'absolute', left: 0, top: 0, bottom: 0,
+    width: 3, backgroundColor: PC.accent,
+  },
+
+  splitAvatar: {
+    width: 28, height: 28, borderRadius: 8,
+    backgroundColor: PC.bgCardElevated,
+    borderWidth: 1, borderColor: PC.border,
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: 10,
+  },
+  splitAvatarPayer: { backgroundColor: PC.accent, borderColor: PC.accent },
+  splitAvatarMe:    { borderColor: PC.borderLight, backgroundColor: 'rgba(239,249,246,0.08)' },
+  splitAvatarText:  { color: PC.textPrimary, fontSize: 10, fontWeight: '700' },
+
+  splitName:      { color: PC.textSecondary, fontSize: 13, fontWeight: '500' },
+  splitNamePayer: { color: PC.accent, fontWeight: '700' },
+  splitNameMe:    { color: PC.textPrimary, fontWeight: '600' },
+
+  splitPaidBadge: {
+    marginLeft: 7,
+    paddingHorizontal: 5, paddingVertical: 2,
+    backgroundColor: 'rgba(0,229,190,0.12)',
+    borderRadius: 4, borderWidth: 1, borderColor: 'rgba(0,229,190,0.30)',
+  },
+  splitPaidBadgeText: { color: PC.accent, fontSize: 8, fontWeight: '700', letterSpacing: 0.8 },
+
+  splitLeader: {
+    flex: 1, flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'center', gap: 3,
+    paddingHorizontal: 8, overflow: 'hidden',
+  },
+  splitLeaderDot: { width: 2, height: 2, borderRadius: 1, backgroundColor: PC.border },
+
+  splitAmt: {
+    fontSize: 12, fontWeight: '700', minWidth: 66, textAlign: 'right',
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
+  splitAmtPayer: { color: PC.positive },
+  splitAmtMe:    { color: PC.negative },
+  splitAmtOwer:  { color: PC.textSecondary },
+
+  splitTotalRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 12, paddingVertical: 9,
+    borderTopWidth: 1,
+  },
+  splitTotalRowFriend: { borderTopColor: PC.borderLight },
+  splitTotalRowMine:   { borderTopColor: 'rgba(0,229,190,0.16)' },
+  splitTotalLabel:     { color: PC.textMuted, fontSize: 9, fontWeight: '700', letterSpacing: 1.4 },
+  splitTotalAmt: {
+    fontSize: 13, fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
 });

@@ -18,14 +18,16 @@ import { useRouter } from 'expo-router';
 import { PC } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 
-const EMAIL_RE  = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PASS_RE   = /^(?=.*[a-zA-Z])(?=.*\d).{8,}$/;
+const EMAIL_RE    = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PASS_RE     = /^(?=.*[a-zA-Z])(?=.*\d).{8,}$/;
+const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
 
 export default function RegisterScreen() {
   const router = useRouter();
   const { register } = useAuth();
 
   const [name, setName]                   = useState('');
+  const [username, setUsername]           = useState('');
   const [email, setEmail]                 = useState('');
   const [password, setPassword]           = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -34,11 +36,14 @@ export default function RegisterScreen() {
   const [error, setError]                 = useState('');
 
   function validate() {
-    if (!name.trim() || !email.trim() || !password || !confirmPassword) {
+    if (!name.trim() || !username.trim() || !email.trim() || !password || !confirmPassword) {
       return 'All fields are required.';
     }
     if (name.trim().length < 2) {
       return 'Name must be at least 2 characters.';
+    }
+    if (!USERNAME_RE.test(username.trim().toLowerCase())) {
+      return 'Username must be 3–20 chars: lowercase letters, numbers, underscore only.';
     }
     if (!EMAIL_RE.test(email.trim())) {
       return 'Enter a valid email address.';
@@ -63,7 +68,7 @@ export default function RegisterScreen() {
 
     setLoading(true);
     try {
-      await register(name.trim(), email.trim().toLowerCase(), password);
+      await register(name.trim(), username.trim().toLowerCase(), email.trim().toLowerCase(), password);
       // RootGuard in _layout.jsx detects the new user state and
       // redirects to /(tabs) automatically — no router.replace needed here.
     } catch (err) {
@@ -125,6 +130,24 @@ export default function RegisterScreen() {
                   value={name}
                   onChangeText={(v) => { setName(v); clearError(); }}
                   autoCapitalize="words"
+                  editable={!loading}
+                />
+              </View>
+            </View>
+
+            {/* Username */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Username</Text>
+              <View style={styles.inputBox}>
+                <Ionicons name="at-outline" size={17} color={PC.textMuted} style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="arjun_sharma"
+                  placeholderTextColor={PC.textMuted}
+                  value={username}
+                  onChangeText={(v) => { setUsername(v.toLowerCase()); clearError(); }}
+                  autoCapitalize="none"
+                  autoCorrect={false}
                   editable={!loading}
                 />
               </View>
@@ -214,7 +237,7 @@ export default function RegisterScreen() {
               activeOpacity={0.85}
               disabled={loading}>
               {loading
-                ? <ActivityIndicator color={PC.bg} size="small" />
+                ? <ActivityIndicator color="#060A09" size="small" />
                 : <Text style={styles.primaryBtnText}>Create Account</Text>
               }
             </TouchableOpacity>
@@ -317,14 +340,14 @@ const styles = StyleSheet.create({
   hintText: { color: PC.textMuted, fontSize: 12 },
 
   primaryBtn: {
-    backgroundColor: PC.textPrimary,
+    backgroundColor: PC.accent,
     borderRadius: 14,
     height: 52,
     alignItems: 'center',
     justifyContent: 'center',
   },
   primaryBtnDisabled: { opacity: 0.6 },
-  primaryBtnText: { color: PC.bg, fontSize: 15, fontWeight: '700' },
+  primaryBtnText: { color: '#060A09', fontSize: 15, fontWeight: '700' },
 
   signinRow: {
     flexDirection: 'row',

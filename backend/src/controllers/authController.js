@@ -9,14 +9,16 @@ const generateToken = (id) =>
 const isValidEmail    = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 const isValidPassword = (p) => /^(?=.*[a-zA-Z])(?=.*\d).{8,}$/.test(p);
 
+const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
+
 // POST /api/auth/register
 const register = asyncHandler(async (req, res) => {
-  const { name, email, password } = req.body;
+  const { name, email, password, username } = req.body;
 
   logger.info('AUTH', `Register attempt: ${email}`);
 
-  if (!name || !email || !password)
-    return res.status(400).json({ success: false, message: 'Name, email, and password are required' });
+  if (!name || !email || !password || !username)
+    return res.status(400).json({ success: false, message: 'Name, username, email, and password are required' });
   if (name.trim().length < 2 || name.trim().length > 50)
     return res.status(400).json({ success: false, message: 'Name must be 2–50 characters' });
   if (!isValidEmail(email))
@@ -24,18 +26,38 @@ const register = asyncHandler(async (req, res) => {
   if (!isValidPassword(password))
     return res.status(400).json({ success: false, message: 'Password must be 8+ characters and contain both letters and numbers' });
 
+  const cleanUsername = username.trim().toLowerCase();
+  if (!USERNAME_RE.test(cleanUsername))
+    return res.status(400).json({ success: false, message: 'Username must be 3–20 chars, letters/numbers/underscore only' });
+
   if (await User.findOne({ email: email.toLowerCase() })) {
     logger.warn('AUTH', `Register rejected — email already exists: ${email}`);
     return res.status(409).json({ success: false, message: 'Email already registered' });
   }
 
-  const user = await User.create({ name: name.trim(), email: email.toLowerCase(), password });
+  if (await User.findOne({ username: cleanUsername })) {
+    logger.warn('AUTH', `Register rejected — username taken: ${cleanUsername}`);
+    return res.status(409).json({ success: false, message: 'Username already taken' });
+  }
+
+  let user;
+  try {
+    user = await User.create({ name: name.trim(), email: email.toLowerCase(), password, username: cleanUsername });
+  } catch (err) {
+    if (err.code === 11000) {
+      const isUsername = !!err.keyPattern?.username;
+      const msg = isUsername ? 'Username already taken' : 'Email already registered';
+      logger.warn('AUTH', `Register race — duplicate ${isUsername ? 'username' : 'email'}: ${email}`);
+      return res.status(409).json({ success: false, message: msg });
+    }
+    throw err;
+  }
   logger.info('AUTH', `User registered: ${user.email}`, { userId: user._id });
 
   res.status(201).json({
     success: true,
     token: generateToken(user._id),
-    user: { id: user._id, name: user.name, email: user.email, walletBalance: user.walletBalance },
+    user: { id: user._id, name: user.name, email: user.email, username: user.username || '', walletBalance: user.walletBalance },
   });
 });
 
@@ -66,7 +88,8 @@ const login = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     token: generateToken(user._id),
-    user: { id: user._id, name: user.name, email: user.email, walletBalance: user.walletBalance },
+    // username may be absent for legacy users who registered before the field was added
+    user: { id: user._id, name: user.name, email: user.email, username: user.username || '', walletBalance: user.walletBalance },
   });
 });
 
@@ -76,4 +99,20 @@ const getMe = asyncHandler(async (req, res) => {
   res.json({ success: true, user: req.user });
 });
 
-module.exports = { register, login, getMe };
+// PATCH /api/auth/me
+const updateMe = asyncHandler(async (req, res) => {
+  const { upiId } = req.body;
+  const updates = {};
+  if (upiId !== undefined) updates.upiId = upiId.trim();
+
+  const user = await User.findByIdAndUpdate(
+    req.user._id,
+    updates,
+    { new: true, select: '-password' }
+  );
+
+  logger.info('AUTH', `Profile updated: ${user.email}`, { userId: user._id });
+  res.json({ success: true, user });
+});
+
+module.exports = { register, login, getMe, updateMe };

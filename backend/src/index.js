@@ -44,11 +44,10 @@ app.use((req, res, next) => {
   res.json = function (payload) {
     const ms = Date.now() - start;
     const ok = res.statusCode < 400;
-    const tag = ok ? 'HTTP' : 'HTTP';
     if (ok) {
-      logger.http(tag, `← ${res.statusCode} ${req.method} ${req.originalUrl}  ${ms}ms`);
+      logger.http('HTTP', `← ${res.statusCode} ${req.method} ${req.originalUrl}  ${ms}ms`);
     } else {
-      logger.warn(tag, `← ${res.statusCode} ${req.method} ${req.originalUrl}  ${ms}ms`, {
+      logger.warn('HTTP', `← ${res.statusCode} ${req.method} ${req.originalUrl}  ${ms}ms`, {
         message: payload?.message,
       });
     }

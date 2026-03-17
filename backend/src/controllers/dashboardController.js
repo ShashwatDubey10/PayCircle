@@ -1,6 +1,8 @@
 const Group               = require('../models/Group');
 const Expense             = require('../models/Expense');
 const PersonalTransaction = require('../models/PersonalTransaction');
+const DirectSplit         = require('../models/DirectSplit');
+const DirectSettle        = require('../models/DirectSettle');
 const { calculateGroupBalances } = require('../services/balanceService');
 const asyncHandler        = require('../utils/asyncHandler');
 const logger              = require('../utils/logger');
@@ -32,9 +34,13 @@ const getDashboard = asyncHandler(async (req, res) => {
   }
 
   // Personal transactions this month
-  const [personalExp, personalInc] = await Promise.all([
+  const [personalExp, personalInc, monthlyDirectSplits] = await Promise.all([
     PersonalTransaction.find({ userId, type: 'expense', date: { $gte: start, $lte: end } }),
     PersonalTransaction.find({ userId, type: 'income',  date: { $gte: start, $lte: end } }),
+    DirectSplit.find({
+      $or: [{ payerId: userId }, { otherUserId: userId }],
+      date: { $gte: start, $lte: end },
+    }),
   ]);
 
   let personalSpend = 0;
@@ -44,8 +50,19 @@ const getDashboard = asyncHandler(async (req, res) => {
   }
   const personalIncome = personalInc.reduce((s, t) => s + t.amount, 0);
 
+  // Direct split shares this month
+  let directSpend = 0;
+  for (const s of monthlyDirectSplits) {
+    const isPayer = s.payerId.toString() === userId.toString();
+    const myShare = isPayer
+      ? (s.payerShare ?? s.amount / 2)
+      : s.amount - (s.payerShare ?? s.amount / 2);
+    directSpend += myShare;
+    catMap['Miscellaneous'] = (catMap['Miscellaneous'] || 0) + myShare;
+  }
+
   // Category breakdown — top 4 + Others
-  const totalSpend = groupSpend + personalSpend;
+  const totalSpend = groupSpend + personalSpend + directSpend;
   let breakdown = Object.entries(catMap)
     .map(([category, amount]) => ({
       category,
@@ -76,6 +93,70 @@ const getDashboard = asyncHandler(async (req, res) => {
     if (mine.netBalance > 0) totalToReceive   += mine.netBalance;
   }));
 
+  // Direct split balance summary — net per friend
+  const [allDirectSplits, confirmedSettles] = await Promise.all([
+    DirectSplit.find({ $or: [{ payerId: userId }, { otherUserId: userId }] }),
+    DirectSettle.find({ status: 'confirmed', $or: [{ fromUserId: userId }, { toUserId: userId }] }),
+  ]);
+  const directBalMap = {}; // friendIdStr → netBalance (positive = owed to me)
+  for (const s of allDirectSplits) {
+    const isPayer    = s.payerId.toString() === userId.toString();
+    const friendStr  = isPayer ? s.otherUserId.toString() : s.payerId.toString();
+    const myShare    = isPayer ? (s.payerShare ?? s.amount / 2) : s.amount - (s.payerShare ?? s.amount / 2);
+    const theirShare = s.amount - myShare;
+    directBalMap[friendStr] = (directBalMap[friendStr] || 0) + (isPayer ? theirShare : -myShare);
+  }
+  for (const settle of confirmedSettles) {
+    const fromStr = settle.fromUserId.toString(); // debtor (who requested)
+    const toStr   = settle.toUserId.toString();   // creditor (who confirmed)
+    const meStr   = userId.toString();
+    if (fromStr === meStr) {
+      // I'm the debtor — I paid the creditor, reducing my debt to them
+      directBalMap[toStr]   = (directBalMap[toStr]   || 0) + settle.amount;
+    } else {
+      // Friend is the debtor — they paid me, reducing their debt to me
+      directBalMap[fromStr] = (directBalMap[fromStr] || 0) - settle.amount;
+    }
+  }
+  for (const net of Object.values(directBalMap)) {
+    if (net > 0.005)  totalToReceive += net;
+    if (net < -0.005) totalOwed      += Math.abs(net);
+  }
+
+  totalOwed      = parseFloat(totalOwed.toFixed(2));
+  totalToReceive = parseFloat(totalToReceive.toFixed(2));
+
+  // Recent activity — last 5 across all types
+  const [recentTx, recentGroupExp, recentDirect] = await Promise.all([
+    PersonalTransaction.find({ userId }).sort({ date: -1 }).limit(10),
+    Expense.find({ groupId: { $in: groupIds }, 'splits.userId': userId })
+           .sort({ date: -1 }).limit(10)
+           .populate('payerId', 'name'),
+    DirectSplit.find({ $or: [{ payerId: userId }, { otherUserId: userId }] })
+               .sort({ date: -1 }).limit(10)
+               .populate('payerId', 'name')
+               .populate('otherUserId', 'name'),
+  ]);
+
+  const activities = [
+    ...recentTx.map(t => ({
+      _id: t._id, type: 'personal', date: t.date,
+      amount: t.amount, description: t.notes || t.category,
+      sign: t.type === 'income' ? 1 : -1,
+    })),
+    ...recentGroupExp.map(e => {
+      const split = e.splits.find(s => s.userId.toString() === userId.toString());
+      return { _id: e._id, type: 'group_expense', date: e.date,
+               amount: split?.amount ?? e.amount, description: e.notes || e.category, sign: -1 };
+    }),
+    ...recentDirect.map(s => {
+      const payerIdStr = s.payerId._id?.toString() ?? s.payerId.toString();
+      const iAm = payerIdStr === userId.toString();
+      return { _id: s._id, type: 'direct_split', date: s.date,
+               amount: s.amount, description: s.description || 'Direct split', sign: iAm ? 1 : -1 };
+    }),
+  ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
+
   logger.debug('DASH', `Dashboard computed`, {
     userId,
     totalSpend: totalSpend.toFixed(2),
@@ -88,13 +169,15 @@ const getDashboard = asyncHandler(async (req, res) => {
       totalSpent: {
         group:    parseFloat(groupSpend.toFixed(2)),
         personal: parseFloat(personalSpend.toFixed(2)),
+        direct:   parseFloat(directSpend.toFixed(2)),
         combined: parseFloat(totalSpend.toFixed(2)),
       },
       personalIncome:  parseFloat(personalIncome.toFixed(2)),
       netCashflow:     parseFloat((personalIncome - personalSpend).toFixed(2)),
-      totalOwed:       parseFloat(totalOwed.toFixed(2)),
-      totalToReceive:  parseFloat(totalToReceive.toFixed(2)),
+      totalOwed:        parseFloat(totalOwed.toFixed(2)),
+      totalToReceive:   parseFloat(totalToReceive.toFixed(2)),
       categoryBreakdown: breakdown,
+      recentActivities: activities,
     },
   });
 });

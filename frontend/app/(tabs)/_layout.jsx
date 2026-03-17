@@ -2,30 +2,33 @@ import { Tabs } from 'expo-router';
 import React from 'react';
 import { Ionicons } from '@expo/vector-icons';
 
-import { PC } from '@/constants/theme';
+import { PC, FONTS } from '@/constants/theme';
+import { useBadge } from '@/context/BadgeContext';
 
 function TabIcon({ name, color, size }) {
   return <Ionicons name={name} size={size} color={color} />;
 }
 
 export default function TabLayout() {
+  const { splitBadge } = useBadge();
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: PC.textPrimary,
+        tabBarActiveTintColor: PC.accent,
         tabBarInactiveTintColor: PC.textMuted,
         tabBarStyle: {
-          backgroundColor: '#0F0F0F',
+          backgroundColor: PC.bgCard,
           borderTopColor: PC.border,
           borderTopWidth: 1,
-          height: 62,
+          height: 64,
           paddingBottom: 10,
           paddingTop: 8,
         },
         tabBarLabelStyle: {
           fontSize: 11,
-          fontWeight: '500',
+          fontFamily: FONTS.medium,
         },
       }}>
       <Tabs.Screen
@@ -40,9 +43,10 @@ export default function TabLayout() {
       <Tabs.Screen
         name="groups"
         options={{
-          title: 'Groups',
+          title: 'Split',
+          tabBarBadge: splitBadge > 0 ? splitBadge : undefined,
           tabBarIcon: ({ color, size }) => (
-            <TabIcon name="people-outline" color={color} size={size} />
+            <TabIcon name="git-branch-outline" color={color} size={size} />
           ),
         }}
       />

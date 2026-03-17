@@ -1,8 +1,10 @@
+const mongoose   = require('mongoose');
 const Group      = require('../models/Group');
 const User       = require('../models/User');
 const asyncHandler = require('../utils/asyncHandler');
 const logger       = require('../utils/logger');
 const { calculateGroupBalances } = require('../services/balanceService');
+const { areFriends } = require('./friendController');
 
 const VALID_TYPES = ['Roommates', 'Trip', 'Mess', 'Miscellaneous'];
 
@@ -34,7 +36,7 @@ const getUserGroups = asyncHandler(async (req, res) => {
   const groups = await Group.find({ members: req.user._id })
     .populate('adminId', 'name email')
     .populate('members', 'name email')
-    .sort({ createdAt: -1 });
+    .sort({ updatedAt: -1 });
 
   logger.debug('GROUP', `Fetched ${groups.length} groups for user`, { userId: req.user._id });
 
@@ -60,7 +62,7 @@ const getUserGroups = asyncHandler(async (req, res) => {
 // GET /api/groups/:id
 const getGroup = asyncHandler(async (req, res) => {
   const group = await Group.findById(req.params.id)
-    .populate('members', 'name email')
+    .populate('members', 'name email upiId')
     .populate('adminId', 'name email');
   if (!group) return res.status(404).json({ success: false, message: 'Group not found' });
 
@@ -92,8 +94,10 @@ const getMembers = asyncHandler(async (req, res) => {
 
 // POST /api/groups/:id/members
 const addMember = asyncHandler(async (req, res) => {
-  const { email } = req.body;
-  if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
+  const { userId } = req.body;
+  if (!userId) return res.status(400).json({ success: false, message: 'userId is required' });
+  if (!mongoose.Types.ObjectId.isValid(userId))
+    return res.status(400).json({ success: false, message: 'Invalid userId format' });
 
   const group = req.group;
   if (group.adminId.toString() !== req.user._id.toString()) {
@@ -101,11 +105,17 @@ const addMember = asyncHandler(async (req, res) => {
     return res.status(403).json({ success: false, message: 'Only the admin can add members' });
   }
 
-  const userToAdd = await User.findOne({ email: email.toLowerCase() });
-  if (!userToAdd) return res.status(404).json({ success: false, message: 'No registered user found with that email' });
+  const userToAdd = await User.findById(userId);
+  if (!userToAdd) return res.status(404).json({ success: false, message: 'User not found' });
 
   if (group.members.some(m => m.toString() === userToAdd._id.toString()))
     return res.status(409).json({ success: false, message: 'User is already a member' });
+
+  const friends = await areFriends(req.user._id, userToAdd._id);
+  if (!friends) {
+    logger.warn('GROUP', `Add member denied — not friends`, { groupId: group._id, targetUserId: userToAdd._id });
+    return res.status(403).json({ success: false, message: 'User must be your friend to be added to a group' });
+  }
 
   group.members.push(userToAdd._id);
   await group.save();
@@ -118,7 +128,7 @@ const addMember = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     message: `${userToAdd.name} added to group`,
-    member: { id: userToAdd._id, name: userToAdd.name, email: userToAdd.email, role: 'Member' },
+    member: { id: userToAdd._id, name: userToAdd.name, email: userToAdd.email, upiId: userToAdd.upiId || '', role: 'Member' },
   });
 });
 

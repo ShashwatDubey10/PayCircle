@@ -1,4 +1,5 @@
 const Expense      = require('../models/Expense');
+const Group        = require('../models/Group');
 const asyncHandler = require('../utils/asyncHandler');
 const logger       = require('../utils/logger');
 
@@ -66,6 +67,9 @@ const addExpense = asyncHandler(async (req, res) => {
     { path: 'payerId',        select: 'name email' },
     { path: 'splits.userId',  select: 'name email' },
   ]);
+
+  // Touch group updatedAt so group card shows "unseen" activity
+  await Group.findByIdAndUpdate(group._id, { updatedAt: new Date() });
 
   logger.info('EXPENSE', `Expense added: ₹${amt} (${category}, ${splitType})`, {
     groupId: group._id,

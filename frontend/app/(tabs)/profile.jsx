@@ -3,18 +3,23 @@ import {
   View,
   Text,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
+  TextInput,
   Alert,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 
 import { PC } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
+import { getFriends, setUsername as apiSetUsername } from '@/services/friends';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -47,6 +52,7 @@ const SETTINGS = [
   {
     group: 'Account',
     items: [
+      { id: 'friends',        label: 'Friends',            icon: 'people-outline' },
       { id: 'notifications',  label: 'Notifications',      icon: 'notifications-outline' },
       { id: 'privacy',        label: 'Privacy & Security', icon: 'shield-outline' },
     ],
@@ -164,36 +170,55 @@ const modalStyles = StyleSheet.create({
   itemBody:    { color: PC.textSecondary,  fontSize: 13, lineHeight: 19 },
   closeBtn: {
     marginTop: 16,
-    backgroundColor: PC.textPrimary,
+    backgroundColor: PC.accent,
     borderRadius: 14,
     height: 50,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  closeBtnText: { color: PC.bg, fontSize: 15, fontWeight: '700' },
+  closeBtnText: { color: '#060A09', fontSize: 15, fontWeight: '700' },
 });
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
+const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
+
 export default function ProfileScreen() {
-  const { user, logout } = useAuth();
+  const { user, logout, updateUser } = useAuth();
+  const router = useRouter();
 
   const [groupsCount,  setGroupsCount]  = useState(null);
   const [txCount,      setTxCount]      = useState(null);
   const [netSaved,     setNetSaved]     = useState(null);
+  const [friendCount,  setFriendCount]  = useState(null);
   const [statsLoading, setStatsLoading] = useState(true);
+  const [refreshing,   setRefreshing]   = useState(false);
   const [signingOut,   setSigningOut]   = useState(false);
   const [activeModal,  setActiveModal]  = useState(null); // 'privacy' | 'help' | 'about'
+
+  // Username banner modal
+  const [showUsernameModal, setShowUsernameModal] = useState(false);
+  const [usernameInput,     setUsernameInput]     = useState('');
+  const [usernameLoading,   setUsernameLoading]   = useState(false);
+  const [usernameError,     setUsernameError]     = useState('');
+
+  // UPI ID modal
+  const [showUpiModal, setShowUpiModal] = useState(false);
+  const [upiInput,     setUpiInput]     = useState('');
+  const [upiLoading,   setUpiLoading]   = useState(false);
+  const [upiError,     setUpiError]     = useState('');
 
   // ── Fetch stats ───────────────────────────────────────────────────────────
   const fetchStats = useCallback(async () => {
     try {
-      const [groupsRes, txRes] = await Promise.all([
+      const [groupsRes, txRes, friends] = await Promise.all([
         api.get('/api/groups'),
         api.get('/api/users/me/transactions'),
+        getFriends(),
       ]);
 
       setGroupsCount(groupsRes.data.groups?.length ?? 0);
+      setFriendCount(friends?.length ?? 0);
 
       const txns = txRes.data.transactions || [];
       setTxCount(txns.length);
@@ -205,14 +230,66 @@ export default function ProfileScreen() {
       // Non-critical — stats just stay null and show '—'
     } finally {
       setStatsLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
+  const onRefresh = useCallback(() => { setRefreshing(true); fetchStats(); }, [fetchStats]);
+
   useEffect(() => { fetchStats(); }, [fetchStats]);
+
+  // ── Set UPI ID ────────────────────────────────────────────────────────────
+  async function handleSetUpiId() {
+    setUpiError('');
+    const cleaned = upiInput.trim();
+    if (cleaned && !/^[\w.\-]+@[\w]+$/.test(cleaned)) {
+      setUpiError('Enter a valid UPI ID (e.g. name@bank)');
+      return;
+    }
+    setUpiLoading(true);
+    try {
+      const { data } = await api.patch('/api/auth/me', { upiId: cleaned });
+      await updateUser(data?.user ?? { upiId: cleaned });
+      setShowUpiModal(false);
+      setUpiInput('');
+      Alert.alert('UPI ID saved!', cleaned ? `Your UPI ID is now ${cleaned}` : 'UPI ID cleared.');
+    } catch (err) {
+      setUpiError(err?.message || 'Failed to save UPI ID');
+    } finally {
+      setUpiLoading(false);
+    }
+  }
+
+  // ── Set username ──────────────────────────────────────────────────────────
+  async function handleSetUsername() {
+    setUsernameError('');
+    const cleaned = usernameInput.trim().toLowerCase();
+    if (!USERNAME_RE.test(cleaned)) {
+      setUsernameError('3–20 chars: lowercase letters, numbers, underscore only.');
+      return;
+    }
+    setUsernameLoading(true);
+    try {
+      const result = await apiSetUsername(cleaned);
+      // Prefer the full server-side user object; fall back to an optimistic patch
+      // so the auth context is never stale even when result.user is missing.
+      await updateUser(result?.user ?? { username: cleaned });
+      setShowUsernameModal(false);
+      setUsernameInput('');
+      Alert.alert('Username set!', `Your username is now @${cleaned}`);
+    } catch (err) {
+      setUsernameError(err?.message || 'Failed to set username');
+    } finally {
+      setUsernameLoading(false);
+    }
+  }
 
   // ── Settings press handler ────────────────────────────────────────────────
   function handleSettingsPress(id) {
     switch (id) {
+      case 'friends':
+        router.push('/friends');
+        break;
       case 'notifications':
         Alert.alert(
           'Notifications',
@@ -282,7 +359,8 @@ export default function ProfileScreen() {
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}>
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={PC.textPrimary} />}>
 
         {/* ── Header ── */}
         <View style={styles.header}>
@@ -296,6 +374,31 @@ export default function ProfileScreen() {
           </View>
           <Text style={styles.userName}>{user?.name ?? '—'}</Text>
           <Text style={styles.userEmail}>{user?.email ?? '—'}</Text>
+
+          {/* Username — always visible, always tappable */}
+          <TouchableOpacity
+            style={styles.usernameRow}
+            onPress={() => { setUsernameInput(user?.username || ''); setShowUsernameModal(true); }}
+            activeOpacity={0.7}>
+            <Ionicons name="at" size={13} color={user?.username ? PC.accent : PC.warning} />
+            <Text style={[styles.usernameDisplay, !user?.username && styles.usernameUnset]}>
+              {user?.username ? user.username : 'Set username'}
+            </Text>
+            <Ionicons name="pencil-outline" size={12} color={PC.textMuted} />
+          </TouchableOpacity>
+
+          {/* UPI ID — always visible, tappable to set/change */}
+          <TouchableOpacity
+            style={[styles.usernameRow, { marginTop: 6, borderColor: user?.upiId ? PC.positive : PC.border }]}
+            onPress={() => { setUpiInput(user?.upiId || ''); setShowUpiModal(true); }}
+            activeOpacity={0.7}>
+            <Ionicons name="qr-code-outline" size={13} color={user?.upiId ? PC.positive : PC.textMuted} />
+            <Text style={[styles.usernameDisplay, { color: user?.upiId ? PC.positive : PC.textMuted }, !user?.upiId && styles.usernameUnset]}>
+              {user?.upiId ? user.upiId : 'Add UPI ID'}
+            </Text>
+            <Ionicons name="pencil-outline" size={12} color={PC.textMuted} />
+          </TouchableOpacity>
+
           {user?.phone ? (
             <Text style={styles.userPhone}>{user.phone}</Text>
           ) : null}
@@ -320,9 +423,9 @@ export default function ProfileScreen() {
           <View style={styles.statItem}>
             {statsLoading
               ? <ActivityIndicator size="small" color={PC.textMuted} style={{ marginBottom: 4 }} />
-              : <Text style={styles.statValue}>{txCount ?? '—'}</Text>
+              : <Text style={styles.statValue}>{friendCount ?? '—'}</Text>
             }
-            <Text style={styles.statLabel}>Transactions</Text>
+            <Text style={styles.statLabel}>Friends</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
@@ -385,6 +488,101 @@ export default function ProfileScreen() {
         content={activeModal ? MODAL_CONTENT[activeModal] : null}
         onClose={() => setActiveModal(null)}
       />
+
+      {/* ── Set Username Modal ── */}
+      <Modal visible={showUsernameModal} transparent animationType="slide" onRequestClose={() => { setShowUsernameModal(false); setUsernameError(''); }}>
+        <View style={modalStyles.overlay}>
+          <View style={modalStyles.sheet}>
+            <View style={modalStyles.handle} />
+            <Text style={modalStyles.title}>{user?.username ? 'Change Username' : 'Set Username'}</Text>
+            <Text style={[modalStyles.itemBody, { marginBottom: 16 }]}>
+              {user?.username
+                ? `Current: @${user.username}. Choose a new unique username.`
+                : 'Choose a unique username so friends can find you.'
+              }{' '}3–20 chars: lowercase letters, numbers, underscores.
+            </Text>
+            {usernameError ? (
+              <View style={styles.errorBox}>
+                <Ionicons name="alert-circle-outline" size={14} color={PC.negative} />
+                <Text style={styles.errorText}>{usernameError}</Text>
+              </View>
+            ) : null}
+            <View style={styles.usernameInputBox}>
+              <Ionicons name="at-outline" size={17} color={PC.textMuted} style={{ marginRight: 8 }} />
+              <TextInput
+                style={styles.usernameInput}
+                placeholder="your_username"
+                placeholderTextColor={PC.textMuted}
+                value={usernameInput}
+                onChangeText={(v) => { setUsernameInput(v.toLowerCase()); setUsernameError(''); }}
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!usernameLoading}
+              />
+            </View>
+            <TouchableOpacity
+              style={[modalStyles.closeBtn, usernameLoading && { opacity: 0.6 }]}
+              onPress={handleSetUsername}
+              disabled={usernameLoading}
+              activeOpacity={0.85}>
+              {usernameLoading
+                ? <ActivityIndicator color="#060A09" size="small" />
+                : <Text style={modalStyles.closeBtnText}>Save Username</Text>
+              }
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.cancelBtn} onPress={() => { setShowUsernameModal(false); setUsernameError(''); }} disabled={usernameLoading}>
+              <Text style={styles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+      {/* ── Set UPI ID Modal ── */}
+      <Modal visible={showUpiModal} transparent animationType="slide" onRequestClose={() => { setShowUpiModal(false); setUpiError(''); }}>
+        <View style={modalStyles.overlay}>
+          <View style={modalStyles.sheet}>
+            <View style={modalStyles.handle} />
+            <Text style={modalStyles.title}>{user?.upiId ? 'Change UPI ID' : 'Add UPI ID'}</Text>
+            <Text style={[modalStyles.itemBody, { marginBottom: 16 }]}>
+              {user?.upiId
+                ? `Current: ${user.upiId}. Update or clear your UPI ID.`
+                : 'Your UPI ID lets friends pay you directly via UPI apps like GPay or PhonePe.'
+              }
+            </Text>
+            {upiError ? (
+              <View style={styles.errorBox}>
+                <Ionicons name="alert-circle-outline" size={14} color={PC.negative} />
+                <Text style={styles.errorText}>{upiError}</Text>
+              </View>
+            ) : null}
+            <View style={styles.usernameInputBox}>
+              <Ionicons name="qr-code-outline" size={17} color={PC.textMuted} style={{ marginRight: 8 }} />
+              <TextInput
+                style={styles.usernameInput}
+                placeholder="yourname@bank"
+                placeholderTextColor={PC.textMuted}
+                value={upiInput}
+                onChangeText={(v) => { setUpiInput(v); setUpiError(''); }}
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!upiLoading}
+              />
+            </View>
+            <TouchableOpacity
+              style={[modalStyles.closeBtn, upiLoading && { opacity: 0.6 }]}
+              onPress={handleSetUpiId}
+              disabled={upiLoading}
+              activeOpacity={0.85}>
+              {upiLoading
+                ? <ActivityIndicator color="#060A09" size="small" />
+                : <Text style={modalStyles.closeBtnText}>Save UPI ID</Text>
+              }
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.cancelBtn} onPress={() => { setShowUpiModal(false); setUpiError(''); }} disabled={upiLoading}>
+              <Text style={styles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -420,7 +618,7 @@ const styles = StyleSheet.create({
     borderRadius: 36,
     backgroundColor: PC.bgCardElevated,
     borderWidth: 2,
-    borderColor: PC.borderLight,
+    borderColor: PC.accent,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 14,
@@ -452,7 +650,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   statItem:    { flex: 1, alignItems: 'center' },
-  statValue:   { color: PC.textPrimary, fontSize: 20, fontWeight: '700', marginBottom: 4 },
+  statValue:   { color: PC.textPrimary, fontSize: 20, fontWeight: '700', marginBottom: 4, fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace' },
   statLabel:   { color: PC.textSecondary, fontSize: 12 },
   statDivider: { width: 1, backgroundColor: PC.border },
 
@@ -498,4 +696,49 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingBottom: 8,
   },
+
+  usernameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    backgroundColor: PC.accent10,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: PC.accent,
+  },
+  usernameDisplay: { color: PC.accent, fontSize: 13, fontWeight: '500' },
+  usernameUnset:   { color: PC.warning, fontStyle: 'italic' },
+
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(224,90,90,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(224,90,90,0.30)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 12,
+  },
+  errorText: { flex: 1, color: PC.negative, fontSize: 13 },
+
+  usernameInputBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: PC.bgInput,
+    borderWidth: 1,
+    borderColor: PC.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 50,
+    marginBottom: 16,
+  },
+  usernameInput: { flex: 1, color: PC.textPrimary, fontSize: 15 },
+
+  cancelBtn: { alignItems: 'center', paddingVertical: 12 },
+  cancelText: { color: PC.textSecondary, fontSize: 14 },
 });
