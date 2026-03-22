@@ -909,11 +909,12 @@ export default function GroupDetailScreen() {
       setGroup(g);
       setMembers(
         (g.members || []).map(m => ({
-          id:    m._id,
-          name:  m.name,
-          email: m.email,
-          upiId: m.upiId || '',
-          role:  m._id === g.adminId?._id || m._id === g.adminId ? 'Admin' : 'Member',
+          id:        m._id,
+          name:      m.name,
+          email:     m.email,
+          upiId:     m.upiId || '',
+          isVirtual: m.isVirtual || false,
+          role:      m._id === g.adminId?._id || m._id === g.adminId ? 'Admin' : 'Member',
         }))
       );
       setExpenses(expRes.data.expenses || []);
@@ -1295,14 +1296,17 @@ export default function GroupDetailScreen() {
         {tab === 'members' && (
           members.map((m) => (
             <View key={m.id} style={styles.memberBalCard}>
-              <View style={styles.memberAvatar}>
-                <Text style={styles.memberInitials}>{initials(m.name)}</Text>
+              <View style={[styles.memberAvatar, m.isVirtual && { borderWidth: 1.5, borderColor: PC.accent20 }]}>
+                <Text style={[styles.memberInitials, m.isVirtual && { color: PC.accent }]}>{initials(m.name)}</Text>
               </View>
               <View style={{ flex: 1, marginLeft: 12 }}>
                 <Text style={styles.memberName}>
                   {m.id === user._id ? `You (${m.name})` : m.name}
                 </Text>
-                <Text style={styles.memberEmail}>{m.email}</Text>
+                {m.isVirtual
+                  ? <Text style={{ color: PC.accent, fontSize: 11 }}>Personal Contact</Text>
+                  : <Text style={styles.memberEmail}>{m.email}</Text>
+                }
               </View>
               <View style={[styles.roleBadge, m.role === 'Admin' && styles.roleBadgeAdmin]}>
                 <Text style={[styles.roleText, m.role === 'Admin' && styles.roleTextAdmin]}>

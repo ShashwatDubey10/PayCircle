@@ -300,7 +300,7 @@ const getAllDirectBalances = asyncHandler(async (req, res) => {
       .populate('toUserId',   'name username _id'),
   ]);
 
-  const map = {}; // friendIdStr → { balance, friend }
+  const map = {}; // friendIdStr → { balance, friend, lastActivity }
   for (const s of splits) {
     if (!s.payerId || !s.otherUserId) continue; // skip if either user was deleted
     const payerStr  = s.payerId?._id?.toString() ?? s.payerId.toString();
@@ -310,9 +310,13 @@ const getAllDirectBalances = asyncHandler(async (req, res) => {
       ? (s.otherUserId?._id?.toString() ?? s.otherUserId.toString())
       : payerStr;
     if (!friendId || !friendDoc) continue;
-    if (!map[friendId]) map[friendId] = { balance: 0, friend: friendDoc };
+    if (!map[friendId]) map[friendId] = { balance: 0, friend: friendDoc, lastActivity: null };
     const theirShare = s.amount - (s.payerShare ?? s.amount / 2);
     map[friendId].balance += isPayer ? theirShare : -theirShare;
+    // Track most recent split date
+    if (!map[friendId].lastActivity || s.date > map[friendId].lastActivity) {
+      map[friendId].lastActivity = s.date;
+    }
   }
   for (const st of confirms) {
     const fromStr  = st.fromUserId.toString();
@@ -334,6 +338,7 @@ const getAllDirectBalances = asyncHandler(async (req, res) => {
       friendId,
       friend:           v.friend,
       balance:          Math.round(v.balance * 100) / 100,
+      lastActivity:     v.lastActivity ?? null,
       hasPendingSettle: pendingFriendIds.has(friendId),
     }));
 
