@@ -51,6 +51,15 @@ const userSchema = new mongoose.Schema(
       trim: true,
       default: '',
     },
+    isVirtual: {
+      type: Boolean,
+      default: false,
+    },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
   },
   { timestamps: true }
 );

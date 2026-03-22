@@ -29,6 +29,7 @@ import { PC } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
 import { getFriends } from '@/services/friends';
+import { getContacts } from '@/services/contacts';
 import UpiQrModal from '@/components/UpiQrModal';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -481,30 +482,35 @@ function CustomSplitModal({ visible, onClose, members, payerId, totalAmount, onC
 
 function AddMemberModal({ visible, onClose, groupId, existingMemberIds, onAdded }) {
   const [friends,     setFriends]     = useState([]);
+  const [contacts,    setContacts]    = useState([]);
   const [loadingList, setLoadingList] = useState(false);
   const [addingId,    setAddingId]    = useState(null);
   const [error,       setError]       = useState('');
+  const [tab,         setTab]         = useState('friends'); // 'friends' | 'contacts'
 
   useEffect(() => {
     if (!visible) return;
     let cancelled = false;
     setError('');
     setLoadingList(true);
-    getFriends()
-      .then(frs => {
-        if (!cancelled)
-          setFriends((frs || []).filter(f => !existingMemberIds.includes(f.id)));
+    setTab('friends');
+    Promise.all([getFriends(), getContacts()])
+      .then(([frs, cts]) => {
+        if (!cancelled) {
+          setFriends((frs || []).filter(f => !existingMemberIds.includes((f._id ?? f.id)?.toString())));
+          setContacts((cts || []).filter(c => !existingMemberIds.includes(c._id?.toString())));
+        }
       })
-      .catch(() => { if (!cancelled) setError('Could not load friends list.'); })
+      .catch(() => { if (!cancelled) setError('Could not load member options.'); })
       .finally(() => { if (!cancelled) setLoadingList(false); });
     return () => { cancelled = true; };
   }, [visible, existingMemberIds]);
 
-  async function handleAdd(friend) {
-    setAddingId(friend.id);
+  async function handleAdd(userId, isContact) {
+    setAddingId(userId);
     setError('');
     try {
-      const { data } = await api.post(`/api/groups/${groupId}/members`, { userId: friend.id });
+      const { data } = await api.post(`/api/groups/${groupId}/members`, { userId });
       onAdded(data.member);
       onClose();
     } catch (err) {
@@ -520,11 +526,13 @@ function AddMemberModal({ visible, onClose, groupId, existingMemberIds, onAdded 
     onClose();
   }
 
+  const hasAny = friends.length > 0 || contacts.length > 0;
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <View style={styles.modalOverlay}>
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
-        <View style={[styles.modalSheet, { maxHeight: '70%' }]}>
+        <View style={[styles.modalSheet, { maxHeight: '75%' }]}>
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Add Member</Text>
 
@@ -535,41 +543,78 @@ function AddMemberModal({ visible, onClose, groupId, existingMemberIds, onAdded 
             </View>
           ) : null}
 
+          {/* Tab toggle */}
+          {!loadingList && hasAny && (
+            <View style={{ flexDirection: 'row', backgroundColor: PC.bgCardElevated, borderRadius: 10, padding: 3, marginBottom: 14 }}>
+              {[
+                { key: 'friends',  label: 'Friends' },
+                { key: 'contacts', label: 'Personal Contacts' },
+              ].map(t => (
+                <TouchableOpacity
+                  key={t.key}
+                  style={[{ flex: 1, paddingVertical: 7, borderRadius: 8, alignItems: 'center' }, tab === t.key && { backgroundColor: PC.bgCard, borderWidth: 1, borderColor: PC.border }]}
+                  onPress={() => setTab(t.key)}>
+                  <Text style={{ fontSize: 13, fontWeight: tab === t.key ? '600' : '400', color: tab === t.key ? PC.textPrimary : PC.textMuted }}>
+                    {t.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
           {loadingList ? (
             <ActivityIndicator color={PC.textMuted} style={{ marginVertical: 24 }} />
-          ) : friends.length === 0 ? (
+          ) : tab === 'friends' && friends.length === 0 ? (
             <View style={{ alignItems: 'center', paddingVertical: 28 }}>
               <Ionicons name="people-outline" size={32} color={PC.textMuted} style={{ marginBottom: 10 }} />
               <Text style={[styles.splitNote, { textAlign: 'center' }]}>
                 No friends available to add.{'\n'}Add friends first from your Profile.
               </Text>
             </View>
+          ) : tab === 'contacts' && contacts.length === 0 ? (
+            <View style={{ alignItems: 'center', paddingVertical: 28 }}>
+              <Ionicons name="person-add-outline" size={32} color={PC.textMuted} style={{ marginBottom: 10 }} />
+              <Text style={[styles.splitNote, { textAlign: 'center' }]}>
+                No personal contacts yet.{'\n'}Add them from Profile → Personal Contacts.
+              </Text>
+            </View>
           ) : (
             <ScrollView showsVerticalScrollIndicator={false}>
-              {friends.map((f, i) => (
-                <View key={f.id}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 12 }}>
-                    <View style={styles.memberAvatar}>
-                      <Text style={styles.memberInitials}>{initials(f.name)}</Text>
+              {(tab === 'friends' ? friends : contacts).map((item, i, arr) => {
+                const uid  = (item._id ?? item.id)?.toString();
+                const isVirtual = tab === 'contacts';
+                return (
+                  <View key={uid}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 12 }}>
+                      <View style={[styles.memberAvatar, isVirtual && { borderWidth: 1.5, borderColor: PC.accent20 }]}>
+                        <Text style={[styles.memberInitials, isVirtual && { color: PC.accent }]}>
+                          {initials(item.name)}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: PC.textPrimary, fontSize: 14, fontWeight: '600' }}>{item.name}</Text>
+                        {item.username
+                          ? <Text style={{ color: PC.textMuted, fontSize: 12 }}>@{item.username}</Text>
+                          : isVirtual
+                            ? <Text style={{ color: PC.accent, fontSize: 11 }}>Personal Contact</Text>
+                            : null
+                        }
+                      </View>
+                      <TouchableOpacity
+                        style={[styles.createBtn, { paddingHorizontal: 16, height: 36, borderRadius: 10, width: 'auto' }, addingId === uid && styles.createBtnDisabled]}
+                        onPress={() => handleAdd(uid, isVirtual)}
+                        disabled={!!addingId}
+                        activeOpacity={0.85}>
+                        {addingId === uid
+                          ? <ActivityIndicator color="#060A09" size="small" />
+                          : <Text style={styles.createBtnText}>Add</Text>
+                        }
+                      </TouchableOpacity>
                     </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ color: PC.textPrimary, fontSize: 14, fontWeight: '600' }}>{f.name}</Text>
-                      {f.username ? <Text style={{ color: PC.textMuted, fontSize: 12 }}>@{f.username}</Text> : null}
-                    </View>
-                    <TouchableOpacity
-                      style={[styles.createBtn, { paddingHorizontal: 16, height: 36, borderRadius: 10, width: 'auto' }, addingId === f.id && styles.createBtnDisabled]}
-                      onPress={() => handleAdd(f)}
-                      disabled={!!addingId}
-                      activeOpacity={0.85}>
-                      {addingId === f.id
-                        ? <ActivityIndicator color="#060A09" size="small" />
-                        : <Text style={styles.createBtnText}>Add</Text>
-                      }
-                    </TouchableOpacity>
+                    {i < arr.length - 1 && <View style={{ height: 1, backgroundColor: PC.border }} />}
                   </View>
-                  {i < friends.length - 1 && <View style={{ height: 1, backgroundColor: PC.border }} />}
-                </View>
-              ))}
+                );
+              })}
               <View style={{ height: 16 }} />
             </ScrollView>
           )}

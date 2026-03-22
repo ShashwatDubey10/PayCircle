@@ -72,7 +72,7 @@ const login = asyncHandler(async (req, res) => {
 
   const user = await User.findOne({ email: email.toLowerCase() });
 
-  if (!user) {
+  if (!user || user.isVirtual) {
     logger.warn('AUTH', `Login failed — email not found: ${email}`, { ip: req.ip });
     return res.status(401).json({ success: false, message: 'Invalid email or password' });
   }

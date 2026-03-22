@@ -23,6 +23,7 @@ import { useBadge } from '@/context/BadgeContext';
 import api from '@/services/api';
 import { getFriends, getPendingRequests } from '@/services/friends';
 import { getAllDirectSettlements, getAllDirectBalances } from '@/services/directSplit';
+import { getContacts } from '@/services/contacts';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -334,6 +335,9 @@ export default function GroupsScreen() {
   const [error,              setError]              = useState('');
   const [showGroupModal,     setShowGroupModal]     = useState(false);
   const [showActionSheet,    setShowActionSheet]    = useState(false);
+  const [showContactPicker,  setShowContactPicker]  = useState(false);
+  const [pickerContacts,     setPickerContacts]     = useState([]);
+  const [pickerLoading,      setPickerLoading]      = useState(false);
   const [unseenCount,        setUnseenCount]        = useState(0);
 
   // ── Compute unseen direct-split conversations + unseen groups ────────────
@@ -473,6 +477,20 @@ export default function GroupsScreen() {
 
   function handleGroupCreated(newGroup) {
     setGroups(prev => [{ ...newGroup, myBalance: 0, loadingBalance: false }, ...prev]);
+  }
+
+  async function openContactPicker() {
+    setShowActionSheet(false);
+    setPickerLoading(true);
+    setShowContactPicker(true);
+    try {
+      const list = await getContacts();
+      setPickerContacts(list);
+    } catch {
+      setPickerContacts([]);
+    } finally {
+      setPickerLoading(false);
+    }
   }
 
   // ── Summary totals ───────────────────────────────────────────────────────
@@ -819,9 +837,90 @@ export default function GroupsScreen() {
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={PC.textMuted} />
               </TouchableOpacity>
+
+              <View style={styles.actionDivider} />
+
+              <TouchableOpacity
+                style={styles.actionRow}
+                activeOpacity={0.75}
+                onPress={openContactPicker}>
+                <View style={[styles.actionIconBox, { borderColor: PC.accent20, backgroundColor: PC.accent10 }]}>
+                  <Ionicons name="person-add-outline" size={22} color={PC.accent} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.actionTitle}>Split with Personal Contact</Text>
+                  <Text style={styles.actionSub}>Someone not on PayCircle</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={PC.textMuted} />
+              </TouchableOpacity>
             </View>
           </TouchableOpacity>
         </TouchableOpacity>
+      </Modal>
+
+      {/* ── Contact Picker Modal ── */}
+      <Modal
+        visible={showContactPicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowContactPicker(false)}>
+        <View style={styles.actionOverlay}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setShowContactPicker(false)} />
+          <View style={[styles.actionSheet, { paddingBottom: 36 }]}>
+            <View style={styles.actionHandle} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+              <Text style={[styles.modalTitle, { marginBottom: 0, flex: 1 }]}>Personal Contacts</Text>
+              <TouchableOpacity
+                onPress={() => { setShowContactPicker(false); router.push('/contacts'); }}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Ionicons name="settings-outline" size={15} color={PC.accent} />
+                <Text style={{ color: PC.accent, fontSize: 13 }}>Manage</Text>
+              </TouchableOpacity>
+            </View>
+
+            {pickerLoading ? (
+              <ActivityIndicator color={PC.textPrimary} style={{ marginVertical: 32 }} />
+            ) : pickerContacts.length === 0 ? (
+              <View style={{ alignItems: 'center', paddingVertical: 28 }}>
+                <Ionicons name="person-add-outline" size={36} color={PC.textMuted} style={{ marginBottom: 12 }} />
+                <Text style={[styles.emptyTitle, { fontSize: 15 }]}>No personal contacts yet</Text>
+                <Text style={[styles.emptyText, { textAlign: 'center', marginBottom: 20 }]}>
+                  Add someone by name to split expenses without a PayCircle account.
+                </Text>
+                <TouchableOpacity
+                  style={[styles.createBtn, { paddingHorizontal: 20, width: 'auto', height: 44 }]}
+                  onPress={() => { setShowContactPicker(false); router.push('/contacts'); }}
+                  activeOpacity={0.85}>
+                  <Text style={styles.createBtnText}>Add New Contact</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+                {pickerContacts.map((c, i) => (
+                  <View key={c._id}>
+                    <TouchableOpacity
+                      style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 12 }}
+                      activeOpacity={0.75}
+                      onPress={() => { setShowContactPicker(false); router.push(`/direct/${c._id}`); }}>
+                      <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: PC.accent10, borderWidth: 1.5, borderColor: PC.accent20, alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ color: PC.accent, fontSize: 14, fontWeight: '700' }}>
+                          {getInitials(c.name)}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: PC.textPrimary, fontSize: 14, fontWeight: '600' }}>{c.name}</Text>
+                        <Text style={{ color: PC.textMuted, fontSize: 11, marginTop: 1 }}>Personal Contact</Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={16} color={PC.textMuted} />
+                    </TouchableOpacity>
+                    {i < pickerContacts.length - 1 && <View style={{ height: 1, backgroundColor: PC.border }} />}
+                  </View>
+                ))}
+                <View style={{ height: 8 }} />
+              </ScrollView>
+            )}
+          </View>
+        </View>
       </Modal>
 
       <AddGroupModal

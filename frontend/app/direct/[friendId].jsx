@@ -24,6 +24,7 @@ import { PC } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { getDirectSplits, addDirectSplit, requestSettle, confirmSettle, cancelOrRejectSettle, getGroupDebtsWithFriend } from '@/services/directSplit';
 import { getFriends } from '@/services/friends';
+import { getContacts } from '@/services/contacts';
 import UpiQrModal from '@/components/UpiQrModal';
 import api from '@/services/api';
 
@@ -127,7 +128,8 @@ export default function DirectSplitScreen() {
   const { user }     = useAuth();
   const listRef      = useRef(null);
 
-  const [friend,      setFriend]      = useState(null);
+  const [friend,           setFriend]           = useState(null);
+  const [isVirtualContact, setIsVirtualContact] = useState(false);
   const [splits,      setSplits]      = useState([]);
   const [balance,     setBalance]     = useState(0);
   const [loading,     setLoading]     = useState(true);
@@ -161,20 +163,30 @@ export default function DirectSplitScreen() {
   // ── Load splits + friend info ──────────────────────────────────────────────
   const load = useCallback(async () => {
     try {
-      const [data, friends, debtsData] = await Promise.all([
+      const [data, friends, debtsData, contacts] = await Promise.all([
         getDirectSplits(friendId),
         getFriends(),
         getGroupDebtsWithFriend(friendId).catch(() => ({ groupDebts: [] })),
+        getContacts(),
       ]);
       setSplits(data.splits || []);
       setBalance(data.balance ?? 0);
       setPendingSettle(data.pendingSettle || null);
       setGroupDebts(debtsData.groupDebts || []);
+
       let f = (friends || []).find(f =>
         String(f._id) === String(friendId) ||
         String(f.id)  === String(friendId)
       );
-      // Fallback: extract friend info from split data if friends list lookup fails
+      let isContact = false;
+
+      // Check personal contacts if not found in friends list
+      if (!f) {
+        const c = (contacts || []).find(c => String(c._id) === String(friendId));
+        if (c) { f = { ...c, isVirtual: true }; isContact = true; }
+      }
+
+      // Final fallback: extract info from split data
       if (!f && data.splits?.length > 0) {
         const first = data.splits[0];
         const meId = user?._id?.toString() ?? user?.id?.toString();
@@ -182,7 +194,9 @@ export default function DirectSplitScreen() {
         const friendDoc = payerId !== meId ? first.payerId : first.otherUserId;
         if (friendDoc?.name) f = { name: friendDoc.name, username: friendDoc.username };
       }
+
       setFriend(f || null);
+      setIsVirtualContact(isContact);
     } catch (err) {
       // Log so failures are visible in the console; UI shows empty state.
       console.error('[DirectSplitScreen] load failed:', err?.message ?? err);
@@ -285,8 +299,24 @@ export default function DirectSplitScreen() {
     try {
       const data = await requestSettle(friendId, amt);
       setPendingSettle(data.pendingSettle);
+      // Auto-confirmed (personal contact) — reload to refresh balance
+      if (!data.pendingSettle) await load();
     } catch (err) {
       setInputError(err?.message || 'Failed to send settle request');
+    } finally {
+      setSettleLoading(false);
+    }
+  }
+
+  // Mark a personal contact as having paid me (creditor-side settle)
+  async function handleMarkContactSettled() {
+    const amt = Math.abs(balance);
+    setSettleLoading(true);
+    try {
+      await requestSettle(friendId, amt, true); // fromContact=true
+      await load();
+    } catch (err) {
+      setInputError(err?.message || 'Failed to mark as settled');
     } finally {
       setSettleLoading(false);
     }
@@ -392,7 +422,14 @@ export default function DirectSplitScreen() {
 
         <View style={s.headerInfo}>
           <Text style={s.headerName} numberOfLines={1}>{friend?.name || '…'}</Text>
-          {friend?.username ? <Text style={s.headerUsername}>@{friend.username}</Text> : null}
+          {isVirtualContact ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 }}>
+              <Ionicons name="person-add-outline" size={10} color={PC.accent} />
+              <Text style={{ color: PC.accent, fontSize: 10, fontWeight: '600' }}>Personal Contact</Text>
+            </View>
+          ) : friend?.username ? (
+            <Text style={s.headerUsername}>@{friend.username}</Text>
+          ) : null}
         </View>
 
         <View style={[
@@ -422,6 +459,20 @@ export default function DirectSplitScreen() {
               : `You owe ${friendFirst} ₹${balAbs.toLocaleString('en-IN')}`
             }
           </Text>
+
+          {/* Mark Settled — shown to creditor when friend is a personal contact */}
+          {youAreOwed && isVirtualContact && (
+            <TouchableOpacity
+              style={[s.settleChip, settleLoading && { opacity: 0.5 }]}
+              onPress={!settleLoading ? handleMarkContactSettled : undefined}
+              disabled={settleLoading}
+              activeOpacity={0.75}>
+              {settleLoading
+                ? <ActivityIndicator size="small" color={PC.textMuted} />
+                : <Text style={s.settleChipText}>Mark Settled</Text>
+              }
+            </TouchableOpacity>
+          )}
 
           {/* Settle Up / Cancel chip — shown to debtor */}
           {iAmDebtor && myPendingSettle ? (

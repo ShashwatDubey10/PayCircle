@@ -12,6 +12,7 @@ const {
   getFriends, setUsername, setPushToken,
 } = require('../controllers/friendController');
 const { addDirectSplit, getDirectSplits, getAllDirectSplits, requestSettle, confirmSettle, getAllDirectSettlements, getAllDirectBalances, cancelOrRejectSettle, getGroupDebtsWithFriend } = require('../controllers/directSplitController');
+const { createContact, getContacts, updateContact, deleteContact } = require('../controllers/contactController');
 
 router.use(protect);
 
@@ -33,6 +34,12 @@ router.post ('/me/friends/requests',         sendRequest);
 router.get  ('/me/friends/requests',         getRequests);
 router.put  ('/me/friends/requests/:id',     respondRequest);
 router.get  ('/me/friends',                  getFriends);
+
+// Personal contacts
+router.post  ('/me/contacts',      createContact);
+router.get   ('/me/contacts',      getContacts);
+router.patch ('/me/contacts/:id',  updateContact);
+router.delete('/me/contacts/:id',  deleteContact);
 
 // Direct (1-on-1) splits
 router.get   ('/me/direct',                                          getAllDirectSplits);

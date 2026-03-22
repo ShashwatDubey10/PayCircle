@@ -2,10 +2,22 @@ const mongoose     = require('mongoose');
 const DirectSplit  = require('../models/DirectSplit');
 const DirectSettle = require('../models/DirectSettle');
 const Group        = require('../models/Group');
+const User         = require('../models/User');
 const asyncHandler = require('../utils/asyncHandler');
 const logger       = require('../utils/logger');
 const { areFriends }            = require('./friendController');
 const { calculateGroupBalances } = require('../services/balanceService');
+
+// Returns true if otherId is a personal contact created by meId
+async function isMyVirtualContact(meId, otherId) {
+  const u = await User.findOne({ _id: otherId, isVirtual: true, createdBy: meId });
+  return !!u;
+}
+
+// Returns true if meId is authorised to transact with otherId
+async function canTransact(meId, otherId) {
+  return (await areFriends(meId, otherId)) || (await isMyVirtualContact(meId, otherId));
+}
 
 // POST /api/users/me/direct/:friendId
 const addDirectSplit = asyncHandler(async (req, res) => {
@@ -23,8 +35,8 @@ const addDirectSplit = asyncHandler(async (req, res) => {
   if (!Object.prototype.hasOwnProperty.call(req.body, 'paidByMe') || typeof paidByMe !== 'boolean' && paidByMe !== 'true' && paidByMe !== 'false')
     return res.status(400).json({ success: false, message: 'paidByMe (boolean) is required' });
 
-  if (!(await areFriends(meId, friendId)))
-    return res.status(403).json({ success: false, message: 'User must be a friend to track splits' });
+  if (!(await canTransact(meId, friendId)))
+    return res.status(403).json({ success: false, message: 'User must be a friend or personal contact to track splits' });
 
   // Normalize to boolean — body values arrive as JSON but can be string "false" from some clients
   const isPaidByMe = paidByMe === true || paidByMe === 'true';
@@ -65,8 +77,8 @@ const getDirectSplits = asyncHandler(async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(friendId))
     return res.status(400).json({ success: false, message: 'Invalid friendId' });
 
-  if (!(await areFriends(meId, friendId)))
-    return res.status(403).json({ success: false, message: 'User must be a friend' });
+  if (!(await canTransact(meId, friendId)))
+    return res.status(403).json({ success: false, message: 'User must be a friend or personal contact' });
 
   const splits = await DirectSplit.find({
     $or: [
@@ -154,13 +166,31 @@ const requestSettle = asyncHandler(async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(friendId))
     return res.status(400).json({ success: false, message: 'Invalid friendId' });
 
-  if (!(await areFriends(meId, friendId)))
-    return res.status(403).json({ success: false, message: 'Must be friends' });
+  const isFriend  = await areFriends(meId, friendId);
+  const isContact = !isFriend && await isMyVirtualContact(meId, friendId);
+  if (!isFriend && !isContact)
+    return res.status(403).json({ success: false, message: 'Must be friends or personal contacts' });
 
-  const { amount } = req.body;
+  const { amount, fromContact } = req.body;
   const amt = parseFloat(amount);
   if (!amt || isNaN(amt) || amt <= 0)
     return res.status(400).json({ success: false, message: 'Valid amount required' });
+
+  // Personal contacts settle immediately — no pending/confirm flow needed
+  if (isContact) {
+    // fromContact=true → the contact is paying me (I am the creditor)
+    const fromId = fromContact ? friendId : meId;
+    const toId   = fromContact ? meId    : friendId;
+    const settle = await DirectSettle.create({
+      fromUserId:  fromId,
+      toUserId:    toId,
+      amount:      amt,
+      status:      'confirmed',
+      confirmedAt: new Date(),
+    });
+    logger.info('DIRECT', `Settle auto-confirmed ₹${amt} (personal contact)`, { from: fromId, to: toId });
+    return res.status(201).json({ success: true, pendingSettle: null, settle });
+  }
 
   // Atomically ensure only one pending record exists per pair.
   // findOneAndUpdate with upsert will insert only if no matching doc exists;
