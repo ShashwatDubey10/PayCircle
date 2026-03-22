@@ -333,7 +333,6 @@ const getAllDirectBalances = asyncHandler(async (req, res) => {
   }));
 
   const balances = Object.entries(map)
-    .filter(([, v]) => Math.abs(v.balance) >= 0.01)
     .map(([friendId, v]) => ({
       friendId,
       friend:           v.friend,

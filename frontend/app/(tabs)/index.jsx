@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -171,33 +171,24 @@ function BudgetHero({ budget, onEdit, onManage }) {
 
 // ─── Category bar chart ───────────────────────────────────────────────────────
 
-function CategoryChart({ transactions }) {
-  // Aggregate expense transactions by category
-  const cats = {};
-  for (const tx of transactions) {
-    if (tx.type !== 'expense') continue;
-    const c = tx.category || 'Miscellaneous';
-    cats[c] = (cats[c] || 0) + (tx.amount ?? 0);
-  }
-  const sorted = Object.entries(cats).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  if (sorted.length === 0) return null;
-  const max = sorted[0][1];
-
+function CategoryChart({ breakdown }) {
+  if (!breakdown?.length) return null;
+  const max = Math.max(...breakdown.map(b => b.amount), 1);
   return (
     <View style={styles.categoryChart}>
-      {sorted.map(([cat, amt], i) => {
-        const pct = Math.round((amt / max) * 100);
-        const color = CATEGORY_COLORS[cat] || PC.textSecondary;
+      {breakdown.slice(0, 5).map(({ category, amount }, i) => {
+        const pct   = Math.round((amount / max) * 100);
+        const color = CATEGORY_COLORS[category] || PC.textSecondary;
         return (
-          <View key={cat} style={styles.catRow}>
+          <View key={category} style={styles.catRow}>
             <View style={styles.catLeft}>
               <View style={[styles.catDot, { backgroundColor: color }]} />
-              <Text style={styles.catLabel}>{cat}</Text>
+              <Text style={styles.catLabel}>{category}</Text>
             </View>
             <View style={styles.catBarWrap}>
               <AnimatedBar pct={pct} color={color} height={6} delay={i * 80} />
             </View>
-            <Text style={styles.catAmt}>₹{amt.toLocaleString('en-IN')}</Text>
+            <Text style={styles.catAmt}>₹{amount.toLocaleString('en-IN')}</Text>
           </View>
         );
       })}
@@ -416,6 +407,14 @@ export default function DashboardScreen() {
   const recentSlice      = recent.slice(0, 8);
   const activityFeed     = dash?.recentActivities ?? [];
 
+  const combinedExpenses = useMemo(() => {
+    const personal = recent.filter(t => t.type === 'expense');
+    const fromActivities = (dash?.recentActivities || [])
+      .filter(a => a.sign === -1 && a.type !== 'personal')
+      .map(a => ({ type: 'expense', amount: a.amount, date: a.date, category: 'Split' }));
+    return [...personal, ...fromActivities];
+  }, [recent, dash]);
+
   if (loading) {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
@@ -555,7 +554,7 @@ export default function DashboardScreen() {
         </View>
 
         {/* ══ 4. ANALYTICS ══ */}
-        {recent.some(t => t.type === 'expense') && (
+        {(recent.some(t => t.type === 'expense') || (dash?.categoryBreakdown?.length ?? 0) > 0) && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Analytics</Text>
@@ -567,13 +566,13 @@ export default function DashboardScreen() {
             <View style={styles.analyticsCard}>
               {/* 7-day sparkline */}
               <Text style={styles.analyticsSubhead}>Daily spending · last 7 days</Text>
-              <SpendingSparkline transactions={recent} />
+              <SpendingSparkline transactions={combinedExpenses} />
 
               <View style={styles.analyticsDivider} />
 
               {/* Category breakdown */}
               <Text style={styles.analyticsSubhead}>Top categories · this month</Text>
-              <CategoryChart transactions={recent} />
+              <CategoryChart breakdown={dash?.categoryBreakdown} />
             </View>
           </View>
         )}
