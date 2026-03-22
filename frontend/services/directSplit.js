@@ -29,3 +29,6 @@ export const cancelOrRejectSettle = (friendId, requestId) =>
 
 export const getGroupDebtsWithFriend = (friendId) =>
   api.get(`/api/users/me/direct/${friendId}/group-balances`).then(r => r.data);
+
+export const updateDirectSplit = (friendId, splitId, fields) =>
+  api.patch(`/api/users/me/direct/${friendId}/splits/${splitId}`, fields).then(r => r.data);

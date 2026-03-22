@@ -31,6 +31,8 @@ import api from '@/services/api';
 import { getFriends } from '@/services/friends';
 import { getContacts } from '@/services/contacts';
 import UpiQrModal from '@/components/UpiQrModal';
+import { upsertSplitTag, getSplitTags } from '@/services/splitTag';
+import EditSplitSheet, { CAT_ICON_MAP } from '@/components/EditSplitSheet';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -896,13 +898,18 @@ export default function GroupDetailScreen() {
   const [showSettlement,    setShowSettlement]    = useState(false);
   const [expandedExpId,     setExpandedExpId]     = useState(null);
 
+  // ── Split tags (per-user private category) ──────────────────────────────
+  const [myTags,    setMyTags]    = useState({}); // { expenseId: category }
+  const [editSheet, setEditSheet] = useState(null); // { exp, canEditAmount } | null
+
   // ── Fetch all group data ──────────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
     try {
-      const [groupRes, expRes, balRes] = await Promise.all([
+      const [groupRes, expRes, balRes, tagsRes] = await Promise.all([
         api.get(`/api/groups/${id}`),
         api.get(`/api/groups/${id}/expenses`),
         api.get(`/api/groups/${id}/balances`),
+        getSplitTags(),
       ]);
 
       const g = groupRes.data.group;
@@ -919,6 +926,14 @@ export default function GroupDetailScreen() {
       );
       setExpenses(expRes.data.expenses || []);
       setBalances(balRes.data);
+
+      // Build tag map for group expenses
+      const groupTagMap = {};
+      (tagsRes?.tags || []).filter(t => t.refType === 'group').forEach(t => {
+        groupTagMap[t.refId.toString()] = t.category;
+      });
+      setMyTags(groupTagMap);
+
       setError('');
     } catch (err) {
       setError(err.message);
@@ -972,6 +987,25 @@ export default function GroupDetailScreen() {
     api.get(`/api/groups/${id}/balances`).then(r => setBalances(r.data)).catch(() => {});
   }
 
+  async function handleEditSave({ amount, category }) {
+    const { exp, canEditAmount } = editSheet;
+    const tasks = [];
+    if (canEditAmount && amount != null) {
+      tasks.push(
+        api.patch(`/api/groups/${id}/expenses/${exp._id}`, { amount })
+          .then(r => setExpenses(prev => prev.map(e => e._id === exp._id ? r.data.expense : e)))
+      );
+    }
+    if (category) {
+      tasks.push(
+        upsertSplitTag(exp._id, 'group', category)
+          .then(() => setMyTags(prev => ({ ...prev, [exp._id]: category })))
+      );
+    }
+    await Promise.all(tasks);
+    setEditSheet(null);
+  }
+
   // ── My balance in this group ──────────────────────────────────────────────
   const myBalance = balances.members?.find(m => m.user.id === user._id?.toString());
 
@@ -1018,9 +1052,6 @@ export default function GroupDetailScreen() {
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.groupTitle} numberOfLines={1}>{group.name}</Text>
-          <View style={styles.typePill}>
-            <Text style={styles.typePillText}>{group.type}</Text>
-          </View>
         </View>
         {isAdmin ? (
           <TouchableOpacity style={styles.addMemberBtn} onPress={() => setShowAddMember(true)}>
@@ -1112,6 +1143,8 @@ export default function GroupDetailScreen() {
                           LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
                           setExpandedExpId(isExpanded ? null : exp._id);
                         }}
+                        onLongPress={() => setEditSheet({ exp, canEditAmount: paidByMe })}
+                        delayLongPress={350}
                         style={[styles.expBubble, paidByMe ? styles.expBubbleMine : styles.expBubbleFriend]}>
 
                         {/* Paid line */}
@@ -1203,6 +1236,24 @@ export default function GroupDetailScreen() {
                               ₹{exp.amount.toLocaleString('en-IN')}
                             </Text>
                           </View>
+
+                          {/* Private category tag — always shown for current user */}
+                          <TouchableOpacity
+                            style={styles.tagChipRow}
+                            onPress={() => setEditSheet({ exp, canEditAmount: false })}
+                            activeOpacity={0.7}>
+                            {myTags[exp._id] ? (
+                              <View style={styles.tagChip}>
+                                <Ionicons name={CAT_ICON_MAP[myTags[exp._id]] || 'pricetag-outline'} size={11} color={PC.accent} style={{ marginRight: 4 }} />
+                                <Text style={styles.tagChipText}>{myTags[exp._id]}</Text>
+                              </View>
+                            ) : (
+                              <View style={styles.tagChipAdd}>
+                                <Ionicons name="pricetag-outline" size={11} color={PC.textSecondary} style={{ marginRight: 4 }} />
+                                <Text style={styles.tagChipEmpty}>Tag</Text>
+                              </View>
+                            )}
+                          </TouchableOpacity>
                         </View>
                       )}
                     </View>
@@ -1347,6 +1398,15 @@ export default function GroupDetailScreen() {
         members={members}
         currentUserId={user._id}
         onRecorded={handleSettlementRecorded}
+      />
+
+      <EditSplitSheet
+        visible={editSheet !== null}
+        onClose={() => setEditSheet(null)}
+        canEditAmount={editSheet?.canEditAmount ?? false}
+        initialAmount={editSheet?.exp?.amount}
+        initialCategory={editSheet ? (myTags[editSheet.exp._id] || '') : ''}
+        onSave={handleEditSave}
       />
     </SafeAreaView>
   );
@@ -1750,4 +1810,11 @@ const styles = StyleSheet.create({
     fontSize: 13, fontWeight: '700',
     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
+
+  // Tag chip
+  tagChipRow:   { paddingHorizontal: 12, paddingVertical: 8 },
+  tagChip:      { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', backgroundColor: 'rgba(0,229,190,0.12)', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: 'rgba(0,229,190,0.30)' },
+  tagChipText:  { color: PC.accent, fontSize: 11, fontWeight: '600' },
+  tagChipAdd:   { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', backgroundColor: PC.bgCardElevated, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: PC.borderLight },
+  tagChipEmpty: { color: PC.textSecondary, fontSize: 11 },
 });

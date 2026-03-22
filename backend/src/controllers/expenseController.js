@@ -109,4 +109,57 @@ const getExpenses = asyncHandler(async (req, res) => {
   res.json({ success: true, count: expenses.length, expenses });
 });
 
-module.exports = { addExpense, getExpenses };
+// PATCH /api/groups/:id/expenses/:expenseId
+const updateExpense = asyncHandler(async (req, res) => {
+  const { expenseId } = req.params;
+  const expense = await Expense.findOne({ _id: expenseId, groupId: req.group._id });
+
+  if (!expense)
+    return res.status(404).json({ success: false, message: 'Expense not found' });
+
+  if (expense.payerId.toString() !== req.user._id.toString())
+    return res.status(403).json({ success: false, message: 'Only the payer can edit this expense' });
+
+  const { amount, notes, category } = req.body;
+
+  if (category !== undefined && !VALID_CATS.includes(category))
+    return res.status(400).json({ success: false, message: `Category must be one of: ${VALID_CATS.join(', ')}` });
+
+  if (amount !== undefined) {
+    if (expense.splitType === 'exact')
+      return res.status(400).json({ success: false, message: 'Cannot change amount for exact splits — re-add the expense instead' });
+
+    const amt = parseFloat(amount);
+    if (isNaN(amt) || amt < 0.01 || amt > 100000)
+      return res.status(400).json({ success: false, message: 'Amount must be between ₹0.01 and ₹1,00,000' });
+
+    expense.amount = amt;
+    const count = expense.splits.length;
+    const share = parseFloat((amt / count).toFixed(2));
+    const distributed = share * (count - 1);
+    expense.splits = expense.splits.map((s, i) => ({
+      userId: s.userId,
+      amount: i === count - 1 ? parseFloat((amt - distributed).toFixed(2)) : share,
+    }));
+  }
+
+  if (notes !== undefined) expense.notes = notes;
+  if (category !== undefined) expense.category = category;
+
+  await expense.save();
+
+  await expense.populate([
+    { path: 'payerId',       select: 'name email' },
+    { path: 'splits.userId', select: 'name email' },
+  ]);
+
+  logger.info('EXPENSE', `Expense updated: ₹${expense.amount}`, {
+    groupId: req.group._id,
+    expenseId: expense._id,
+    updatedBy: req.user._id,
+  });
+
+  res.json({ success: true, expense });
+});
+
+module.exports = { addExpense, getExpenses, updateExpense };

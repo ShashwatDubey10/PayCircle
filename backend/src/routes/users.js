@@ -11,8 +11,9 @@ const {
   searchUsers, sendRequest, getRequests, respondRequest,
   getFriends, setUsername, setPushToken,
 } = require('../controllers/friendController');
-const { addDirectSplit, getDirectSplits, getAllDirectSplits, requestSettle, confirmSettle, getAllDirectSettlements, getAllDirectBalances, cancelOrRejectSettle, getGroupDebtsWithFriend } = require('../controllers/directSplitController');
+const { addDirectSplit, getDirectSplits, getAllDirectSplits, requestSettle, confirmSettle, getAllDirectSettlements, getAllDirectBalances, cancelOrRejectSettle, getGroupDebtsWithFriend, updateDirectSplit } = require('../controllers/directSplitController');
 const { createContact, getContacts, updateContact, deleteContact } = require('../controllers/contactController');
+const { upsertSplitTag, getSplitTags } = require('../controllers/splitTagController');
 
 router.use(protect);
 
@@ -48,8 +49,13 @@ router.get   ('/me/direct/balances',                                 getAllDirec
 router.get   ('/me/direct/:friendId/group-balances',                 getGroupDebtsWithFriend);
 router.post  ('/me/direct/:friendId',                                addDirectSplit);
 router.get   ('/me/direct/:friendId',                                getDirectSplits);
+router.patch ('/me/direct/:friendId/splits/:splitId',               updateDirectSplit);
 router.post  ('/me/direct/:friendId/settle',                         requestSettle);
 router.put   ('/me/direct/:friendId/settle/:requestId/confirm',      confirmSettle);
 router.delete('/me/direct/:friendId/settle/:requestId',              cancelOrRejectSettle);
+
+// Split tags (per-user private category tagging)
+router.post('/me/split-tags', upsertSplitTag);
+router.get ('/me/split-tags', getSplitTags);
 
 module.exports = router;

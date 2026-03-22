@@ -406,4 +406,37 @@ const getGroupDebtsWithFriend = asyncHandler(async (req, res) => {
   res.json({ success: true, groupDebts });
 });
 
-module.exports = { addDirectSplit, getDirectSplits, getAllDirectSplits, requestSettle, confirmSettle, getAllDirectSettlements, getAllDirectBalances, cancelOrRejectSettle, getGroupDebtsWithFriend };
+// PATCH /api/users/me/direct/:friendId/splits/:splitId
+const updateDirectSplit = asyncHandler(async (req, res) => {
+  const { splitId } = req.params;
+  const meId = req.user._id;
+
+  if (!mongoose.Types.ObjectId.isValid(splitId))
+    return res.status(400).json({ success: false, message: 'Invalid splitId' });
+
+  const split = await DirectSplit.findById(splitId);
+  if (!split) return res.status(404).json({ success: false, message: 'Split not found' });
+
+  if (split.payerId.toString() !== meId.toString())
+    return res.status(403).json({ success: false, message: 'Only the payer can edit this split' });
+
+  const { amount, description, payerShare } = req.body;
+
+  if (amount !== undefined) {
+    const amt = parseFloat(amount);
+    if (isNaN(amt) || amt <= 0)
+      return res.status(400).json({ success: false, message: 'Amount must be positive' });
+    split.amount = amt;
+  }
+  if (description !== undefined) split.description = String(description).trim();
+  if (payerShare !== undefined) {
+    const ps = parseFloat(payerShare);
+    split.payerShare = (!isNaN(ps) && ps >= 0) ? ps : null;
+  }
+
+  await split.save();
+  logger.info('TXN', `DirectSplit updated: ${splitId}`, { userId: meId });
+  res.json({ success: true, split });
+});
+
+module.exports = { addDirectSplit, getDirectSplits, getAllDirectSplits, requestSettle, confirmSettle, getAllDirectSettlements, getAllDirectBalances, cancelOrRejectSettle, getGroupDebtsWithFriend, updateDirectSplit };

@@ -6,12 +6,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  Modal,
-  TextInput,
   RefreshControl,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,6 +14,7 @@ import { useRouter } from 'expo-router';
 
 import { PC } from '@/constants/theme';
 import api from '@/services/api';
+import BudgetSetupSheet from '@/components/BudgetSetupSheet';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -56,170 +52,6 @@ function fmt(n) {
   return (n ?? 0).toLocaleString('en-IN');
 }
 
-// ─── Budget Setup Sheet (combined overall + categories) ───────────────────────
-
-function BudgetSetupSheet({ visible, currentBudget, currentCategories, onClose, onSaved }) {
-  const [overallInput, setOverallInput] = useState('');
-  const [catRows,      setCatRows]      = useState([]);
-  const [saving,       setSaving]       = useState(false);
-
-  const currentMonth = (() => {
-    const now = new Date();
-    const names = ['January','February','March','April','May','June',
-                   'July','August','September','October','November','December'];
-    return `${names[now.getMonth()]} ${now.getFullYear()}`;
-  })();
-
-  useEffect(() => {
-    if (!visible) return;
-    setOverallInput(currentBudget > 0 ? String(currentBudget) : '');
-    setCatRows((currentCategories || []).map(c => ({
-      category: c.category,
-      amount:   c.limit > 0 ? String(c.limit) : '',
-      id:       Math.random().toString(36).slice(2),
-    })));
-  }, [visible]);
-
-  function addRow() {
-    setCatRows(prev => [...prev, { category: '', amount: '', id: Math.random().toString(36).slice(2) }]);
-  }
-
-  function removeRow(id) {
-    setCatRows(prev => prev.filter(r => r.id !== id));
-  }
-
-  function updateRow(id, field, value) {
-    setCatRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r));
-  }
-
-  async function handleSave() {
-    const overallAmt = parseFloat(overallInput);
-    const hasOverall = overallInput.trim().length > 0;
-
-    if (hasOverall && (isNaN(overallAmt) || overallAmt < 1)) {
-      Alert.alert('Invalid Amount', 'Overall budget must be at least ₹1.');
-      return;
-    }
-    for (const row of catRows) {
-      const trimmed = row.category.trim();
-      if (!trimmed) { Alert.alert('Name Required', 'Each category must have a name.'); return; }
-      const amt = parseFloat(row.amount);
-      if (isNaN(amt) || amt < 1) { Alert.alert('Invalid Amount', `"${trimmed}" needs a limit of at least ₹1.`); return; }
-    }
-    const names = catRows.map(r => r.category.trim().toLowerCase());
-    if (new Set(names).size !== names.length) {
-      Alert.alert('Duplicate', 'Category names must be unique.');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const calls = [];
-      if (hasOverall) calls.push(api.post('/api/users/me/budget', { amount: overallAmt }));
-      const mapped = catRows.map(r => ({ category: r.category.trim(), amount: parseFloat(r.amount) }));
-      calls.push(api.post('/api/users/me/budget/categories', { categories: mapped }));
-      await Promise.all(calls);
-      onSaved();
-      onClose();
-    } catch (err) {
-      Alert.alert('Error', err.message || 'Could not save budget.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={s.sheetOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-        <View style={s.setupSheet}>
-          <View style={s.sheetHandle} />
-
-          {/* Header */}
-          <View style={s.setupSheetHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={s.setupSheetTitle}>Set Monthly Budget</Text>
-              <Text style={s.setupSheetMonth}>{currentMonth}</Text>
-            </View>
-            <TouchableOpacity style={s.setupSheetClose} onPress={onClose} disabled={saving}>
-              <Ionicons name="close" size={20} color={PC.textPrimary} />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            {/* Overall limit */}
-            <Text style={s.setupSectionLabel}>Overall Limit</Text>
-            <View style={s.modalInputRow}>
-              <Text style={s.rupee}>₹</Text>
-              <TextInput
-                style={s.modalInput}
-                placeholder="e.g. 10000"
-                placeholderTextColor={PC.textMuted}
-                value={overallInput}
-                onChangeText={setOverallInput}
-                keyboardType="numeric"
-                editable={!saving}
-              />
-            </View>
-
-            {/* Category limits */}
-            <Text style={[s.setupSectionLabel, { marginTop: 20 }]}>Category Limits</Text>
-            <View style={s.setupCatList}>
-              {catRows.map(row => (
-                <View key={row.id} style={s.setupCatRow}>
-                  <View style={s.setupCatIconBox}>
-                    <Ionicons name={getCatIcon(row.category)} size={17} color={PC.textSecondary} />
-                  </View>
-                  <TextInput
-                    style={s.setupCatNameInput}
-                    placeholder="Category name"
-                    placeholderTextColor={PC.textMuted}
-                    value={row.category}
-                    onChangeText={v => updateRow(row.id, 'category', v)}
-                    editable={!saving}
-                    maxLength={50}
-                  />
-                  <Text style={s.setupCatRupee}>₹</Text>
-                  <TextInput
-                    style={s.setupCatAmtInput}
-                    placeholder="0"
-                    placeholderTextColor={PC.textMuted}
-                    value={row.amount}
-                    onChangeText={v => updateRow(row.id, 'amount', v)}
-                    keyboardType="numeric"
-                    editable={!saving}
-                  />
-                  <TouchableOpacity style={s.setupCatDelete} onPress={() => removeRow(row.id)} disabled={saving}>
-                    <Ionicons name="trash-outline" size={15} color={PC.negative} />
-                  </TouchableOpacity>
-                </View>
-              ))}
-              <TouchableOpacity style={s.setupAddCatRow} onPress={addRow} disabled={saving}>
-                <Ionicons name="add-circle-outline" size={18} color={PC.accent} />
-                <Text style={s.setupAddCatText}>Add Category</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Save */}
-            <TouchableOpacity
-              style={[s.saveBtn, saving && { opacity: 0.6 }, { marginTop: 24, marginBottom: 8 }]}
-              onPress={handleSave}
-              disabled={saving}>
-              {saving
-                ? <ActivityIndicator size="small" color="#060A09" />
-                : <Text style={s.saveBtnText}>Save All</Text>
-              }
-            </TouchableOpacity>
-            <View style={{ height: 8 }} />
-          </ScrollView>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
-  );
-}
-
 // ─── Progress Bar ─────────────────────────────────────────────────────────────
 
 function ProgressBar({ pct, status, height = 5 }) {
@@ -235,9 +67,10 @@ function ProgressBar({ pct, status, height = 5 }) {
 // ─── Category Row ─────────────────────────────────────────────────────────────
 
 function CategoryRow({ item, onPress, last }) {
-  const barColor = BAR_COLOR[item.status] || PC.textMuted;
-  const pct      = Math.min(Math.round(item.usagePercentage ?? 0), 100);
-  const icon     = getCatIcon(item.category);
+  const isTracking = item.status === null; // no limit set
+  const barColor   = BAR_COLOR[item.status] || PC.textMuted;
+  const pct        = isTracking ? 0 : Math.min(Math.round(item.usagePercentage ?? 0), 100);
+  const icon       = getCatIcon(item.category);
 
   return (
     <>
@@ -248,17 +81,23 @@ function CategoryRow({ item, onPress, last }) {
         <View style={s.catInfo}>
           <View style={s.catTopRow}>
             <Text style={s.catName}>{item.category}</Text>
-            <Text style={[s.catLimitText, { color: barColor }]}>{pct}%</Text>
+            {isTracking
+              ? <Text style={[s.catLimitText, { color: PC.textMuted }]}>No limit</Text>
+              : <Text style={[s.catLimitText, { color: barColor }]}>{pct}%</Text>
+            }
           </View>
-          <ProgressBar pct={pct} status={item.status} />
+          {!isTracking && <ProgressBar pct={pct} status={item.status} />}
           <View style={s.catBottomRow}>
             <Text style={s.catSpentText}>₹{fmt(item.spent)} spent</Text>
-            <Text style={s.catRemainingText}>
-              {item.remaining >= 0
-                ? `₹${fmt(item.remaining)} left of ₹${fmt(item.limit)}`
-                : `₹${fmt(Math.abs(item.remaining))} over ₹${fmt(item.limit)}`
-              }
-            </Text>
+            {isTracking
+              ? <Text style={s.catRemainingText}>Tracking only</Text>
+              : <Text style={s.catRemainingText}>
+                  {item.remaining >= 0
+                    ? `₹${fmt(item.remaining)} left of ₹${fmt(item.limit)}`
+                    : `₹${fmt(Math.abs(item.remaining))} over ₹${fmt(item.limit)}`
+                  }
+                </Text>
+            }
           </View>
         </View>
         <Ionicons name="chevron-forward" size={15} color={PC.textMuted} style={{ marginLeft: 8 }} />
@@ -307,7 +146,7 @@ export default function BudgetScreen() {
   const overallColor   = BAR_COLOR[budget?.status] || PC.textMuted;
   const monthLabel     = formatMonth(budget?.month);
   const cats           = budget?.categories || [];
-  const allocatedTotal = cats.reduce((s, c) => s + c.limit, 0);
+  const allocatedTotal = cats.reduce((s, c) => s + (c.limit ?? 0), 0);
 
   // ── Loading ───────────────────────────────────────────────────────────────
   if (loading) {

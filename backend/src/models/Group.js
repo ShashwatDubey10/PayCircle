@@ -9,7 +9,7 @@ const groupSchema = new mongoose.Schema(
     type: {
       type: String,
       enum: ['Roommates', 'Trip', 'Mess', 'Miscellaneous'],
-      required: [true, 'Group type is required'],
+      default: 'Miscellaneous',
     },
     adminId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     members:  [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],

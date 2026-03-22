@@ -3,6 +3,7 @@ const Expense             = require('../models/Expense');
 const PersonalTransaction = require('../models/PersonalTransaction');
 const DirectSplit         = require('../models/DirectSplit');
 const Group               = require('../models/Group');
+const SplitTag            = require('../models/SplitTag');
 const asyncHandler        = require('../utils/asyncHandler');
 const logger              = require('../utils/logger');
 
@@ -41,7 +42,7 @@ const setCategoryBudgets = asyncHandler(async (req, res) => {
     const name = typeof item.category === 'string' ? item.category.trim() : '';
     const amt  = parseFloat(item.amount);
     if (!name || name.length > 50) continue;
-    if (isNaN(amt) || amt < 1) continue;
+    if (isNaN(amt) || amt < 0) continue;
     catMap[name.toLowerCase()] = { category: name, amount: amt };
   }
   const cleanCategories = Object.values(catMap);
@@ -72,8 +73,15 @@ const getBudget = asyncHandler(async (req, res) => {
   const groups   = await Group.find({ members: userId });
   const groupIds = groups.map(g => g._id);
 
-  const groupExpenses    = await Expense.find({ groupId: { $in: groupIds }, date: { $gte: start, $lte: end } });
-  const personalExpenses = await PersonalTransaction.find({ userId, type: 'expense', date: { $gte: start, $lte: end } });
+  const [groupExpenses, personalExpenses, userTags] = await Promise.all([
+    Expense.find({ groupId: { $in: groupIds }, date: { $gte: start, $lte: end } }),
+    PersonalTransaction.find({ userId, type: 'expense', date: { $gte: start, $lte: end } }),
+    SplitTag.find({ userId }),
+  ]);
+
+  // Build tag map: refId.toString() → category (lowercase)
+  const tagMap = {};
+  userTags.forEach(t => { tagMap[t.refId.toString()] = t.category.toLowerCase(); });
 
   // Accumulate total and per-category spend (case-insensitive keys)
   let groupSpend    = 0;
@@ -84,8 +92,8 @@ const getBudget = asyncHandler(async (req, res) => {
     const split = exp.splits.find(s => s.userId.toString() === userId.toString());
     if (split) {
       groupSpend += split.amount;
-      const key = (exp.category || '').toLowerCase();
-      catSpend[key] = (catSpend[key] || 0) + split.amount;
+      const cat = tagMap[exp._id.toString()] ?? (exp.category || '').toLowerCase();
+      catSpend[cat] = (catSpend[cat] || 0) + split.amount;
     }
   }
 
@@ -107,7 +115,8 @@ const getBudget = asyncHandler(async (req, res) => {
       ? (s.payerShare ?? s.amount / 2)
       : s.amount - (s.payerShare ?? s.amount / 2);
     directSpend += myShare;
-    catSpend['miscellaneous'] = (catSpend['miscellaneous'] || 0) + myShare;
+    const cat = tagMap[s._id.toString()] ?? 'miscellaneous';
+    catSpend[cat] = (catSpend[cat] || 0) + myShare;
   }
 
   const spent        = parseFloat((groupSpend + personalSpend + directSpend).toFixed(2));
@@ -120,7 +129,11 @@ const getBudget = asyncHandler(async (req, res) => {
 
   // Build per-category breakdown — only user-defined categories
   const categories = (budget?.categories || []).map(({ category, amount: limit }) => {
-    const catSpentAmt  = parseFloat((catSpend[category.toLowerCase()] || 0).toFixed(2));
+    const catSpentAmt = parseFloat((catSpend[category.toLowerCase()] || 0).toFixed(2));
+    if (limit === 0) {
+      // Tracking-only: no limit set
+      return { category, spent: catSpentAmt, limit: 0, status: null };
+    }
     const catRemaining = parseFloat((limit - catSpentAmt).toFixed(2));
     const catUsagePct  = parseFloat(((catSpentAmt / limit) * 100).toFixed(1));
     const catStatus    = catUsagePct >= 100 ? 'over' : catUsagePct >= 90 ? 'critical' : catUsagePct >= 70 ? 'warning' : 'healthy';

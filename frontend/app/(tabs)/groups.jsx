@@ -3,7 +3,6 @@ import {
   View,
   Text,
   ScrollView,
-  FlatList,
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
@@ -170,16 +169,13 @@ function GroupCard({ group, onPress }) {
   return (
     <TouchableOpacity style={styles.groupCard} activeOpacity={0.75} onPress={onPress}>
       <View style={[styles.groupIconBox, { position: 'relative' }]}>
-        <Ionicons name={groupIcon(group.type)} size={20} color={PC.textSecondary} />
+        <Ionicons name="people-outline" size={20} color={PC.textSecondary} />
         {Math.abs(group.myBalance ?? 0) > 0.01 && <View style={styles.groupBadgeDot} />}
       </View>
 
       <View style={styles.groupInfo}>
         <View style={styles.groupNameRow}>
           <Text style={styles.groupName} numberOfLines={1}>{group.name}</Text>
-          <View style={styles.typeBadge}>
-            <Text style={styles.typeText}>{group.type}</Text>
-          </View>
         </View>
         <View style={styles.groupMeta}>
           <Ionicons name="people-outline" size={13} color={PC.textMuted} />
@@ -223,7 +219,7 @@ function ChatRow({ item, onPress, last }) {
         {/* Avatar */}
         <View style={[styles.chatAvatar, isGroup && styles.chatAvatarGroup, isContact && styles.chatAvatarContact]}>
           {isGroup
-            ? <Ionicons name={groupIcon(item.type)} size={20} color={PC.accent} />
+            ? <Ionicons name="people-outline" size={20} color={PC.accent} />
             : <Text style={styles.chatAvatarText}>{getInitials(item.name)}</Text>
           }
           {!settled && <View style={[styles.chatAvatarDot, { backgroundColor: isPos ? PC.positive : PC.negative }]} />}
@@ -262,7 +258,6 @@ function ChatRow({ item, onPress, last }) {
 
 function AddGroupModal({ visible, onClose, onCreated }) {
   const [name,    setName]    = useState('');
-  const [type,    setType]    = useState('Roommates');
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState('');
 
@@ -274,10 +269,9 @@ function AddGroupModal({ visible, onClose, onCreated }) {
     setLoading(true);
     setError('');
     try {
-      const { data } = await api.post('/api/groups', { name: name.trim(), type });
+      const { data } = await api.post('/api/groups', { name: name.trim() });
       onCreated(data.group);
       setName('');
-      setType('Roommates');
       onClose();
     } catch (err) {
       setError(err.message);
@@ -289,7 +283,6 @@ function AddGroupModal({ visible, onClose, onCreated }) {
   function handleClose() {
     if (loading) return;
     setName('');
-    setType('Roommates');
     setError('');
     onClose();
   }
@@ -324,27 +317,6 @@ function AddGroupModal({ visible, onClose, onCreated }) {
             />
           </View>
 
-          <Text style={styles.modalLabel}>Type</Text>
-          <View style={styles.typeGrid}>
-            {GROUP_TYPES.map((t) => (
-              <TouchableOpacity
-                key={t}
-                style={[styles.typeChip, type === t && styles.typeChipActive]}
-                onPress={() => setType(t)}
-                disabled={loading}>
-                <Ionicons
-                  name={groupIcon(t)}
-                  size={15}
-                  color={type === t ? PC.textPrimary : PC.textMuted}
-                  style={{ marginRight: 5 }}
-                />
-                <Text style={[styles.typeChipText, type === t && styles.typeChipTextActive]}>
-                  {t}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
           <TouchableOpacity
             style={[styles.createBtn, loading && styles.createBtnDisabled]}
             onPress={handleCreate}
@@ -375,8 +347,8 @@ export default function GroupsScreen() {
   const [pendingRequestCount, setPendingRequestCount] = useState(0);
   const [showSettlements,    setShowSettlements]    = useState(false);
   const [settleFilter,       setSettleFilter]       = useState('not_opened');
-  const [showNewSplit,       setShowNewSplit]        = useState(false);
-  const [newSplitSearch,     setNewSplitSearch]     = useState('');
+  const [splitFilter,        setSplitFilter]        = useState('all');
+  const [showFilterSheet,    setShowFilterSheet]    = useState(false);
   const [contacts,           setContacts]           = useState([]);
   const [allDirectSettles,   setAllDirectSettles]   = useState([]);
   const [directBalances,     setDirectBalances]     = useState([]);
@@ -615,19 +587,14 @@ export default function GroupsScreen() {
     return items.sort((a, b) => new Date(b.lastActivity || 0) - new Date(a.lastActivity || 0));
   }, [friends, contacts, groups, directBalances]);
 
-  // ── All people (for New Split picker — unfiltered) ───────────────────────
-  const allPeople = useMemo(() => {
-    const people = [];
-    friends.forEach(f => {
-      const fid = (f._id ?? f.id)?.toString();
-      if (fid) people.push({ _id: fid, name: f.name, username: f.username, _type: 'friend' });
-    });
-    contacts.forEach(c => {
-      const cid = c._id?.toString();
-      if (cid) people.push({ _id: cid, name: c.name, _type: 'contact' });
-    });
-    return people.sort((a, b) => a.name.localeCompare(b.name));
-  }, [friends, contacts]);
+  // ── Filtered chat list ────────────────────────────────────────────────────
+  const filteredList = useMemo(() => {
+    if (splitFilter === 'all') return combinedList;
+    if (splitFilter === 'group')   return combinedList.filter(i => i._type === 'group');
+    if (splitFilter === 'friend')  return combinedList.filter(i => i._type === 'friend');
+    if (splitFilter === 'contact') return combinedList.filter(i => i._type === 'contact');
+    return combinedList;
+  }, [combinedList, splitFilter]);
 
   // ── Settlement display helpers ───────────────────────────────────────────
   function settlementFromLabel(s) {
@@ -691,38 +658,38 @@ export default function GroupsScreen() {
             <Text style={styles.retryText}>Retry</Text>
           </TouchableOpacity>
         </View>
-      ) : combinedList.length === 0 ? (
+      ) : filteredList.length === 0 ? (
         <View style={styles.centered}>
           <Ionicons name="people-outline" size={40} color={PC.textMuted} />
-          <Text style={styles.emptyTitle}>No splits yet</Text>
-          <Text style={styles.emptyText}>Add a friend or create a group to get started</Text>
+          <Text style={styles.emptyTitle}>{splitFilter === 'all' ? 'No splits yet' : 'Nothing here'}</Text>
+          <Text style={styles.emptyText}>{splitFilter === 'all' ? 'Add a friend or create a group to get started' : 'No items match the selected filter'}</Text>
         </View>
       ) : (
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={{ paddingBottom: 40 }}
+          contentContainerStyle={{ paddingBottom: 80 }}
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={PC.textPrimary} />}>
           <View style={styles.chatList}>
-            {combinedList.map((item, i) => (
+            {filteredList.map((item, i) => (
               <ChatRow
                 key={`${item._type}-${item._id}`}
                 item={item}
-                last={i === combinedList.length - 1}
-                onPress={() => router.push(item._type === 'friend' ? `/direct/${item._id}` : `/groups/${item._id}`)}
+                last={i === filteredList.length - 1}
+                onPress={() => router.push(item._type === 'friend' || item._type === 'contact' ? `/direct/${item._id}` : `/groups/${item._id}`)}
               />
             ))}
           </View>
         </ScrollView>
       )}
 
-      {/* ── New Split FAB ── */}
+      {/* ── Filter FAB ── */}
       <TouchableOpacity
-        style={styles.fab}
-        onPress={() => { setNewSplitSearch(''); setShowNewSplit(true); }}
+        style={[styles.fab, splitFilter !== 'all' && styles.fabActive]}
+        onPress={() => setShowFilterSheet(true)}
         activeOpacity={0.85}
       >
-        <Ionicons name="add" size={26} color="#fff" />
+        <Ionicons name="options-outline" size={22} color="#fff" />
       </TouchableOpacity>
 
       {/* ── Settlements Modal ── */}
@@ -953,39 +920,29 @@ export default function GroupsScreen() {
         onCreated={handleGroupCreated}
       />
 
-      {/* ── New Split Picker Modal ── */}
-      <Modal visible={showNewSplit} transparent animationType="slide" onRequestClose={() => setShowNewSplit(false)}>
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowNewSplit(false)} />
+      {/* ── Filter Sheet Modal ── */}
+      <Modal visible={showFilterSheet} transparent animationType="slide" onRequestClose={() => setShowFilterSheet(false)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowFilterSheet(false)} />
         <View style={styles.pickerSheet}>
-          <Text style={styles.pickerTitle}>New Split</Text>
-          <TextInput
-            style={styles.pickerSearch}
-            placeholder="Search name..."
-            placeholderTextColor={PC.textMuted}
-            value={newSplitSearch}
-            onChangeText={setNewSplitSearch}
-            autoFocus
-          />
-          <FlatList
-            data={allPeople.filter(p => p.name.toLowerCase().includes(newSplitSearch.toLowerCase()))}
-            keyExtractor={p => `${p._type}-${p._id}`}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={styles.pickerRow}
-                onPress={() => { setShowNewSplit(false); router.push(`/direct/${item._id}`); }}
-              >
-                <View style={[styles.pickerAvatar, item._type === 'contact' && styles.chatAvatarContact]}>
-                  <Text style={styles.chatAvatarText}>{getInitials(item.name)}</Text>
-                </View>
-                <View>
-                  <Text style={styles.pickerName}>{item.name}</Text>
-                  {item.username && <Text style={styles.pickerSub}>@{item.username}</Text>}
-                  {item._type === 'contact' && <Text style={styles.pickerSub}>Personal contact</Text>}
-                </View>
-              </TouchableOpacity>
-            )}
-            keyboardShouldPersistTaps="handled"
-          />
+          <Text style={styles.pickerTitle}>Show</Text>
+          {[
+            { key: 'all',     label: 'All',              icon: 'apps-outline' },
+            { key: 'group',   label: 'Groups',            icon: 'people-outline' },
+            { key: 'friend',  label: 'Direct Splits',     icon: 'person-outline' },
+            { key: 'contact', label: 'Personal Contacts', icon: 'person-add-outline' },
+          ].map(opt => (
+            <TouchableOpacity
+              key={opt.key}
+              style={[styles.pickerRow, splitFilter === opt.key && styles.pickerRowActive]}
+              onPress={() => { setSplitFilter(opt.key); setShowFilterSheet(false); }}
+            >
+              <Ionicons name={opt.icon} size={20} color={splitFilter === opt.key ? PC.accent : PC.textMuted} />
+              <Text style={[styles.pickerName, splitFilter === opt.key && { color: PC.accent }]}>{opt.label}</Text>
+              {splitFilter === opt.key && (
+                <Ionicons name="checkmark" size={18} color={PC.accent} style={{ marginLeft: 'auto' }} />
+              )}
+            </TouchableOpacity>
+          ))}
         </View>
       </Modal>
     </SafeAreaView>
@@ -1330,15 +1287,14 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 6,
   },
+  fabActive: { borderWidth: 2, borderColor: '#fff' },
 
-  // New Split picker
-  modalOverlay:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
-  pickerSheet:   { backgroundColor: PC.bgCard, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: '65%' },
-  pickerTitle:   { color: PC.textPrimary, fontSize: 17, fontWeight: '700', marginBottom: 12 },
-  pickerSearch:  { backgroundColor: PC.bg, color: PC.textPrimary, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12, fontSize: 14 },
-  pickerRow:     { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 12 },
-  pickerAvatar:  { width: 40, height: 40, borderRadius: 20, backgroundColor: PC.accent + '33', alignItems: 'center', justifyContent: 'center' },
-  pickerName:    { color: PC.textPrimary, fontSize: 15, fontWeight: '600' },
-  pickerSub:     { color: PC.textMuted, fontSize: 12, marginTop: 1 },
+  // Filter sheet
+  modalOverlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
+  pickerSheet:     { backgroundColor: PC.bgCard, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 36 },
+  pickerTitle:     { color: PC.textPrimary, fontSize: 17, fontWeight: '700', marginBottom: 12 },
+  pickerRow:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 14, borderRadius: 10, paddingHorizontal: 8, marginBottom: 2 },
+  pickerRowActive: { backgroundColor: PC.accent10 ?? (PC.accent + '14') },
+  pickerName:      { color: PC.textPrimary, fontSize: 15, fontWeight: '500', flex: 1 },
 
 });

@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const categoryBudgetSchema = new mongoose.Schema(
   {
     category: { type: String, required: true, trim: true, maxlength: 50 },
-    amount:   { type: Number, required: true, min: 1 },
+    amount:   { type: Number, required: true, min: 0 },
   },
   { _id: false }
 );

@@ -2,18 +2,14 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   View,
   Text,
-  Modal,
-  TextInput,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
   Animated,
   Dimensions,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,6 +18,7 @@ import { useRouter } from 'expo-router';
 import { PC } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
+import BudgetSetupSheet from '@/components/BudgetSetupSheet';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const CHART_W = SCREEN_W - 40 - 32; // screen - padding - card padding
@@ -351,9 +348,7 @@ export default function DashboardScreen() {
   const [loading,      setLoading]      = useState(true);
   const [refreshing,   setRefreshing]   = useState(false);
   const [error,        setError]        = useState('');
-  const [modalVisible, setModalVisible] = useState(false);
-  const [budgetInput,  setBudgetInput]  = useState('');
-  const [budgetSaving, setBudgetSaving] = useState(false);
+  const [showBudgetSheet, setShowBudgetSheet] = useState(false);
 
   const fetchAll = useCallback(async () => {
     try {
@@ -379,27 +374,7 @@ export default function DashboardScreen() {
   function onRefresh() { setRefreshing(true); fetchAll(); }
 
   function openModal() {
-    setBudgetInput(budget?.budget > 0 ? String(budget.budget) : '');
-    setModalVisible(true);
-  }
-
-  async function saveBudget() {
-    const amount = parseFloat(budgetInput);
-    if (!budgetInput.trim() || isNaN(amount) || amount < 1) {
-      Alert.alert('Invalid Amount', 'Please enter a valid amount (minimum ₹1).');
-      return;
-    }
-    setBudgetSaving(true);
-    try {
-      await api.post('/api/users/me/budget', { amount });
-      setModalVisible(false);
-      setBudgetInput('');
-      fetchAll();
-    } catch (err) {
-      Alert.alert('Error', err.message || 'Could not save budget.');
-    } finally {
-      setBudgetSaving(false);
-    }
+    setShowBudgetSheet(true);
   }
 
   // Derived
@@ -603,61 +578,12 @@ export default function DashboardScreen() {
 
       </ScrollView>
 
-      {/* ── Budget Modal ── */}
-      <Modal
-        visible={modalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setModalVisible(false)}>
-        <KeyboardAvoidingView
-          style={styles.modalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeaderRow}>
-              <View>
-                <Text style={styles.modalTitle}>
-                  {budget?.budget > 0 ? 'Edit Budget' : 'Set Budget'}
-                </Text>
-                <Text style={styles.modalSub}>
-                  {formatMonth(budget?.month || new Date().toISOString().slice(0, 7))}
-                </Text>
-              </View>
-              <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.modalCloseBtn}>
-                <Ionicons name="close" size={18} color={PC.textSecondary} />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.modalInputBox}>
-              <Text style={styles.modalRupee}>₹</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="e.g. 10000"
-                placeholderTextColor={PC.textMuted}
-                value={budgetInput}
-                onChangeText={setBudgetInput}
-                keyboardType="numeric"
-                autoFocus
-                editable={!budgetSaving}
-              />
-            </View>
-            <View style={styles.modalBtnRow}>
-              <TouchableOpacity
-                style={styles.cancelBtn}
-                onPress={() => setModalVisible(false)}
-                disabled={budgetSaving}>
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.saveBtn, budgetSaving && { opacity: 0.6 }]}
-                onPress={saveBudget}
-                disabled={budgetSaving}>
-                {budgetSaving
-                  ? <ActivityIndicator size="small" color="#060A09" />
-                  : <Text style={styles.saveText}>Save</Text>}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+      <BudgetSetupSheet
+        visible={showBudgetSheet}
+        budgetData={{ budget: budget?.budget ?? 0, categories: budget?.categories ?? [] }}
+        onClose={() => setShowBudgetSheet(false)}
+        onSaved={fetchAll}
+      />
     </SafeAreaView>
   );
 }
@@ -870,40 +796,4 @@ const styles = StyleSheet.create({
   emptyTitle: { color: PC.textPrimary, fontSize: 15, fontWeight: '600', marginBottom: 5 },
   emptyHint:  { color: PC.textMuted, fontSize: 13, textAlign: 'center' },
 
-  // Modal
-  modalOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.65)',
-    justifyContent: 'center', alignItems: 'center', padding: 24,
-  },
-  modalCard: {
-    width: '100%', backgroundColor: PC.bgCard,
-    borderRadius: 20, borderWidth: 1, borderColor: PC.border, padding: 24,
-  },
-  modalHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
-  modalTitle:     { color: PC.textPrimary, fontSize: 18, fontWeight: '700', marginBottom: 3 },
-  modalSub:       { color: PC.textSecondary, fontSize: 13 },
-  modalCloseBtn:  {
-    width: 32, height: 32, borderRadius: 10,
-    backgroundColor: PC.bgCardElevated, borderWidth: 1, borderColor: PC.border,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  modalInputBox: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: PC.bgInput, borderWidth: 1, borderColor: PC.border,
-    borderRadius: 12, paddingHorizontal: 14, height: 52, marginBottom: 20,
-  },
-  modalRupee: { color: PC.textSecondary, fontSize: 20, fontWeight: '600', marginRight: 8 },
-  modalInput: { flex: 1, color: PC.textPrimary, fontSize: 20, fontWeight: '500' },
-  modalBtnRow: { flexDirection: 'row', gap: 12 },
-  cancelBtn: {
-    flex: 1, height: 48, borderRadius: 12,
-    borderWidth: 1, borderColor: PC.border,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  cancelText: { color: PC.textSecondary, fontSize: 14, fontWeight: '500' },
-  saveBtn: {
-    flex: 1, height: 48, borderRadius: 12,
-    backgroundColor: PC.accent, alignItems: 'center', justifyContent: 'center',
-  },
-  saveText: { color: '#060A09', fontSize: 14, fontWeight: '700' },
 });
