@@ -62,7 +62,7 @@ const getUserGroups = asyncHandler(async (req, res) => {
 // GET /api/groups/:id
 const getGroup = asyncHandler(async (req, res) => {
   const group = await Group.findById(req.params.id)
-    .populate('members', 'name email upiId')
+    .populate('members', 'name email upiId isVirtual')
     .populate('adminId', 'name email');
   if (!group) return res.status(404).json({ success: false, message: 'Group not found' });
 
@@ -78,14 +78,15 @@ const getGroup = asyncHandler(async (req, res) => {
 
 // GET /api/groups/:id/members
 const getMembers = asyncHandler(async (req, res) => {
-  const group = await Group.findById(req.params.id).populate('members', 'name email');
+  const group = await Group.findById(req.params.id).populate('members', 'name email isVirtual');
   if (!group) return res.status(404).json({ success: false, message: 'Group not found' });
 
   const members = group.members.map(m => ({
-    id:    m._id,
-    name:  m.name,
-    email: m.email,
-    role:  m._id.toString() === group.adminId.toString() ? 'Admin' : 'Member',
+    id:        m._id,
+    name:      m.name,
+    email:     m.email,
+    isVirtual: m.isVirtual || false,
+    role:      m._id.toString() === group.adminId.toString() ? 'Admin' : 'Member',
   }));
 
   logger.debug('GROUP', `Members fetched for group "${group.name}"`, { count: members.length });
@@ -112,15 +113,17 @@ const addMember = asyncHandler(async (req, res) => {
     return res.status(409).json({ success: false, message: 'User is already a member' });
 
   const friends = await areFriends(req.user._id, userToAdd._id);
-  if (!friends) {
-    logger.warn('GROUP', `Add member denied — not friends`, { groupId: group._id, targetUserId: userToAdd._id });
-    return res.status(403).json({ success: false, message: 'User must be your friend to be added to a group' });
+  const isOwnContact = userToAdd.isVirtual &&
+    userToAdd.createdBy?.toString() === req.user._id.toString();
+  if (!friends && !isOwnContact) {
+    logger.warn('GROUP', `Add member denied — not friends or own contact`, { groupId: group._id, targetUserId: userToAdd._id });
+    return res.status(403).json({ success: false, message: 'User must be your friend or personal contact to be added to a group' });
   }
 
   group.members.push(userToAdd._id);
   await group.save();
 
-  logger.info('GROUP', `Member added: ${userToAdd.email} → group "${group.name}"`, {
+  logger.info('GROUP', `Member added: ${userToAdd.name} → group "${group.name}"`, {
     groupId: group._id,
     addedUserId: userToAdd._id,
   });
@@ -128,7 +131,7 @@ const addMember = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     message: `${userToAdd.name} added to group`,
-    member: { id: userToAdd._id, name: userToAdd.name, email: userToAdd.email, upiId: userToAdd.upiId || '', role: 'Member' },
+    member: { id: userToAdd._id, name: userToAdd.name, email: userToAdd.email, upiId: userToAdd.upiId || '', isVirtual: userToAdd.isVirtual || false, role: 'Member' },
   });
 });
 

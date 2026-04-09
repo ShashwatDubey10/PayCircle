@@ -22,10 +22,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { PC } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
-import { getDirectSplits, addDirectSplit, requestSettle, confirmSettle, cancelOrRejectSettle, getGroupDebtsWithFriend } from '@/services/directSplit';
+import { getDirectSplits, addDirectSplit, requestSettle, confirmSettle, cancelOrRejectSettle, getGroupDebtsWithFriend, updateDirectSplit } from '@/services/directSplit';
 import { getFriends } from '@/services/friends';
+import { getContacts } from '@/services/contacts';
 import UpiQrModal from '@/components/UpiQrModal';
 import api from '@/services/api';
+import { upsertSplitTag, getSplitTags } from '@/services/splitTag';
+import EditSplitSheet, { CAT_ICON_MAP } from '@/components/EditSplitSheet';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -70,7 +73,7 @@ function DateSeparator({ label }) {
 
 // ─── Chat bubble ──────────────────────────────────────────────────────────────
 
-function Bubble({ split, isMine, friendFirstName }) {
+function Bubble({ split, isMine, friendFirstName, tag, onTagPress, onLongPress }) {
   const amt        = Number(split?.amount ?? 0);
   const payerShare = split?.payerShare != null ? split.payerShare : amt / 2;
   const otherShare = amt - payerShare;
@@ -84,37 +87,75 @@ function Bubble({ split, isMine, friendFirstName }) {
         </View>
       )}
 
-      <View style={[s.bubble, isMine ? s.bubbleMine : s.bubbleFriend]}>
-        {/* Paid line */}
-        <View style={s.bubbleAmtRow}>
-          <Text style={[s.bubblePaidBy, isMine ? s.textMineSecondary : { color: PC.textSecondary }]}>
-            {isMine ? 'You' : friendFirstName} paid
-          </Text>
-          <Text style={[s.bubbleAmt, isMine ? s.textMine : { color: PC.textPrimary }]}>
-            {'  '}₹{amt.toLocaleString('en-IN')}
-          </Text>
+      <TouchableOpacity
+        onLongPress={onLongPress}
+        delayLongPress={350}
+        activeOpacity={0.92}>
+        <View style={[s.bubble, isMine ? s.bubbleMine : s.bubbleFriend]}>
+
+          {/* Row 1: Payer + Amount inline */}
+          <View style={s.bubbleMainRow}>
+            <Text numberOfLines={1} style={[s.bubblePaidBy, isMine ? s.textMineSecondary : { color: PC.textSecondary }]}>
+              {isMine ? 'You paid' : `${friendFirstName} paid`}{'  '}
+            </Text>
+            <Text numberOfLines={1} style={[s.bubbleAmt, isMine ? s.textMine : s.textFriendAmt]}>
+              ₹{amt.toLocaleString('en-IN')}
+            </Text>
+          </View>
+
+          {/* Row 2: Description (optional) */}
+          {split.description ? (
+            <Text style={[s.bubbleDesc, isMine ? s.textMineSecondary : { color: PC.textSecondary }]}>
+              {split.description}
+            </Text>
+          ) : null}
+
+          {/* Row 3: Your share */}
+          <View style={s.shareRow}>
+            <Text style={[s.shareLabel, isMine ? s.textMineSecondary : { color: PC.textMuted }]}>
+              your share
+            </Text>
+            <Text style={[s.bubbleShareAmt, isMine ? s.textMine : s.textFriendShare]}>
+              ₹{myShare.toLocaleString('en-IN')}
+            </Text>
+          </View>
+
+          {/* Row 4: Tag chip */}
+          <View style={s.bubbleFooter}>
+            <TouchableOpacity onPress={onTagPress} activeOpacity={0.7}>
+              {tag ? (
+                <View style={[s.tagChip, isMine && s.tagChipMine]}>
+                  <Ionicons
+                    name={CAT_ICON_MAP[tag] || 'pricetag-outline'}
+                    size={10}
+                    color={isMine ? 'rgba(6,10,9,0.6)' : PC.accent}
+                    style={{ marginRight: 3 }}
+                  />
+                  <Text style={[s.tagChipText, isMine && { color: 'rgba(6,10,9,0.6)' }]}>{tag}</Text>
+                </View>
+              ) : (
+                <View style={[s.tagChipAdd, isMine && s.tagChipAddMine]}>
+                  <Ionicons
+                    name="pricetag-outline"
+                    size={10}
+                    color={isMine ? 'rgba(6,10,9,0.4)' : PC.textSecondary}
+                    style={{ marginRight: 3 }}
+                  />
+                  <Text style={[s.tagChipEmpty, isMine && { color: 'rgba(6,10,9,0.4)' }]}>Tag</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Row 5: Timestamp */}
+          <View style={s.bubbleTimeRow}>
+            <Text style={[s.bubbleTime, isMine ? s.textMineMuted : { color: PC.textMuted }]} numberOfLines={1}>
+              {split?.date ? formatTime(split.date) : '—'}
+            </Text>
+          </View>
+
         </View>
-
-        {/* Description */}
-        {split.description ? (
-          <Text style={[s.bubbleDesc, isMine ? s.textMineSecondary : { color: PC.textSecondary }]}>
-            {split.description}
-          </Text>
-        ) : null}
-
-        {/* Your Share */}
-        <Text style={[s.bubbleShareLine, isMine ? s.textMineSecondary : { color: PC.textSecondary }]}>
-          {'Your Share : '}
-          <Text style={[s.bubbleShareAmt, isMine ? s.textMine : { color: PC.textPrimary }]}>
-            ₹{myShare.toLocaleString('en-IN')}
-          </Text>
-        </Text>
-
-        {/* Time */}
-        <Text style={[s.bubbleTime, isMine ? s.textMineMuted : { color: PC.textMuted }, { marginTop: 4 }]}>
-          {split?.date ? formatTime(split.date) : '—'}
-        </Text>
-      </View>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -127,7 +168,8 @@ export default function DirectSplitScreen() {
   const { user }     = useAuth();
   const listRef      = useRef(null);
 
-  const [friend,      setFriend]      = useState(null);
+  const [friend,           setFriend]           = useState(null);
+  const [isVirtualContact, setIsVirtualContact] = useState(false);
   const [splits,      setSplits]      = useState([]);
   const [balance,     setBalance]     = useState(0);
   const [loading,     setLoading]     = useState(true);
@@ -151,6 +193,11 @@ export default function DirectSplitScreen() {
   const [showUpiQr,     setShowUpiQr]     = useState(false);
   const [upiQrData,     setUpiQrData]     = useState(null);
 
+  // ── Split tags ─────────────────────────────────────────────────────────────
+  const [tags,      setTags]      = useState({}); // { splitId: category }
+  const [editSheet, setEditSheet] = useState(null); // { split, canEditAmount } | null
+  const [newSplitCat, setNewSplitCat] = useState('');
+
   // Initialise custom amount to full balance whenever direct-settle modal opens
   useEffect(() => {
     if (showPayModal && !settleAllMode) {
@@ -161,20 +208,31 @@ export default function DirectSplitScreen() {
   // ── Load splits + friend info ──────────────────────────────────────────────
   const load = useCallback(async () => {
     try {
-      const [data, friends, debtsData] = await Promise.all([
+      const [data, friends, debtsData, contacts, tagsRes] = await Promise.all([
         getDirectSplits(friendId),
         getFriends(),
         getGroupDebtsWithFriend(friendId).catch(() => ({ groupDebts: [] })),
+        getContacts(),
+        getSplitTags(),
       ]);
       setSplits(data.splits || []);
       setBalance(data.balance ?? 0);
       setPendingSettle(data.pendingSettle || null);
       setGroupDebts(debtsData.groupDebts || []);
+
       let f = (friends || []).find(f =>
         String(f._id) === String(friendId) ||
         String(f.id)  === String(friendId)
       );
-      // Fallback: extract friend info from split data if friends list lookup fails
+      let isContact = false;
+
+      // Check personal contacts if not found in friends list
+      if (!f) {
+        const c = (contacts || []).find(c => String(c._id) === String(friendId));
+        if (c) { f = { ...c, isVirtual: true }; isContact = true; }
+      }
+
+      // Final fallback: extract info from split data
       if (!f && data.splits?.length > 0) {
         const first = data.splits[0];
         const meId = user?._id?.toString() ?? user?.id?.toString();
@@ -182,7 +240,16 @@ export default function DirectSplitScreen() {
         const friendDoc = payerId !== meId ? first.payerId : first.otherUserId;
         if (friendDoc?.name) f = { name: friendDoc.name, username: friendDoc.username };
       }
+
       setFriend(f || null);
+      setIsVirtualContact(isContact);
+
+      // Build tag map for direct splits
+      const directTagMap = {};
+      (tagsRes?.tags || []).filter(t => t.refType === 'direct').forEach(t => {
+        directTagMap[t.refId.toString()] = t.category;
+      });
+      setTags(directTagMap);
     } catch (err) {
       // Log so failures are visible in the console; UI shows empty state.
       console.error('[DirectSplitScreen] load failed:', err?.message ?? err);
@@ -231,6 +298,12 @@ export default function DirectSplitScreen() {
         console.error('[DirectSplitScreen] addDirectSplit returned no split:', data);
         setInputError('Split was saved but the response was unexpected. Pull to refresh.');
       } else {
+        // Save category tag if provided
+        if (newSplitCat.trim()) {
+          upsertSplitTag(data.split._id, 'direct', newSplitCat.trim())
+            .then(() => setTags(prev => ({ ...prev, [data.split._id]: newSplitCat.trim() })))
+            .catch(() => {});
+        }
         setSplits(prev => [...prev, data.split]);
         setBalance(prev => {
           const myHalf = myShare ?? amt / 2;
@@ -240,6 +313,7 @@ export default function DirectSplitScreen() {
         setAmount('');
         setDescription('');
         setMyShare(null);
+        setNewSplitCat('');
         setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
       }
     } catch (err) {
@@ -247,6 +321,24 @@ export default function DirectSplitScreen() {
     } finally {
       setSending(false);
     }
+  }
+
+  // ── Edit split (amount + private category) ────────────────────────────────
+  async function handleEditSave({ amount, category }) {
+    const { split, canEditAmount } = editSheet;
+    const sidStr = split._id?.toString();
+    const tasks = [];
+    if (canEditAmount && amount != null) {
+      tasks.push(updateDirectSplit(friendId, split._id, { amount }).then(() => load()));
+    }
+    if (category) {
+      tasks.push(
+        upsertSplitTag(split._id, 'direct', category)
+          .then(() => setTags(prev => ({ ...prev, [sidStr]: category })))
+      );
+    }
+    await Promise.all(tasks);
+    setEditSheet(null);
   }
 
   // ── Settle Up ─────────────────────────────────────────────────────────────
@@ -285,8 +377,24 @@ export default function DirectSplitScreen() {
     try {
       const data = await requestSettle(friendId, amt);
       setPendingSettle(data.pendingSettle);
+      // Auto-confirmed (personal contact) — reload to refresh balance
+      if (!data.pendingSettle) await load();
     } catch (err) {
       setInputError(err?.message || 'Failed to send settle request');
+    } finally {
+      setSettleLoading(false);
+    }
+  }
+
+  // Mark a personal contact as having paid me (creditor-side settle)
+  async function handleMarkContactSettled() {
+    const amt = Math.abs(balance);
+    setSettleLoading(true);
+    try {
+      await requestSettle(friendId, amt, true); // fromContact=true
+      await load();
+    } catch (err) {
+      setInputError(err?.message || 'Failed to mark as settled');
     } finally {
       setSettleLoading(false);
     }
@@ -356,6 +464,9 @@ export default function DirectSplitScreen() {
           split={item}
           isMine={isMine}
           friendFirstName={friend?.name?.split(' ')[0] || 'Friend'}
+          tag={tags[item._id?.toString()]}
+          onTagPress={() => setEditSheet({ split: item, canEditAmount: false })}
+          onLongPress={() => setEditSheet({ split: item, canEditAmount: isMine })}
         />
       </View>
     );
@@ -392,7 +503,14 @@ export default function DirectSplitScreen() {
 
         <View style={s.headerInfo}>
           <Text style={s.headerName} numberOfLines={1}>{friend?.name || '…'}</Text>
-          {friend?.username ? <Text style={s.headerUsername}>@{friend.username}</Text> : null}
+          {isVirtualContact ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 }}>
+              <Ionicons name="person-add-outline" size={10} color={PC.accent} />
+              <Text style={{ color: PC.accent, fontSize: 10, fontWeight: '600' }}>Personal Contact</Text>
+            </View>
+          ) : friend?.username ? (
+            <Text style={s.headerUsername}>@{friend.username}</Text>
+          ) : null}
         </View>
 
         <View style={[
@@ -422,6 +540,20 @@ export default function DirectSplitScreen() {
               : `You owe ${friendFirst} ₹${balAbs.toLocaleString('en-IN')}`
             }
           </Text>
+
+          {/* Mark Settled — shown to creditor when friend is a personal contact */}
+          {youAreOwed && isVirtualContact && (
+            <TouchableOpacity
+              style={[s.settleChip, settleLoading && { opacity: 0.5 }]}
+              onPress={!settleLoading ? handleMarkContactSettled : undefined}
+              disabled={settleLoading}
+              activeOpacity={0.75}>
+              {settleLoading
+                ? <ActivityIndicator size="small" color={PC.textMuted} />
+                : <Text style={s.settleChipText}>Mark Settled</Text>
+              }
+            </TouchableOpacity>
+          )}
 
           {/* Settle Up / Cancel chip — shown to debtor */}
           {iAmDebtor && myPendingSettle ? (
@@ -609,25 +741,39 @@ export default function DirectSplitScreen() {
 
         {/* ── Input bar ── */}
         <View style={s.inputBar}>
-          {inputError ? <Text style={s.inputError}>{inputError}</Text> : null}
+          {/* Mint glow line at top edge */}
+          <View style={s.inputBarAccentLine} />
 
-          {/* Who paid */}
+          {/* Error */}
+          {inputError ? (
+            <View style={s.inputErrRow}>
+              <Ionicons name="warning-outline" size={11} color={PC.negative} />
+              <Text style={s.inputError}>{inputError}</Text>
+            </View>
+          ) : null}
+
+          {/* Who paid + custom split */}
           <View style={s.paidByRow}>
-            <Text style={s.paidByLabel}>Paid by</Text>
-            <TouchableOpacity
-              style={[s.paidByChip, paidByMe && s.paidByChipActive]}
-              onPress={() => setPaidByMe(true)}
-              disabled={sending}>
-              <Text style={[s.paidByChipText, paidByMe && s.paidByChipTextActive]}>You</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[s.paidByChip, !paidByMe && s.paidByChipActive]}
-              onPress={() => setPaidByMe(false)}
-              disabled={sending}>
-              <Text style={[s.paidByChipText, !paidByMe && s.paidByChipTextActive]}>
-                {friendFirst}
-              </Text>
-            </TouchableOpacity>
+            <Text style={s.paidByLabel}>PAID BY</Text>
+            <View style={s.paidBySegment}>
+              <TouchableOpacity
+                style={[s.paidByOption, paidByMe && s.paidByOptionActive]}
+                onPress={() => setPaidByMe(true)}
+                disabled={sending}
+                activeOpacity={0.8}>
+                <Text style={[s.paidByOptionText, paidByMe && s.paidByOptionTextActive]}>You</Text>
+              </TouchableOpacity>
+              <View style={s.paidByDivider} />
+              <TouchableOpacity
+                style={[s.paidByOption, !paidByMe && s.paidByOptionActive]}
+                onPress={() => setPaidByMe(false)}
+                disabled={sending}
+                activeOpacity={0.8}>
+                <Text style={[s.paidByOptionText, !paidByMe && s.paidByOptionTextActive]}>
+                  {friendFirst}
+                </Text>
+              </TouchableOpacity>
+            </View>
             <View style={{ flex: 1 }} />
             <TouchableOpacity
               style={[s.customBtn, myShare !== null && s.customBtnActive]}
@@ -641,8 +787,8 @@ export default function DirectSplitScreen() {
               disabled={sending}
               activeOpacity={0.75}>
               <Ionicons
-                name={myShare !== null ? 'checkmark-circle' : 'options-outline'}
-                size={13}
+                name={myShare !== null ? 'checkmark-circle' : 'git-branch-outline'}
+                size={12}
                 color={myShare !== null ? PC.accent : PC.textMuted}
               />
               <Text style={[s.customBtnText, myShare !== null && s.customBtnTextActive]}>
@@ -651,28 +797,51 @@ export default function DirectSplitScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Amount + note + send */}
+          {/* Amount — hero field */}
+          <View style={s.amtBox}>
+            <Text style={s.rupee}>₹</Text>
+            <TextInput
+              style={s.amtInput}
+              placeholder="0.00"
+              placeholderTextColor={PC.textMuted}
+              value={amount}
+              onChangeText={v => { setAmount(v); setInputError(''); setMyShare(null); }}
+              keyboardType="decimal-pad"
+              editable={!sending}
+            />
+            {myShare !== null && (
+              <View style={s.shareTag}>
+                <Ionicons name="person-outline" size={9} color={PC.accent} style={{ marginRight: 3 }} />
+                <Text style={s.shareTagText}>your ₹{myShare}</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Description + Category + Send */}
           <View style={s.inputRow}>
-            <View style={s.amtBox}>
-              <Text style={s.rupee}>₹</Text>
+            <View style={s.textFieldWrap}>
+              <Ionicons name="chatbubble-ellipses-outline" size={12} color={PC.textMuted} style={s.fieldIcon} />
               <TextInput
-                style={s.amtInput}
-                placeholder="0.00"
+                style={s.noteInput}
+                placeholder="What for?"
                 placeholderTextColor={PC.textMuted}
-                value={amount}
-                onChangeText={v => { setAmount(v); setInputError(''); setMyShare(null); }}
-                keyboardType="decimal-pad"
+                value={description}
+                onChangeText={setDescription}
                 editable={!sending}
               />
             </View>
-            <TextInput
-              style={s.noteInput}
-              placeholder="What for?"
-              placeholderTextColor={PC.textMuted}
-              value={description}
-              onChangeText={setDescription}
-              editable={!sending}
-            />
+            <View style={[s.textFieldWrap, { flex: 0.75 }]}>
+              <Ionicons name="pricetag-outline" size={12} color={PC.textMuted} style={s.fieldIcon} />
+              <TextInput
+                style={s.noteInput}
+                placeholder="tag"
+                placeholderTextColor={PC.textMuted}
+                value={newSplitCat}
+                onChangeText={setNewSplitCat}
+                editable={!sending}
+                maxLength={50}
+              />
+            </View>
             <TouchableOpacity
               style={[s.sendBtn, sending && { opacity: 0.5 }]}
               onPress={handleSend}
@@ -680,7 +849,7 @@ export default function DirectSplitScreen() {
               activeOpacity={0.8}>
               {sending
                 ? <ActivityIndicator size="small" color="#060A09" />
-                : <Ionicons name="arrow-up" size={18} color="#060A09" />
+                : <Ionicons name="arrow-up" size={17} color="#060A09" />
               }
             </TouchableOpacity>
           </View>
@@ -851,6 +1020,15 @@ export default function DirectSplitScreen() {
           fromName={user?.name || 'You'}
         />
       )}
+
+      <EditSplitSheet
+        visible={editSheet !== null}
+        onClose={() => setEditSheet(null)}
+        canEditAmount={editSheet?.canEditAmount ?? false}
+        initialAmount={editSheet?.split?.amount}
+        initialCategory={editSheet ? (tags[editSheet.split._id?.toString()] || '') : ''}
+        onSave={handleEditSave}
+      />
     </SafeAreaView>
   );
 }
@@ -953,7 +1131,7 @@ function TwoPersonSplitModal({ visible, onClose, totalAmount, myName, friendName
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const BUBBLE_MAX = '78%';
+const BUBBLE_MAX = '92%';
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: PC.bg },
@@ -1025,108 +1203,157 @@ const s = StyleSheet.create({
   dateSepText: { color: PC.textMuted, fontSize: 11, fontWeight: '500' },
 
   // ── Bubble row ──
-  bubbleRow:      { flexDirection: 'row', marginBottom: 6, alignItems: 'flex-end' },
+  bubbleRow:      { flexDirection: 'row', marginBottom: 10, alignItems: 'flex-end', paddingHorizontal: 12 },
   bubbleRowRight: { justifyContent: 'flex-end' },
-  bubbleRowLeft:  { justifyContent: 'flex-start', gap: 8 },
+  bubbleRowLeft:  { justifyContent: 'flex-start', gap: 10 },
 
   bubbleAvatar: {
-    width: 30, height: 30, borderRadius: 10,
+    width: 34, height: 34, borderRadius: 17,
     backgroundColor: PC.bgCardElevated,
-    borderWidth: 1, borderColor: PC.border,
+    borderWidth: 1, borderColor: 'rgba(0,229,190,0.28)',
     alignItems: 'center', justifyContent: 'center',
-    marginBottom: 2,
+    marginBottom: 4,
   },
-  bubbleAvatarText: { color: PC.textPrimary, fontSize: 10, fontWeight: '700' },
+  bubbleAvatarText: { color: PC.accent, fontSize: 11, fontWeight: '700' },
 
-  // My bubble — white background, dark text
   bubble: {
     maxWidth: BUBBLE_MAX,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    borderRadius: 18,
+    paddingLeft: 14,
+    paddingRight: 20,
+    paddingTop: 12,
+    paddingBottom: 10,
     borderWidth: 1,
   },
   bubbleMine: {
     backgroundColor: PC.accent,
-    borderColor: PC.accent,
+    borderColor: 'rgba(0,229,190,0.5)',
     borderBottomRightRadius: 4,
   },
   bubbleFriend: {
-    backgroundColor: PC.bgCard,
-    borderColor: PC.border,
+    backgroundColor: '#0D1512',
+    borderColor: PC.borderLight,
     borderBottomLeftRadius: 4,
   },
 
-  bubbleAmtRow: { flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap' },
-  bubblePaidBy: { fontSize: 12 },
-  bubbleAmt:    { fontSize: 17, fontWeight: '700' },
+  // Row 1: payer + amount inline
+  bubbleMainRow: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 2 },
+  bubblePaidBy:  { fontSize: 12, fontWeight: '500' },
 
-  // Mine text colors — dark text on mint bubble
+  // Amount
+  bubbleAmt: {
+    fontSize: 18, fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
   textMine:          { color: '#060A09' },
-  textMineSecondary: { color: 'rgba(6,10,9,0.65)' },
-  textMineMuted:     { color: 'rgba(6,10,9,0.45)' },
+  textFriendAmt:     { color: PC.textPrimary },
+  textMineSecondary: { color: 'rgba(6,10,9,0.62)' },
+  textMineMuted:     { color: 'rgba(6,10,9,0.42)' },
 
-  bubbleDesc:   { fontSize: 13, marginTop: 3 },
-  bubbleFooter:    { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
-  bubbleTime:      { fontSize: 10 },
-  bubbleSplitNote: { fontSize: 10 },
-  bubbleShareLine: { fontSize: 11, marginTop: 6 },
-  bubbleShareAmt:  { fontSize: 11, fontWeight: '700' },
+  bubbleDesc: { fontSize: 13, marginBottom: 4, fontStyle: 'italic' },
+
+  // Share row
+  shareRow:      { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 6, marginBottom: 2 },
+  shareLabel:    { fontSize: 10, fontWeight: '500' },
+  bubbleShareAmt: { fontSize: 14, fontWeight: '700', fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace' },
+  textFriendShare: { color: PC.positive },
+
+  bubbleFooter:  { flexDirection: 'row', alignItems: 'center', marginTop: 5 },
+  bubbleTimeRow: { alignItems: 'flex-end', marginTop: 3, alignSelf: 'stretch' },
+  bubbleTime:    { fontSize: 9, fontWeight: '500' },
 
   // ── Input bar ──
   inputBar: {
     borderTopWidth: 1,
     borderTopColor: PC.border,
-    backgroundColor: PC.bgCard,
+    backgroundColor: '#080E0C',
     paddingHorizontal: 14,
-    paddingTop: 10,
-    paddingBottom: Platform.OS === 'ios' ? 28 : 14,
+    paddingTop: 0,
+    paddingBottom: Platform.OS === 'ios' ? 30 : 14,
   },
-  inputError: { color: PC.negative, fontSize: 12, marginBottom: 6 },
+  inputBarAccentLine: {
+    height: 1,
+    backgroundColor: 'rgba(0,229,190,0.20)',
+    marginBottom: 12,
+  },
+  inputErrRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    marginBottom: 8,
+  },
+  inputError: { color: PC.negative, fontSize: 12 },
 
-  paidByRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
-  paidByLabel: { color: PC.textSecondary, fontSize: 12, fontWeight: '500' },
-  paidByChip: {
-    paddingHorizontal: 12, paddingVertical: 5,
-    borderRadius: 20, borderWidth: 1,
-    borderColor: PC.border, backgroundColor: PC.bgCardElevated,
+  // Paid by — segmented control
+  paidByRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  paidByLabel: {
+    color: PC.textMuted, fontSize: 9, fontWeight: '700', letterSpacing: 1.4,
   },
-  paidByChipActive: { borderColor: PC.accent, backgroundColor: PC.accent },
-  paidByChipText:       { color: PC.textSecondary, fontSize: 12, fontWeight: '500' },
-  paidByChipTextActive: { color: '#060A09', fontWeight: '600' },
+  paidBySegment: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: PC.bgCardElevated,
+    borderRadius: 10, borderWidth: 1, borderColor: PC.border,
+    overflow: 'hidden',
+  },
+  paidByOption: { paddingHorizontal: 13, paddingVertical: 6 },
+  paidByOptionActive: { backgroundColor: PC.accent },
+  paidByOptionText:       { color: PC.textSecondary, fontSize: 12, fontWeight: '600' },
+  paidByOptionTextActive: { color: '#060A09', fontWeight: '700' },
+  paidByDivider: { width: 1, height: 18, backgroundColor: PC.border },
 
   customBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: 10, paddingVertical: 5,
+    paddingHorizontal: 10, paddingVertical: 6,
     borderRadius: 20, borderWidth: 1,
     borderColor: PC.borderLight, backgroundColor: 'transparent',
   },
-  customBtnActive: {
-    borderColor: PC.accent,
-    backgroundColor: PC.accent10,
-  },
+  customBtnActive:     { borderColor: PC.accent, backgroundColor: PC.accent10 },
   customBtnText:       { color: PC.textMuted, fontSize: 12, fontWeight: '500' },
   customBtnTextActive: { color: PC.accent, fontWeight: '700' },
 
-  inputRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-
+  // Amount — hero
   amtBox: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: PC.bgInput, borderWidth: 1, borderColor: PC.border,
-    borderRadius: 12, paddingHorizontal: 10, height: 44, minWidth: 90,
+    backgroundColor: PC.bgInput,
+    borderWidth: 1, borderColor: PC.borderLight,
+    borderLeftWidth: 3, borderLeftColor: PC.accent,
+    borderRadius: 12,
+    paddingLeft: 14, paddingRight: 12,
+    height: 56,
+    marginBottom: 10,
   },
-  rupee:    { color: PC.textPrimary, fontSize: 15, fontWeight: '700', marginRight: 4 },
-  amtInput: { flex: 1, color: PC.textPrimary, fontSize: 15, minWidth: 50 },
+  rupee: {
+    color: PC.accent, fontSize: 22, fontWeight: '700', marginRight: 4,
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
+  amtInput: {
+    flex: 1, color: PC.textPrimary,
+    fontSize: 26, fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
+  shareTag: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: PC.accent10,
+    borderRadius: 6, borderWidth: 1, borderColor: 'rgba(0,229,190,0.22)',
+    paddingHorizontal: 7, paddingVertical: 3,
+  },
+  shareTagText: { color: PC.accent, fontSize: 10, fontWeight: '600' },
 
+  // Description + category row
+  inputRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  textFieldWrap: {
+    flex: 1, flexDirection: 'row', alignItems: 'center',
+    height: 42,
+    backgroundColor: PC.bgCardElevated,
+    borderWidth: 1, borderColor: PC.border,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+  },
+  fieldIcon: { marginRight: 6 },
   noteInput: {
-    flex: 1, height: 44,
-    backgroundColor: PC.bgInput, borderWidth: 1, borderColor: PC.border,
-    borderRadius: 12, paddingHorizontal: 12,
-    color: PC.textPrimary, fontSize: 14,
+    flex: 1, color: PC.textPrimary, fontSize: 13,
   },
 
   sendBtn: {
-    width: 44, height: 44, borderRadius: 13,
+    width: 42, height: 42, borderRadius: 12,
     backgroundColor: PC.accent,
     alignItems: 'center', justifyContent: 'center',
   },
@@ -1296,6 +1523,38 @@ const s = StyleSheet.create({
     borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6,
   },
   customAmtRemainingText: { color: PC.negative, fontSize: 12, fontWeight: '500' },
+
+  // Tag chip (on bubbles)
+  tagChip:        { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', backgroundColor: 'rgba(0,229,190,0.12)', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2, borderWidth: 1, borderColor: 'rgba(0,229,190,0.28)' },
+  tagChipMine:    { backgroundColor: 'rgba(6,10,9,0.12)', borderColor: 'rgba(6,10,9,0.18)' },
+  tagChipText:    { color: PC.accent, fontSize: 10, fontWeight: '600' },
+  tagChipAdd:     { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', backgroundColor: 'transparent', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2, borderWidth: 1, borderColor: PC.borderLight },
+  tagChipAddMine: { borderColor: 'rgba(6,10,9,0.2)' },
+  tagChipEmpty:   { color: PC.textSecondary, fontSize: 10 },
+
+  // Tag sheet modal
+  tagSheetOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.55)' },
+  tagSheet: {
+    backgroundColor: PC.bgCard,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    borderWidth: 1, borderBottomWidth: 0, borderColor: PC.border,
+    padding: 24, paddingBottom: 36,
+  },
+  tagSheetHandle:  { width: 36, height: 4, borderRadius: 2, backgroundColor: PC.border, alignSelf: 'center', marginBottom: 20 },
+  tagSheetTitle:   { color: PC.textPrimary, fontSize: 17, fontWeight: '700', marginBottom: 14 },
+  tagInputBox: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: PC.bgInput, borderRadius: 12,
+    borderWidth: 1, borderColor: PC.border,
+    paddingHorizontal: 14, height: 48, marginBottom: 12,
+  },
+  tagInputField:         { flex: 1, color: PC.textPrimary, fontSize: 15 },
+  tagSuggestion:         { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, borderWidth: 1, borderColor: PC.border, backgroundColor: PC.bgCardElevated, marginRight: 8 },
+  tagSuggestionActive:   { borderColor: PC.accent, backgroundColor: PC.accent10 },
+  tagSuggestionText:     { color: PC.textMuted, fontSize: 13 },
+  tagSuggestionTextActive: { color: PC.accent },
+  tagSaveBtn:     { backgroundColor: PC.accent, borderRadius: 12, height: 48, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
+  tagSaveBtnText: { color: '#060A09', fontSize: 14, fontWeight: '700' },
 });
 
 const s2 = StyleSheet.create({

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -23,6 +23,7 @@ import { useBadge } from '@/context/BadgeContext';
 import api from '@/services/api';
 import { getFriends, getPendingRequests } from '@/services/friends';
 import { getAllDirectSettlements, getAllDirectBalances } from '@/services/directSplit';
+import { getContacts } from '@/services/contacts';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -168,16 +169,13 @@ function GroupCard({ group, onPress }) {
   return (
     <TouchableOpacity style={styles.groupCard} activeOpacity={0.75} onPress={onPress}>
       <View style={[styles.groupIconBox, { position: 'relative' }]}>
-        <Ionicons name={groupIcon(group.type)} size={20} color={PC.textSecondary} />
+        <Ionicons name="people-outline" size={20} color={PC.textSecondary} />
         {Math.abs(group.myBalance ?? 0) > 0.01 && <View style={styles.groupBadgeDot} />}
       </View>
 
       <View style={styles.groupInfo}>
         <View style={styles.groupNameRow}>
           <Text style={styles.groupName} numberOfLines={1}>{group.name}</Text>
-          <View style={styles.typeBadge}>
-            <Text style={styles.typeText}>{group.type}</Text>
-          </View>
         </View>
         <View style={styles.groupMeta}>
           <Ionicons name="people-outline" size={13} color={PC.textMuted} />
@@ -206,11 +204,60 @@ function GroupCard({ group, onPress }) {
   );
 }
 
+// ─── Chat Row (WhatsApp-style) ─────────────────────────────────────────────────
+
+function ChatRow({ item, onPress, last }) {
+  const isGroup   = item._type === 'group';
+  const isContact = item._type === 'contact';
+  const balance   = item.balance ?? 0;
+  const settled   = Math.abs(balance) < 0.01;
+  const isPos     = balance > 0;
+
+  return (
+    <>
+      <TouchableOpacity style={styles.chatRow} onPress={onPress} activeOpacity={0.7}>
+        {/* Avatar */}
+        <View style={[styles.chatAvatar, isGroup && styles.chatAvatarGroup, isContact && styles.chatAvatarContact]}>
+          {isGroup
+            ? <Ionicons name="people-outline" size={20} color={PC.accent} />
+            : <Text style={styles.chatAvatarText}>{getInitials(item.name)}</Text>
+          }
+          {!settled && <View style={[styles.chatAvatarDot, { backgroundColor: isPos ? PC.positive : PC.negative }]} />}
+        </View>
+
+        {/* Info */}
+        <View style={styles.chatInfo}>
+          <View style={styles.chatTopRow}>
+            <Text style={styles.chatName} numberOfLines={1}>{item.name}</Text>
+            <Text style={styles.chatTime}>{timeAgo(item.lastActivity)}</Text>
+          </View>
+          <View style={styles.chatBottomRow}>
+            <Text style={styles.chatSub} numberOfLines={1}>
+              {isGroup
+                ? `${item.memberCount} member${item.memberCount !== 1 ? 's' : ''}`
+                : isContact
+                  ? 'Personal contact'
+                  : item.username ? `@${item.username}` : 'Direct split'}
+            </Text>
+            {settled ? (
+              <Text style={styles.chatBalSettled}>Settled</Text>
+            ) : (
+              <Text style={[styles.chatBal, isPos ? styles.amtPos : styles.amtNeg]}>
+                {isPos ? '+' : '−'}₹{Math.abs(balance).toLocaleString('en-IN')}
+              </Text>
+            )}
+          </View>
+        </View>
+      </TouchableOpacity>
+      {!last && <View style={styles.chatDivider} />}
+    </>
+  );
+}
+
 // ─── Add Group Modal ──────────────────────────────────────────────────────────
 
 function AddGroupModal({ visible, onClose, onCreated }) {
   const [name,    setName]    = useState('');
-  const [type,    setType]    = useState('Roommates');
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState('');
 
@@ -222,10 +269,9 @@ function AddGroupModal({ visible, onClose, onCreated }) {
     setLoading(true);
     setError('');
     try {
-      const { data } = await api.post('/api/groups', { name: name.trim(), type });
+      const { data } = await api.post('/api/groups', { name: name.trim() });
       onCreated(data.group);
       setName('');
-      setType('Roommates');
       onClose();
     } catch (err) {
       setError(err.message);
@@ -237,7 +283,6 @@ function AddGroupModal({ visible, onClose, onCreated }) {
   function handleClose() {
     if (loading) return;
     setName('');
-    setType('Roommates');
     setError('');
     onClose();
   }
@@ -272,27 +317,6 @@ function AddGroupModal({ visible, onClose, onCreated }) {
             />
           </View>
 
-          <Text style={styles.modalLabel}>Type</Text>
-          <View style={styles.typeGrid}>
-            {GROUP_TYPES.map((t) => (
-              <TouchableOpacity
-                key={t}
-                style={[styles.typeChip, type === t && styles.typeChipActive]}
-                onPress={() => setType(t)}
-                disabled={loading}>
-                <Ionicons
-                  name={groupIcon(t)}
-                  size={15}
-                  color={type === t ? PC.textPrimary : PC.textMuted}
-                  style={{ marginRight: 5 }}
-                />
-                <Text style={[styles.typeChipText, type === t && styles.typeChipTextActive]}>
-                  {t}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
           <TouchableOpacity
             style={[styles.createBtn, loading && styles.createBtnDisabled]}
             onPress={handleCreate}
@@ -321,8 +345,11 @@ export default function GroupsScreen() {
   const [settlements,        setSettlements]        = useState([]);
   const [friends,            setFriends]            = useState([]);
   const [pendingRequestCount, setPendingRequestCount] = useState(0);
-  const [tab,                setTab]                = useState('friends');
+  const [showSettlements,    setShowSettlements]    = useState(false);
   const [settleFilter,       setSettleFilter]       = useState('not_opened');
+  const [splitFilter,        setSplitFilter]        = useState('all');
+  const [showFilterSheet,    setShowFilterSheet]    = useState(false);
+  const [contacts,           setContacts]           = useState([]);
   const [allDirectSettles,   setAllDirectSettles]   = useState([]);
   const [directBalances,     setDirectBalances]     = useState([]);
   const [groupBalanceMaps,   setGroupBalanceMaps]   = useState([]);
@@ -334,6 +361,9 @@ export default function GroupsScreen() {
   const [error,              setError]              = useState('');
   const [showGroupModal,     setShowGroupModal]     = useState(false);
   const [showActionSheet,    setShowActionSheet]    = useState(false);
+  const [showContactPicker,  setShowContactPicker]  = useState(false);
+  const [pickerContacts,     setPickerContacts]     = useState([]);
+  const [pickerLoading,      setPickerLoading]      = useState(false);
   const [unseenCount,        setUnseenCount]        = useState(0);
 
   // ── Compute unseen direct-split conversations + unseen groups ────────────
@@ -404,7 +434,7 @@ export default function GroupsScreen() {
     }
   }, []);
 
-  // ── Fetch direct settle data (lazy, with settlements tab) ────────────────
+  // ── Fetch direct settle data ──────────────────────────────────────────────
   const fetchDirectData = useCallback(async () => {
     try {
       const [settlesData, balancesData] = await Promise.all([
@@ -413,6 +443,14 @@ export default function GroupsScreen() {
       ]);
       setAllDirectSettles(settlesData.settlements || []);
       setDirectBalances(balancesData.balances || []);
+    } catch { /* non-critical */ }
+  }, []);
+
+  // ── Fetch personal contacts ───────────────────────────────────────────────
+  const fetchContacts = useCallback(async () => {
+    try {
+      const list = await getContacts();
+      setContacts(list || []);
     } catch { /* non-critical */ }
   }, []);
 
@@ -431,24 +469,24 @@ export default function GroupsScreen() {
     }
   }, [computeUnseen]);
 
-  // Initial load — fetch groups, friends, and direct data in parallel
+  // Initial load — fetch groups, friends, direct data, and personal expenses in parallel
   useEffect(() => {
     async function init() {
       setLoading(true);
-      await Promise.all([fetchGroups(), fetchFriends(), fetchDirectData()]);
+      await Promise.all([fetchGroups(), fetchFriends(), fetchDirectData(), fetchContacts()]);
       setLoading(false);
     }
     init();
-  }, [fetchGroups, fetchFriends, fetchDirectData]);
+  }, [fetchGroups, fetchFriends, fetchDirectData, fetchContacts]);
 
-  // Lazy-load settlements when tab switches and not already loaded.
+  // Lazy-load settlements when panel opens and not already loaded.
   useEffect(() => {
-    if (tab !== 'settlements' || settlementsFetched) return;
+    if (!showSettlements || settlementsFetched) return;
     if (groups.length > 0) {
       fetchSettlements(groups);
       setSettlementsFetched(true);
     }
-  }, [tab, groups, settlementsFetched, fetchSettlements]);
+  }, [showSettlements, groups, settlementsFetched, fetchSettlements]);
 
   // Re-compute unseen count when screen gains focus (after returning from a chat or group)
   useFocusEffect(useCallback(() => {
@@ -467,12 +505,26 @@ export default function GroupsScreen() {
     setDirectBalances([]);
     setGroupBalanceMaps([]);
     setSettlementsFetched(false);
-    await Promise.all([fetchGroups(), fetchFriends(), fetchDirectData()]);
+    await Promise.all([fetchGroups(), fetchFriends(), fetchDirectData(), fetchContacts()]);
     setRefreshing(false);
-  }, [fetchGroups, fetchFriends, fetchDirectData]);
+  }, [fetchGroups, fetchFriends, fetchDirectData, fetchContacts]);
 
   function handleGroupCreated(newGroup) {
     setGroups(prev => [{ ...newGroup, myBalance: 0, loadingBalance: false }, ...prev]);
+  }
+
+  async function openContactPicker() {
+    setShowActionSheet(false);
+    setPickerLoading(true);
+    setShowContactPicker(true);
+    try {
+      const list = await getContacts();
+      setPickerContacts(list);
+    } catch {
+      setPickerContacts([]);
+    } finally {
+      setPickerLoading(false);
+    }
   }
 
   // ── Summary totals ───────────────────────────────────────────────────────
@@ -512,6 +564,38 @@ export default function GroupsScreen() {
     return tb - ta;
   });
 
+  // ── Unified chat list: friends + contacts + groups sorted by last activity ─
+  const combinedList = useMemo(() => {
+    const items = [];
+    friends.forEach(f => {
+      const fid = (f._id ?? f.id)?.toString();
+      if (!fid) return;
+      const db = directBalances.find(b => b.friendId === fid);
+      if (!db) return; // only show friends that have at least one direct split
+      items.push({ _type: 'friend', _id: fid, name: f.name, username: f.username, balance: db?.balance ?? 0, lastActivity: f.lastActivity });
+    });
+    contacts.forEach(c => {
+      const cid = c._id?.toString();
+      if (!cid) return;
+      const db = directBalances.find(b => b.friendId === cid);
+      if (!db) return; // only show contacts that have had at least one split
+      items.push({ _type: 'contact', _id: cid, name: c.name, balance: db.balance ?? 0, lastActivity: c.updatedAt || c.createdAt });
+    });
+    groups.forEach(g => {
+      items.push({ _type: 'group', _id: g._id, name: g.name, type: g.type, memberCount: g.members?.length ?? 0, balance: g.myBalance ?? 0, lastActivity: g.updatedAt || g.createdAt });
+    });
+    return items.sort((a, b) => new Date(b.lastActivity || 0) - new Date(a.lastActivity || 0));
+  }, [friends, contacts, groups, directBalances]);
+
+  // ── Filtered chat list ────────────────────────────────────────────────────
+  const filteredList = useMemo(() => {
+    if (splitFilter === 'all') return combinedList;
+    if (splitFilter === 'group')   return combinedList.filter(i => i._type === 'group');
+    if (splitFilter === 'friend')  return combinedList.filter(i => i._type === 'friend');
+    if (splitFilter === 'contact') return combinedList.filter(i => i._type === 'contact');
+    return combinedList;
+  }, [combinedList, splitFilter]);
+
   // ── Settlement display helpers ───────────────────────────────────────────
   function settlementFromLabel(s) {
     const fromId = s.fromUserId?._id ?? s.fromUserId?.id ?? s.fromUserId;
@@ -529,13 +613,22 @@ export default function GroupsScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* ── Header ── */}
       <View style={styles.header}>
-        <Text style={styles.title}>Split</Text>
-        <TouchableOpacity style={styles.addBtn} onPress={() => setShowActionSheet(true)}>
-          <Ionicons name="add" size={22} color={PC.accent} />
-        </TouchableOpacity>
+        <Text style={styles.title}>Splits</Text>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={[styles.headerBtn, { position: 'relative' }]}
+            onPress={() => setShowSettlements(true)}
+            activeOpacity={0.75}>
+            <Text style={styles.headerBtnText}>Settlements</Text>
+            {openSettles.length > 0 && <View style={styles.headerBtnDot} />}
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.addBtn} onPress={() => setShowActionSheet(true)}>
+            <Ionicons name="add" size={22} color={PC.accent} />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* ── Summary Pills ── */}
+      {/* ── Balance Summary ── */}
       <View style={styles.summaryRow}>
         <View style={styles.summaryPill}>
           <Text style={styles.summaryVal}>₹{owedToYouTotal.toLocaleString('en-IN')}</Text>
@@ -550,34 +643,8 @@ export default function GroupsScreen() {
         </View>
       </View>
 
-      {/* ── Toggle ── */}
-      <View style={styles.toggleRow}>
-        <TouchableOpacity
-          style={[styles.toggleBtn, tab === 'friends' && styles.toggleActive]}
-          onPress={() => setTab('friends')}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Text style={[styles.toggleText, tab === 'friends' && styles.toggleTextActive]}>Friends</Text>
-            {pendingRequestCount > 0 && (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>{pendingRequestCount}</Text>
-              </View>
-            )}
-          </View>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.toggleBtn, tab === 'groups' && styles.toggleActive]}
-          onPress={() => setTab('groups')}>
-          <Text style={[styles.toggleText, tab === 'groups' && styles.toggleTextActive]}>Groups</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.toggleBtn, tab === 'settlements' && styles.toggleActive, { position: 'relative' }]}
-          onPress={() => setTab('settlements')}>
-          <Text style={[styles.toggleText, tab === 'settlements' && styles.toggleTextActive]}>Settlements</Text>
-          {openSettles.length > 0 && <View style={styles.settleDot} />}
-        </TouchableOpacity>
-      </View>
 
-      {/* ── Content ── */}
+      {/* ── Chat List ── */}
       {loading ? (
         <View style={styles.centered}>
           <ActivityIndicator color={PC.textPrimary} />
@@ -586,195 +653,137 @@ export default function GroupsScreen() {
         <View style={styles.centered}>
           <Ionicons name="cloud-offline-outline" size={36} color={PC.textMuted} />
           <Text style={styles.errorMsg}>{error}</Text>
-          <TouchableOpacity
-            style={styles.retryBtn}
+          <TouchableOpacity style={styles.retryBtn}
             onPress={() => { setLoading(true); fetchGroups().finally(() => setLoading(false)); }}>
             <Text style={styles.retryText}>Retry</Text>
           </TouchableOpacity>
         </View>
+      ) : filteredList.length === 0 ? (
+        <View style={styles.centered}>
+          <Ionicons name="people-outline" size={40} color={PC.textMuted} />
+          <Text style={styles.emptyTitle}>{splitFilter === 'all' ? 'No splits yet' : 'Nothing here'}</Text>
+          <Text style={styles.emptyText}>{splitFilter === 'all' ? 'Add a friend or create a group to get started' : 'No items match the selected filter'}</Text>
+        </View>
       ) : (
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={{ paddingBottom: 80 }}
           showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={PC.textPrimary} />
-          }>
-          {tab === 'groups' && (
-            groups.length === 0 ? (
-              <View style={styles.emptyState}>
-                <View style={styles.emptyIcon}>
-                  <Ionicons name="people-outline" size={28} color={PC.textMuted} />
-                </View>
-                <Text style={styles.emptyTitle}>No groups yet</Text>
-                <Text style={styles.emptyText}>Tap + to create your first group</Text>
-              </View>
-            ) : (
-              groups.map((g) => (
-                <GroupCard
-                  key={g._id}
-                  group={g}
-                  onPress={() => router.push(`/groups/${g._id}`)}
-                />
-              ))
-            )
-          )}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={PC.textPrimary} />}>
+          <View style={styles.chatList}>
+            {filteredList.map((item, i) => (
+              <ChatRow
+                key={`${item._type}-${item._id}`}
+                item={item}
+                last={i === filteredList.length - 1}
+                onPress={() => router.push(item._type === 'friend' || item._type === 'contact' ? `/direct/${item._id}` : `/groups/${item._id}`)}
+              />
+            ))}
+          </View>
+        </ScrollView>
+      )}
 
-          {tab === 'friends' && (
-            friendsLoading ? (
+      {/* ── Filter FAB ── */}
+      <TouchableOpacity
+        style={[styles.fab, splitFilter !== 'all' && styles.fabActive]}
+        onPress={() => setShowFilterSheet(true)}
+        activeOpacity={0.85}
+      >
+        <Ionicons name="options-outline" size={22} color="#fff" />
+      </TouchableOpacity>
+
+      {/* ── Settlements Modal ── */}
+      <Modal visible={showSettlements} animationType="slide" onRequestClose={() => setShowSettlements(false)}>
+        <SafeAreaView style={styles.safe} edges={['top']}>
+          <View style={styles.settleModalHeader}>
+            <TouchableOpacity onPress={() => setShowSettlements(false)} style={styles.settleBackBtn}>
+              <Ionicons name="chevron-back" size={22} color={PC.textPrimary} />
+            </TouchableOpacity>
+            <Text style={styles.settleModalTitle}>Settlements</Text>
+            <View style={{ width: 38 }} />
+          </View>
+
+          <View style={styles.settleFilterRow}>
+            {[{ key: 'not_opened', label: 'Settle' }, { key: 'open', label: 'Open' }, { key: 'closed', label: 'Closed' }]
+              .map(({ key, label }) => (
+                <TouchableOpacity key={key}
+                  style={[styles.settleFilterBtn, settleFilter === key && styles.settleFilterActive]}
+                  onPress={() => setSettleFilter(key)}>
+                  <Text style={[styles.settleFilterText, settleFilter === key && styles.settleFilterTextActive]}>{label}</Text>
+                </TouchableOpacity>
+              ))}
+          </View>
+
+          <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+            {loadingSettlements ? (
               <View style={styles.centered}>
                 <ActivityIndicator color={PC.textPrimary} />
               </View>
-            ) : friends.length === 0 ? (
-              <View style={styles.emptyState}>
-                <View style={styles.emptyIcon}>
-                  <Ionicons name="person-outline" size={28} color={PC.textMuted} />
+            ) : settleFilter === 'not_opened' ? (
+              [...notOpenedDirect, ...notOpenedGroup].length === 0 ? (
+                <View style={styles.emptyState}>
+                  <View style={styles.emptyIcon}><Ionicons name="checkmark-circle-outline" size={28} color={PC.textMuted} /></View>
+                  <Text style={styles.emptyTitle}>No outstanding balances</Text>
+                  <Text style={styles.emptyText}>All balances are settled or have open requests</Text>
                 </View>
-                <Text style={styles.emptyTitle}>No friends yet</Text>
-                <Text style={styles.emptyText}>Go to Profile → Friends to add people</Text>
-              </View>
-            ) : (
-              [...friends].sort((a, b) =>
-                new Date(b.lastActivity || 0) - new Date(a.lastActivity || 0)
-              ).map((f) => {
-                const fid = (f._id ?? f.id)?.toString();
-                if (!fid) return null;
-                const db = directBalances.find(b => b.friendId === fid);
-                return (
-                  <FriendCard
-                    key={fid}
-                    friend={f}
-                    directBalance={db}
-                    onPress={() => router.push(`/direct/${fid}`)}
-                  />
-                );
-              })
-            )
-          )}
-
-          {tab === 'settlements' && (
-            <>
-              {/* Sub-filter bar */}
-              <View style={styles.settleFilterRow}>
-                {[
-                  { key: 'not_opened', label: 'Settle' },
-                  { key: 'open',       label: 'Open' },
-                  { key: 'closed',     label: 'Closed' },
-                ].map(({ key, label }) => (
-                  <TouchableOpacity
-                    key={key}
-                    style={[styles.settleFilterBtn, settleFilter === key && styles.settleFilterActive]}
-                    onPress={() => setSettleFilter(key)}>
-                    <Text style={[styles.settleFilterText, settleFilter === key && styles.settleFilterTextActive]}>
-                      {label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              {loadingSettlements ? (
-                <View style={styles.centered}>
-                  <ActivityIndicator color={PC.textPrimary} />
-                </View>
-              ) : settleFilter === 'not_opened' ? (
-                /* Not Opened: outstanding balances (direct + group) */
-                [...notOpenedDirect, ...notOpenedGroup].length === 0 ? (
-                  <View style={styles.emptyState}>
-                    <View style={styles.emptyIcon}>
-                      <Ionicons name="checkmark-circle-outline" size={28} color={PC.textMuted} />
-                    </View>
-                    <Text style={styles.emptyTitle}>No outstanding balances</Text>
-                    <Text style={styles.emptyText}>All balances are settled or have open requests</Text>
-                  </View>
-                ) : (
-                  <View style={styles.settleListCard}>
-                    {[...notOpenedDirect, ...notOpenedGroup].map((item, i, arr) => {
-                      const key = item.friendId ?? `${item._groupId}-${i}`;
-                      const onPress = () => item._groupId
-                        ? router.push(`/groups/${item._groupId}`)
-                        : router.push(`/direct/${item.friendId}`);
-                      return (
-                        <SettleRow
-                          key={key}
-                          item={item}
-                          myId={user?._id}
-                          onPress={onPress}
-                          last={i === arr.length - 1}
-                        />
-                      );
-                    })}
-                  </View>
-                )
-              ) : settleFilter === 'open' ? (
-                /* Open: pending settle requests */
-                openSettles.length === 0 ? (
-                  <View style={styles.emptyState}>
-                    <View style={styles.emptyIcon}>
-                      <Ionicons name="time-outline" size={28} color={PC.textMuted} />
-                    </View>
-                    <Text style={styles.emptyTitle}>No pending requests</Text>
-                    <Text style={styles.emptyText}>No settle requests awaiting confirmation</Text>
-                  </View>
-                ) : (
-                  <View style={styles.settleListCard}>
-                    {openSettles.map((item, i) => {
-                      const fromStr  = item.fromUserId?._id?.toString() ?? item.fromUserId?.toString();
-                      const friendId = fromStr === meIdStr
-                        ? (item.toUserId?._id?.toString() ?? item.toUserId?.toString())
-                        : fromStr;
-                      return (
-                        <SettleRow
-                          key={item._id}
-                          item={item}
-                          myId={user?._id}
-                          onPress={friendId ? () => router.push(`/direct/${friendId}`) : undefined}
-                          last={i === openSettles.length - 1}
-                        />
-                      );
-                    })}
-                  </View>
-                )
               ) : (
-                /* Closed: confirmed direct + group settlements */
-                closedItems.length === 0 ? (
-                  <View style={styles.emptyState}>
-                    <View style={styles.emptyIcon}>
-                      <Ionicons name="swap-horizontal-outline" size={28} color={PC.textMuted} />
-                    </View>
-                    <Text style={styles.emptyTitle}>No settlements yet</Text>
-                    <Text style={styles.emptyText}>Settle up to see history here</Text>
-                  </View>
-                ) : (
-                  closedItems.map((s) => (
-                    <View key={s._id} style={styles.settlementCard}>
-                      <View style={styles.settlementLeft}>
-                        {s._isDirectSettle ? (
-                          <Text style={styles.settlementParties}>
-                            <Text style={{ color: PC.textPrimary }}>{s.notes}</Text>
-                          </Text>
-                        ) : (
-                          <Text style={styles.settlementParties}>
-                            <Text style={{ color: PC.textPrimary }}>{settlementFromLabel(s)}</Text>
-                            <Text style={{ color: PC.textSecondary }}> → </Text>
-                            <Text style={{ color: PC.textPrimary }}>{settlementToLabel(s)}</Text>
-                          </Text>
-                        )}
-                        <Text style={styles.settlementGroup}>
-                          {s._isDirectSettle ? 'Direct' : s.groupName}
+                <View style={styles.settleListCard}>
+                  {[...notOpenedDirect, ...notOpenedGroup].map((item, i, arr) => {
+                    const key = item.friendId ?? `${item._groupId}-${i}`;
+                    const onPress = () => { setShowSettlements(false); item._groupId ? router.push(`/groups/${item._groupId}`) : router.push(`/direct/${item.friendId}`); };
+                    return <SettleRow key={key} item={item} myId={user?._id} onPress={onPress} last={i === arr.length - 1} />;
+                  })}
+                </View>
+              )
+            ) : settleFilter === 'open' ? (
+              openSettles.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <View style={styles.emptyIcon}><Ionicons name="time-outline" size={28} color={PC.textMuted} /></View>
+                  <Text style={styles.emptyTitle}>No pending requests</Text>
+                  <Text style={styles.emptyText}>No settle requests awaiting confirmation</Text>
+                </View>
+              ) : (
+                <View style={styles.settleListCard}>
+                  {openSettles.map((item, i) => {
+                    const fromStr  = item.fromUserId?._id?.toString() ?? item.fromUserId?.toString();
+                    const friendId = fromStr === meIdStr ? (item.toUserId?._id?.toString() ?? item.toUserId?.toString()) : fromStr;
+                    return <SettleRow key={item._id} item={item} myId={user?._id} onPress={friendId ? () => { setShowSettlements(false); router.push(`/direct/${friendId}`); } : undefined} last={i === openSettles.length - 1} />;
+                  })}
+                </View>
+              )
+            ) : (
+              closedItems.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <View style={styles.emptyIcon}><Ionicons name="swap-horizontal-outline" size={28} color={PC.textMuted} /></View>
+                  <Text style={styles.emptyTitle}>No settlements yet</Text>
+                  <Text style={styles.emptyText}>Settle up to see history here</Text>
+                </View>
+              ) : (
+                closedItems.map((s) => (
+                  <View key={s._id} style={styles.settlementCard}>
+                    <View style={styles.settlementLeft}>
+                      {s._isDirectSettle ? (
+                        <Text style={styles.settlementParties}><Text style={{ color: PC.textPrimary }}>{s.notes}</Text></Text>
+                      ) : (
+                        <Text style={styles.settlementParties}>
+                          <Text style={{ color: PC.textPrimary }}>{settlementFromLabel(s)}</Text>
+                          <Text style={{ color: PC.textSecondary }}> → </Text>
+                          <Text style={{ color: PC.textPrimary }}>{settlementToLabel(s)}</Text>
                         </Text>
-                      </View>
-                      <View style={styles.settlementRight}>
-                        <Text style={styles.settlementAmount}>₹{(s.amount ?? 0).toLocaleString('en-IN')}</Text>
-                        <Text style={styles.settlementDate}>{formatDate(s.date)}</Text>
-                      </View>
+                      )}
+                      <Text style={styles.settlementGroup}>{s._isDirectSettle ? 'Direct' : s.groupName}</Text>
                     </View>
-                  ))
-                )
-              )}
-            </>
-          )}
-        </ScrollView>
-      )}
+                    <View style={styles.settlementRight}>
+                      <Text style={styles.settlementAmount}>₹{(s.amount ?? 0).toLocaleString('en-IN')}</Text>
+                      <Text style={styles.settlementDate}>{formatDate(s.date)}</Text>
+                    </View>
+                  </View>
+                ))
+              )
+            )}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
 
       {/* ── Action Sheet Modal ── */}
       <Modal
@@ -819,9 +828,90 @@ export default function GroupsScreen() {
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={PC.textMuted} />
               </TouchableOpacity>
+
+              <View style={styles.actionDivider} />
+
+              <TouchableOpacity
+                style={styles.actionRow}
+                activeOpacity={0.75}
+                onPress={openContactPicker}>
+                <View style={[styles.actionIconBox, { borderColor: PC.accent20, backgroundColor: PC.accent10 }]}>
+                  <Ionicons name="person-add-outline" size={22} color={PC.accent} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.actionTitle}>Split with Personal Contact</Text>
+                  <Text style={styles.actionSub}>Someone not on PayCircle</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={PC.textMuted} />
+              </TouchableOpacity>
             </View>
           </TouchableOpacity>
         </TouchableOpacity>
+      </Modal>
+
+      {/* ── Contact Picker Modal ── */}
+      <Modal
+        visible={showContactPicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowContactPicker(false)}>
+        <View style={styles.actionOverlay}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setShowContactPicker(false)} />
+          <View style={[styles.actionSheet, { paddingBottom: 36 }]}>
+            <View style={styles.actionHandle} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+              <Text style={[styles.modalTitle, { marginBottom: 0, flex: 1 }]}>Personal Contacts</Text>
+              <TouchableOpacity
+                onPress={() => { setShowContactPicker(false); router.push('/contacts'); }}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Ionicons name="settings-outline" size={15} color={PC.accent} />
+                <Text style={{ color: PC.accent, fontSize: 13 }}>Manage</Text>
+              </TouchableOpacity>
+            </View>
+
+            {pickerLoading ? (
+              <ActivityIndicator color={PC.textPrimary} style={{ marginVertical: 32 }} />
+            ) : pickerContacts.length === 0 ? (
+              <View style={{ alignItems: 'center', paddingVertical: 28 }}>
+                <Ionicons name="person-add-outline" size={36} color={PC.textMuted} style={{ marginBottom: 12 }} />
+                <Text style={[styles.emptyTitle, { fontSize: 15 }]}>No personal contacts yet</Text>
+                <Text style={[styles.emptyText, { textAlign: 'center', marginBottom: 20 }]}>
+                  Add someone by name to split expenses without a PayCircle account.
+                </Text>
+                <TouchableOpacity
+                  style={[styles.createBtn, { paddingHorizontal: 20, width: 'auto', height: 44 }]}
+                  onPress={() => { setShowContactPicker(false); router.push('/contacts'); }}
+                  activeOpacity={0.85}>
+                  <Text style={styles.createBtnText}>Add New Contact</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+                {pickerContacts.map((c, i) => (
+                  <View key={c._id}>
+                    <TouchableOpacity
+                      style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 12 }}
+                      activeOpacity={0.75}
+                      onPress={() => { setShowContactPicker(false); router.push(`/direct/${c._id}`); }}>
+                      <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: PC.accent10, borderWidth: 1.5, borderColor: PC.accent20, alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ color: PC.accent, fontSize: 14, fontWeight: '700' }}>
+                          {getInitials(c.name)}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: PC.textPrimary, fontSize: 14, fontWeight: '600' }}>{c.name}</Text>
+                        <Text style={{ color: PC.textMuted, fontSize: 11, marginTop: 1 }}>Personal Contact</Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={16} color={PC.textMuted} />
+                    </TouchableOpacity>
+                    {i < pickerContacts.length - 1 && <View style={{ height: 1, backgroundColor: PC.border }} />}
+                  </View>
+                ))}
+                <View style={{ height: 8 }} />
+              </ScrollView>
+            )}
+          </View>
+        </View>
       </Modal>
 
       <AddGroupModal
@@ -829,6 +919,32 @@ export default function GroupsScreen() {
         onClose={() => setShowGroupModal(false)}
         onCreated={handleGroupCreated}
       />
+
+      {/* ── Filter Sheet Modal ── */}
+      <Modal visible={showFilterSheet} transparent animationType="slide" onRequestClose={() => setShowFilterSheet(false)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowFilterSheet(false)} />
+        <View style={styles.pickerSheet}>
+          <Text style={styles.pickerTitle}>Show</Text>
+          {[
+            { key: 'all',     label: 'All',              icon: 'apps-outline' },
+            { key: 'group',   label: 'Groups',            icon: 'people-outline' },
+            { key: 'friend',  label: 'Direct Splits',     icon: 'person-outline' },
+            { key: 'contact', label: 'Personal Contacts', icon: 'person-add-outline' },
+          ].map(opt => (
+            <TouchableOpacity
+              key={opt.key}
+              style={[styles.pickerRow, splitFilter === opt.key && styles.pickerRowActive]}
+              onPress={() => { setSplitFilter(opt.key); setShowFilterSheet(false); }}
+            >
+              <Ionicons name={opt.icon} size={20} color={splitFilter === opt.key ? PC.accent : PC.textMuted} />
+              <Text style={[styles.pickerName, splitFilter === opt.key && { color: PC.accent }]}>{opt.label}</Text>
+              {splitFilter === opt.key && (
+                <Ionicons name="checkmark" size={18} color={PC.accent} style={{ marginLeft: 'auto' }} />
+              )}
+            </TouchableOpacity>
+          ))}
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1103,4 +1219,82 @@ const styles = StyleSheet.create({
   actionTitle:   { color: PC.textPrimary, fontSize: 15, fontWeight: '600', marginBottom: 2 },
   actionSub:     { color: PC.textSecondary, fontSize: 12 },
   actionDivider: { height: 1, backgroundColor: PC.border, marginVertical: 4 },
+
+  // Header action buttons
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10,
+    borderWidth: 1, borderColor: PC.border, backgroundColor: PC.bgCard,
+  },
+  headerBtnText: { color: PC.textSecondary, fontSize: 13, fontWeight: '500' },
+  headerBtnDot: {
+    position: 'absolute', top: -3, right: -3,
+    width: 7, height: 7, borderRadius: 3.5,
+    backgroundColor: PC.negative, borderWidth: 1.5, borderColor: PC.bg,
+  },
+
+  // Settlements modal header
+  settleModalHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12,
+  },
+  settleBackBtn: {
+    width: 38, height: 38, borderRadius: 12, backgroundColor: PC.bgCard,
+    borderWidth: 1, borderColor: PC.border, alignItems: 'center', justifyContent: 'center',
+  },
+  settleModalTitle: { color: PC.textPrimary, fontSize: 18, fontWeight: '700' },
+
+  // Chat list
+  chatList: { backgroundColor: PC.bgCard, marginHorizontal: 0 },
+  chatRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12, gap: 14 },
+  chatAvatar: {
+    width: 48, height: 48, borderRadius: 24,
+    backgroundColor: PC.bgCardElevated, borderWidth: 1.5, borderColor: PC.border,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  chatAvatarGroup:   { borderColor: PC.accent + '60', backgroundColor: PC.accent10 },
+  chatAvatarContact: { borderColor: PC.border, backgroundColor: PC.bgCardElevated },
+  chatAvatarText: { color: PC.textPrimary, fontSize: 16, fontWeight: '700' },
+  chatAvatarDot: {
+    position: 'absolute', bottom: 1, right: 1,
+    width: 11, height: 11, borderRadius: 6, borderWidth: 2, borderColor: PC.bg,
+  },
+  chatInfo:      { flex: 1 },
+  chatTopRow:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  chatName:      { color: PC.textPrimary, fontSize: 15, fontWeight: '600', flex: 1, marginRight: 8 },
+  chatTime:      { color: PC.textMuted, fontSize: 11, flexShrink: 0 },
+  chatBottomRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  chatSub:       { color: PC.textSecondary, fontSize: 13, flex: 1, marginRight: 8 },
+  chatBal:       { fontSize: 13, fontWeight: '600', flexShrink: 0 },
+  chatBalSettled:{ color: PC.textMuted, fontSize: 12, flexShrink: 0 },
+  chatDivider:   { height: 1, backgroundColor: PC.border, marginLeft: 82 },
+
+  // FAB
+  fab: {
+    position: 'absolute',
+    bottom: 24,
+    right: 20,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: PC.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+  },
+  fabActive: { borderWidth: 2, borderColor: '#fff' },
+
+  // Filter sheet
+  modalOverlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
+  pickerSheet:     { backgroundColor: PC.bgCard, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 36 },
+  pickerTitle:     { color: PC.textPrimary, fontSize: 17, fontWeight: '700', marginBottom: 12 },
+  pickerRow:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 14, borderRadius: 10, paddingHorizontal: 8, marginBottom: 2 },
+  pickerRowActive: { backgroundColor: PC.accent10 ?? (PC.accent + '14') },
+  pickerName:      { color: PC.textPrimary, fontSize: 15, fontWeight: '500', flex: 1 },
+
 });

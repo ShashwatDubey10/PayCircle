@@ -182,4 +182,55 @@ const getDashboard = asyncHandler(async (req, res) => {
   });
 });
 
-module.exports = { getDashboard };
+// GET /api/users/me/spending-history — last 6 months combined spend + income
+const getSpendingHistory = asyncHandler(async (req, res) => {
+  const userId = req.user._id;
+  const now    = new Date();
+
+  // Build month windows for last 6 months
+  const windows = Array.from({ length: 6 }, (_, i) => {
+    const d     = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
+    const start = new Date(d.getFullYear(), d.getMonth(), 1);
+    const end   = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59);
+    const key   = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    return { key, start, end };
+  });
+
+  const groups   = await Group.find({ members: userId });
+  const groupIds = groups.map(g => g._id);
+
+  const results = await Promise.all(windows.map(async ({ key, start, end }) => {
+    const [groupExps, personalExps, personalIncs, directSplits] = await Promise.all([
+      Expense.find({ groupId: { $in: groupIds }, date: { $gte: start, $lte: end } }),
+      PersonalTransaction.find({ userId, type: 'expense', date: { $gte: start, $lte: end } }),
+      PersonalTransaction.find({ userId, type: 'income',  date: { $gte: start, $lte: end } }),
+      DirectSplit.find({ $or: [{ payerId: userId }, { otherUserId: userId }], date: { $gte: start, $lte: end } }),
+    ]);
+
+    let groupSpend = 0;
+    for (const exp of groupExps) {
+      const split = exp.splits.find(s => s.userId.toString() === userId.toString());
+      if (split) groupSpend += split.amount;
+    }
+
+    const personalSpend  = personalExps.reduce((s, t) => s + t.amount, 0);
+    const personalIncome = personalIncs.reduce((s, t) => s + t.amount, 0);
+
+    let directSpend = 0;
+    for (const sp of directSplits) {
+      const isPayer = sp.payerId.toString() === userId.toString();
+      const myShare = isPayer ? (sp.payerShare ?? sp.amount / 2) : sp.amount - (sp.payerShare ?? sp.amount / 2);
+      directSpend += myShare;
+    }
+
+    return {
+      month:   key,
+      expense: parseFloat((groupSpend + personalSpend + directSpend).toFixed(2)),
+      income:  parseFloat(personalIncome.toFixed(2)),
+    };
+  }));
+
+  res.json({ success: true, data: results });
+});
+
+module.exports = { getDashboard, getSpendingHistory };

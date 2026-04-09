@@ -52,7 +52,8 @@ const SETTINGS = [
   {
     group: 'Account',
     items: [
-      { id: 'friends',        label: 'Friends',            icon: 'people-outline' },
+      { id: 'friends',   label: 'Friends',            icon: 'people-outline' },
+      { id: 'contacts',  label: 'Personal Contacts',  icon: 'person-add-outline' },
       { id: 'notifications',  label: 'Notifications',      icon: 'notifications-outline' },
       { id: 'privacy',        label: 'Privacy & Security', icon: 'shield-outline' },
     ],
@@ -289,6 +290,9 @@ export default function ProfileScreen() {
     switch (id) {
       case 'friends':
         router.push('/friends');
+        break;
+      case 'contacts':
+        router.push('/contacts');
         break;
       case 'notifications':
         Alert.alert(

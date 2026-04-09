@@ -29,7 +29,10 @@ import { PC } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
 import { getFriends } from '@/services/friends';
+import { getContacts } from '@/services/contacts';
 import UpiQrModal from '@/components/UpiQrModal';
+import { upsertSplitTag, getSplitTags } from '@/services/splitTag';
+import EditSplitSheet, { CAT_ICON_MAP } from '@/components/EditSplitSheet';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -330,9 +333,11 @@ function CustomSplitModal({ visible, onClose, members, payerId, totalAmount, onC
   useEffect(() => {
     if (!visible) return;
     if (!members.length || !totalAmount) return;
-    const equal = (totalAmount / members.length).toFixed(2);
+    const base = parseFloat((totalAmount / members.length).toFixed(2));
+    const distributed = parseFloat((base * (members.length - 1)).toFixed(2));
+    const last = parseFloat((totalAmount - distributed).toFixed(2));
     const init = {};
-    members.forEach(m => { init[m.id] = equal; });
+    members.forEach((m, i) => { init[m.id] = String(i === members.length - 1 ? last : base); });
     setAmounts(init);
     setLockedIds(new Set());
   }, [visible]);
@@ -352,8 +357,10 @@ function CustomSplitModal({ visible, onClose, members, payerId, totalAmount, onC
     const unlocked = members.filter(m => !newLocked.has(m.id));
 
     if (unlocked.length > 0) {
-      const each = (remaining / unlocked.length).toFixed(2);
-      unlocked.forEach(m => { newAmounts[m.id] = each; });
+      const base = parseFloat((remaining / unlocked.length).toFixed(2));
+      const distributed = parseFloat((base * (unlocked.length - 1)).toFixed(2));
+      const last = parseFloat((remaining - distributed).toFixed(2));
+      unlocked.forEach((m, i) => { newAmounts[m.id] = String(i === unlocked.length - 1 ? last : base); });
     }
 
     setAmounts(newAmounts);
@@ -362,11 +369,20 @@ function CustomSplitModal({ visible, onClose, members, payerId, totalAmount, onC
 
   function resetEqual() {
     if (!members.length || !totalAmount) return;
-    const equal = (totalAmount / members.length).toFixed(2);
+    const base = parseFloat((totalAmount / members.length).toFixed(2));
+    const distributed = parseFloat((base * (members.length - 1)).toFixed(2));
+    const last = parseFloat((totalAmount - distributed).toFixed(2));
     const init = {};
-    members.forEach(m => { init[m.id] = equal; });
+    members.forEach((m, i) => { init[m.id] = String(i === members.length - 1 ? last : base); });
     setAmounts(init);
     setLockedIds(new Set());
+  }
+
+  function handleAssignAll(memberId) {
+    const newAmounts = {};
+    members.forEach(m => { newAmounts[m.id] = m.id === memberId ? String(totalAmount) : '0'; });
+    setAmounts(newAmounts);
+    setLockedIds(new Set(members.map(m => m.id)));
   }
 
   const totalEntered = members.reduce((sum, m) => sum + (parseFloat(amounts[m.id]) || 0), 0);
@@ -391,7 +407,21 @@ function CustomSplitModal({ visible, onClose, members, payerId, totalAmount, onC
         <ScrollView style={styles.modalSheet} bounces={false} keyboardShouldPersistTaps="handled">
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Custom Split</Text>
-          <Text style={[styles.modalLabel, { marginBottom: 16 }]}>Total: ₹{totalAmount.toFixed(2)}</Text>
+          <Text style={[styles.modalLabel, { marginBottom: 10 }]}>Total: ₹{totalAmount.toFixed(2)}</Text>
+
+          <Text style={[styles.modalLabel, { marginBottom: 8 }]}>Assign all to →</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+            <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 2 }}>
+              {members.map(m => (
+                <TouchableOpacity
+                  key={m.id}
+                  style={styles.assignAllChip}
+                  onPress={() => handleAssignAll(m.id)}>
+                  <Text style={styles.assignAllChipText}>{m.name.split(' ')[0]}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
 
           {members.map(m => {
             const isPayer = m.id === payerId;
@@ -454,30 +484,35 @@ function CustomSplitModal({ visible, onClose, members, payerId, totalAmount, onC
 
 function AddMemberModal({ visible, onClose, groupId, existingMemberIds, onAdded }) {
   const [friends,     setFriends]     = useState([]);
+  const [contacts,    setContacts]    = useState([]);
   const [loadingList, setLoadingList] = useState(false);
   const [addingId,    setAddingId]    = useState(null);
   const [error,       setError]       = useState('');
+  const [tab,         setTab]         = useState('friends'); // 'friends' | 'contacts'
 
   useEffect(() => {
     if (!visible) return;
     let cancelled = false;
     setError('');
     setLoadingList(true);
-    getFriends()
-      .then(frs => {
-        if (!cancelled)
-          setFriends((frs || []).filter(f => !existingMemberIds.includes(f.id)));
+    setTab('friends');
+    Promise.all([getFriends(), getContacts()])
+      .then(([frs, cts]) => {
+        if (!cancelled) {
+          setFriends((frs || []).filter(f => !existingMemberIds.includes((f._id ?? f.id)?.toString())));
+          setContacts((cts || []).filter(c => !existingMemberIds.includes(c._id?.toString())));
+        }
       })
-      .catch(() => { if (!cancelled) setError('Could not load friends list.'); })
+      .catch(() => { if (!cancelled) setError('Could not load member options.'); })
       .finally(() => { if (!cancelled) setLoadingList(false); });
     return () => { cancelled = true; };
   }, [visible, existingMemberIds]);
 
-  async function handleAdd(friend) {
-    setAddingId(friend.id);
+  async function handleAdd(userId, isContact) {
+    setAddingId(userId);
     setError('');
     try {
-      const { data } = await api.post(`/api/groups/${groupId}/members`, { userId: friend.id });
+      const { data } = await api.post(`/api/groups/${groupId}/members`, { userId });
       onAdded(data.member);
       onClose();
     } catch (err) {
@@ -493,11 +528,13 @@ function AddMemberModal({ visible, onClose, groupId, existingMemberIds, onAdded 
     onClose();
   }
 
+  const hasAny = friends.length > 0 || contacts.length > 0;
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <View style={styles.modalOverlay}>
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
-        <View style={[styles.modalSheet, { maxHeight: '70%' }]}>
+        <View style={[styles.modalSheet, { maxHeight: '75%' }]}>
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Add Member</Text>
 
@@ -508,41 +545,78 @@ function AddMemberModal({ visible, onClose, groupId, existingMemberIds, onAdded 
             </View>
           ) : null}
 
+          {/* Tab toggle */}
+          {!loadingList && hasAny && (
+            <View style={{ flexDirection: 'row', backgroundColor: PC.bgCardElevated, borderRadius: 10, padding: 3, marginBottom: 14 }}>
+              {[
+                { key: 'friends',  label: 'Friends' },
+                { key: 'contacts', label: 'Personal Contacts' },
+              ].map(t => (
+                <TouchableOpacity
+                  key={t.key}
+                  style={[{ flex: 1, paddingVertical: 7, borderRadius: 8, alignItems: 'center' }, tab === t.key && { backgroundColor: PC.bgCard, borderWidth: 1, borderColor: PC.border }]}
+                  onPress={() => setTab(t.key)}>
+                  <Text style={{ fontSize: 13, fontWeight: tab === t.key ? '600' : '400', color: tab === t.key ? PC.textPrimary : PC.textMuted }}>
+                    {t.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
           {loadingList ? (
             <ActivityIndicator color={PC.textMuted} style={{ marginVertical: 24 }} />
-          ) : friends.length === 0 ? (
+          ) : tab === 'friends' && friends.length === 0 ? (
             <View style={{ alignItems: 'center', paddingVertical: 28 }}>
               <Ionicons name="people-outline" size={32} color={PC.textMuted} style={{ marginBottom: 10 }} />
               <Text style={[styles.splitNote, { textAlign: 'center' }]}>
                 No friends available to add.{'\n'}Add friends first from your Profile.
               </Text>
             </View>
+          ) : tab === 'contacts' && contacts.length === 0 ? (
+            <View style={{ alignItems: 'center', paddingVertical: 28 }}>
+              <Ionicons name="person-add-outline" size={32} color={PC.textMuted} style={{ marginBottom: 10 }} />
+              <Text style={[styles.splitNote, { textAlign: 'center' }]}>
+                No personal contacts yet.{'\n'}Add them from Profile → Personal Contacts.
+              </Text>
+            </View>
           ) : (
             <ScrollView showsVerticalScrollIndicator={false}>
-              {friends.map((f, i) => (
-                <View key={f.id}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 12 }}>
-                    <View style={styles.memberAvatar}>
-                      <Text style={styles.memberInitials}>{initials(f.name)}</Text>
+              {(tab === 'friends' ? friends : contacts).map((item, i, arr) => {
+                const uid  = (item._id ?? item.id)?.toString();
+                const isVirtual = tab === 'contacts';
+                return (
+                  <View key={uid}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 12 }}>
+                      <View style={[styles.memberAvatar, isVirtual && { borderWidth: 1.5, borderColor: PC.accent20 }]}>
+                        <Text style={[styles.memberInitials, isVirtual && { color: PC.accent }]}>
+                          {initials(item.name)}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: PC.textPrimary, fontSize: 14, fontWeight: '600' }}>{item.name}</Text>
+                        {item.username
+                          ? <Text style={{ color: PC.textMuted, fontSize: 12 }}>@{item.username}</Text>
+                          : isVirtual
+                            ? <Text style={{ color: PC.accent, fontSize: 11 }}>Personal Contact</Text>
+                            : null
+                        }
+                      </View>
+                      <TouchableOpacity
+                        style={[styles.createBtn, { paddingHorizontal: 16, height: 36, borderRadius: 10, width: 'auto' }, addingId === uid && styles.createBtnDisabled]}
+                        onPress={() => handleAdd(uid, isVirtual)}
+                        disabled={!!addingId}
+                        activeOpacity={0.85}>
+                        {addingId === uid
+                          ? <ActivityIndicator color="#060A09" size="small" />
+                          : <Text style={styles.createBtnText}>Add</Text>
+                        }
+                      </TouchableOpacity>
                     </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ color: PC.textPrimary, fontSize: 14, fontWeight: '600' }}>{f.name}</Text>
-                      {f.username ? <Text style={{ color: PC.textMuted, fontSize: 12 }}>@{f.username}</Text> : null}
-                    </View>
-                    <TouchableOpacity
-                      style={[styles.createBtn, { paddingHorizontal: 16, height: 36, borderRadius: 10, width: 'auto' }, addingId === f.id && styles.createBtnDisabled]}
-                      onPress={() => handleAdd(f)}
-                      disabled={!!addingId}
-                      activeOpacity={0.85}>
-                      {addingId === f.id
-                        ? <ActivityIndicator color="#060A09" size="small" />
-                        : <Text style={styles.createBtnText}>Add</Text>
-                      }
-                    </TouchableOpacity>
+                    {i < arr.length - 1 && <View style={{ height: 1, backgroundColor: PC.border }} />}
                   </View>
-                  {i < friends.length - 1 && <View style={{ height: 1, backgroundColor: PC.border }} />}
-                </View>
-              ))}
+                );
+              })}
               <View style={{ height: 16 }} />
             </ScrollView>
           )}
@@ -824,28 +898,42 @@ export default function GroupDetailScreen() {
   const [showSettlement,    setShowSettlement]    = useState(false);
   const [expandedExpId,     setExpandedExpId]     = useState(null);
 
+  // ── Split tags (per-user private category) ──────────────────────────────
+  const [myTags,    setMyTags]    = useState({}); // { expenseId: category }
+  const [editSheet, setEditSheet] = useState(null); // { exp, canEditAmount } | null
+
   // ── Fetch all group data ──────────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
     try {
-      const [groupRes, expRes, balRes] = await Promise.all([
+      const [groupRes, expRes, balRes, tagsRes] = await Promise.all([
         api.get(`/api/groups/${id}`),
         api.get(`/api/groups/${id}/expenses`),
         api.get(`/api/groups/${id}/balances`),
+        getSplitTags(),
       ]);
 
       const g = groupRes.data.group;
       setGroup(g);
       setMembers(
         (g.members || []).map(m => ({
-          id:    m._id,
-          name:  m.name,
-          email: m.email,
-          upiId: m.upiId || '',
-          role:  m._id === g.adminId?._id || m._id === g.adminId ? 'Admin' : 'Member',
+          id:        m._id,
+          name:      m.name,
+          email:     m.email,
+          upiId:     m.upiId || '',
+          isVirtual: m.isVirtual || false,
+          role:      m._id === g.adminId?._id || m._id === g.adminId ? 'Admin' : 'Member',
         }))
       );
       setExpenses(expRes.data.expenses || []);
       setBalances(balRes.data);
+
+      // Build tag map for group expenses
+      const groupTagMap = {};
+      (tagsRes?.tags || []).filter(t => t.refType === 'group').forEach(t => {
+        groupTagMap[t.refId.toString()] = t.category;
+      });
+      setMyTags(groupTagMap);
+
       setError('');
     } catch (err) {
       setError(err.message);
@@ -899,6 +987,25 @@ export default function GroupDetailScreen() {
     api.get(`/api/groups/${id}/balances`).then(r => setBalances(r.data)).catch(() => {});
   }
 
+  async function handleEditSave({ amount, category }) {
+    const { exp, canEditAmount } = editSheet;
+    const tasks = [];
+    if (canEditAmount && amount != null) {
+      tasks.push(
+        api.patch(`/api/groups/${id}/expenses/${exp._id}`, { amount })
+          .then(r => setExpenses(prev => prev.map(e => e._id === exp._id ? r.data.expense : e)))
+      );
+    }
+    if (category) {
+      tasks.push(
+        upsertSplitTag(exp._id, 'group', category)
+          .then(() => setMyTags(prev => ({ ...prev, [exp._id]: category })))
+      );
+    }
+    await Promise.all(tasks);
+    setEditSheet(null);
+  }
+
   // ── My balance in this group ──────────────────────────────────────────────
   const myBalance = balances.members?.find(m => m.user.id === user._id?.toString());
 
@@ -945,9 +1052,6 @@ export default function GroupDetailScreen() {
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.groupTitle} numberOfLines={1}>{group.name}</Text>
-          <View style={styles.typePill}>
-            <Text style={styles.typePillText}>{group.type}</Text>
-          </View>
         </View>
         {isAdmin ? (
           <TouchableOpacity style={styles.addMemberBtn} onPress={() => setShowAddMember(true)}>
@@ -1039,6 +1143,8 @@ export default function GroupDetailScreen() {
                           LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
                           setExpandedExpId(isExpanded ? null : exp._id);
                         }}
+                        onLongPress={() => setEditSheet({ exp, canEditAmount: paidByMe })}
+                        delayLongPress={350}
                         style={[styles.expBubble, paidByMe ? styles.expBubbleMine : styles.expBubbleFriend]}>
 
                         {/* Paid line */}
@@ -1130,6 +1236,24 @@ export default function GroupDetailScreen() {
                               ₹{exp.amount.toLocaleString('en-IN')}
                             </Text>
                           </View>
+
+                          {/* Private category tag — always shown for current user */}
+                          <TouchableOpacity
+                            style={styles.tagChipRow}
+                            onPress={() => setEditSheet({ exp, canEditAmount: false })}
+                            activeOpacity={0.7}>
+                            {myTags[exp._id] ? (
+                              <View style={styles.tagChip}>
+                                <Ionicons name={CAT_ICON_MAP[myTags[exp._id]] || 'pricetag-outline'} size={11} color={PC.accent} style={{ marginRight: 4 }} />
+                                <Text style={styles.tagChipText}>{myTags[exp._id]}</Text>
+                              </View>
+                            ) : (
+                              <View style={styles.tagChipAdd}>
+                                <Ionicons name="pricetag-outline" size={11} color={PC.textSecondary} style={{ marginRight: 4 }} />
+                                <Text style={styles.tagChipEmpty}>Tag</Text>
+                              </View>
+                            )}
+                          </TouchableOpacity>
                         </View>
                       )}
                     </View>
@@ -1223,14 +1347,17 @@ export default function GroupDetailScreen() {
         {tab === 'members' && (
           members.map((m) => (
             <View key={m.id} style={styles.memberBalCard}>
-              <View style={styles.memberAvatar}>
-                <Text style={styles.memberInitials}>{initials(m.name)}</Text>
+              <View style={[styles.memberAvatar, m.isVirtual && { borderWidth: 1.5, borderColor: PC.accent20 }]}>
+                <Text style={[styles.memberInitials, m.isVirtual && { color: PC.accent }]}>{initials(m.name)}</Text>
               </View>
               <View style={{ flex: 1, marginLeft: 12 }}>
                 <Text style={styles.memberName}>
                   {m.id === user._id ? `You (${m.name})` : m.name}
                 </Text>
-                <Text style={styles.memberEmail}>{m.email}</Text>
+                {m.isVirtual
+                  ? <Text style={{ color: PC.accent, fontSize: 11 }}>Personal Contact</Text>
+                  : <Text style={styles.memberEmail}>{m.email}</Text>
+                }
               </View>
               <View style={[styles.roleBadge, m.role === 'Admin' && styles.roleBadgeAdmin]}>
                 <Text style={[styles.roleText, m.role === 'Admin' && styles.roleTextAdmin]}>
@@ -1271,6 +1398,15 @@ export default function GroupDetailScreen() {
         members={members}
         currentUserId={user._id}
         onRecorded={handleSettlementRecorded}
+      />
+
+      <EditSplitSheet
+        visible={editSheet !== null}
+        onClose={() => setEditSheet(null)}
+        canEditAmount={editSheet?.canEditAmount ?? false}
+        initialAmount={editSheet?.exp?.amount}
+        initialCategory={editSheet ? (myTags[editSheet.exp._id] || '') : ''}
+        onSave={handleEditSave}
       />
     </SafeAreaView>
   );
@@ -1543,6 +1679,8 @@ const styles = StyleSheet.create({
   customSplitRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   customSplitMember: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
   customSplitInput:  { flexDirection: 'row', alignItems: 'center', backgroundColor: PC.bgInput, borderWidth: 1, borderColor: PC.border, borderRadius: 12, paddingHorizontal: 10, height: 44, width: 110 },
+  assignAllChip:     { paddingHorizontal: 14, paddingVertical: 8, backgroundColor: PC.bgCardElevated, borderWidth: 1, borderColor: PC.border, borderRadius: 20 },
+  assignAllChipText: { color: PC.textPrimary, fontSize: 13, fontWeight: '600' },
   remainingBar:      { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderTopWidth: 1, borderTopColor: PC.border },
 
   // ── Expense chat-bubble styles ──────────────────────────────────────────────
@@ -1672,4 +1810,11 @@ const styles = StyleSheet.create({
     fontSize: 13, fontWeight: '700',
     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
+
+  // Tag chip
+  tagChipRow:   { paddingHorizontal: 12, paddingVertical: 8 },
+  tagChip:      { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', backgroundColor: 'rgba(0,229,190,0.12)', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: 'rgba(0,229,190,0.30)' },
+  tagChipText:  { color: PC.accent, fontSize: 11, fontWeight: '600' },
+  tagChipAdd:   { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', backgroundColor: PC.bgCardElevated, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: PC.borderLight },
+  tagChipEmpty: { color: PC.textSecondary, fontSize: 11 },
 });

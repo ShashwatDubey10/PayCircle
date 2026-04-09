@@ -41,8 +41,9 @@ const searchUsers = asyncHandler(async (req, res) => {
   // Escape regex metacharacters to prevent ReDoS
   const escaped = username.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const users = await User.find({
-    _id:      { $ne: meId, $nin: relatedIds },
-    username: { $regex: escaped, $options: 'i' },
+    _id:       { $ne: meId, $nin: relatedIds },
+    username:  { $regex: escaped, $options: 'i' },
+    isVirtual: { $ne: true },
   })
     .select('name username avatar')
     .limit(20);

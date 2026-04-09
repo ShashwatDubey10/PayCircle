@@ -1,19 +1,15 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
-  Modal,
-  TextInput,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
   Animated,
   Dimensions,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,6 +18,7 @@ import { useRouter } from 'expo-router';
 import { PC } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
+import BudgetSetupSheet from '@/components/BudgetSetupSheet';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const CHART_W = SCREEN_W - 40 - 32; // screen - padding - card padding
@@ -171,33 +168,24 @@ function BudgetHero({ budget, onEdit, onManage }) {
 
 // ─── Category bar chart ───────────────────────────────────────────────────────
 
-function CategoryChart({ transactions }) {
-  // Aggregate expense transactions by category
-  const cats = {};
-  for (const tx of transactions) {
-    if (tx.type !== 'expense') continue;
-    const c = tx.category || 'Miscellaneous';
-    cats[c] = (cats[c] || 0) + (tx.amount ?? 0);
-  }
-  const sorted = Object.entries(cats).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  if (sorted.length === 0) return null;
-  const max = sorted[0][1];
-
+function CategoryChart({ breakdown }) {
+  if (!breakdown?.length) return null;
+  const max = Math.max(...breakdown.map(b => b.amount), 1);
   return (
     <View style={styles.categoryChart}>
-      {sorted.map(([cat, amt], i) => {
-        const pct = Math.round((amt / max) * 100);
-        const color = CATEGORY_COLORS[cat] || PC.textSecondary;
+      {breakdown.slice(0, 5).map(({ category, amount }, i) => {
+        const pct   = Math.round((amount / max) * 100);
+        const color = CATEGORY_COLORS[category] || PC.textSecondary;
         return (
-          <View key={cat} style={styles.catRow}>
+          <View key={category} style={styles.catRow}>
             <View style={styles.catLeft}>
               <View style={[styles.catDot, { backgroundColor: color }]} />
-              <Text style={styles.catLabel}>{cat}</Text>
+              <Text style={styles.catLabel}>{category}</Text>
             </View>
             <View style={styles.catBarWrap}>
               <AnimatedBar pct={pct} color={color} height={6} delay={i * 80} />
             </View>
-            <Text style={styles.catAmt}>₹{amt.toLocaleString('en-IN')}</Text>
+            <Text style={styles.catAmt}>₹{amount.toLocaleString('en-IN')}</Text>
           </View>
         );
       })}
@@ -360,9 +348,7 @@ export default function DashboardScreen() {
   const [loading,      setLoading]      = useState(true);
   const [refreshing,   setRefreshing]   = useState(false);
   const [error,        setError]        = useState('');
-  const [modalVisible, setModalVisible] = useState(false);
-  const [budgetInput,  setBudgetInput]  = useState('');
-  const [budgetSaving, setBudgetSaving] = useState(false);
+  const [showBudgetSheet, setShowBudgetSheet] = useState(false);
 
   const fetchAll = useCallback(async () => {
     try {
@@ -388,33 +374,21 @@ export default function DashboardScreen() {
   function onRefresh() { setRefreshing(true); fetchAll(); }
 
   function openModal() {
-    setBudgetInput(budget?.budget > 0 ? String(budget.budget) : '');
-    setModalVisible(true);
-  }
-
-  async function saveBudget() {
-    const amount = parseFloat(budgetInput);
-    if (!budgetInput.trim() || isNaN(amount) || amount < 1) {
-      Alert.alert('Invalid Amount', 'Please enter a valid amount (minimum ₹1).');
-      return;
-    }
-    setBudgetSaving(true);
-    try {
-      await api.post('/api/users/me/budget', { amount });
-      setModalVisible(false);
-      setBudgetInput('');
-      fetchAll();
-    } catch (err) {
-      Alert.alert('Error', err.message || 'Could not save budget.');
-    } finally {
-      setBudgetSaving(false);
-    }
+    setShowBudgetSheet(true);
   }
 
   // Derived
   const netGroupBalance  = dash ? dash.totalToReceive - dash.totalOwed : 0;
   const recentSlice      = recent.slice(0, 8);
   const activityFeed     = dash?.recentActivities ?? [];
+
+  const combinedExpenses = useMemo(() => {
+    const personal = recent.filter(t => t.type === 'expense');
+    const fromActivities = (dash?.recentActivities || [])
+      .filter(a => a.sign === -1 && a.type !== 'personal')
+      .map(a => ({ type: 'expense', amount: a.amount, date: a.date, category: 'Split' }));
+    return [...personal, ...fromActivities];
+  }, [recent, dash]);
 
   if (loading) {
     return (
@@ -555,7 +529,7 @@ export default function DashboardScreen() {
         </View>
 
         {/* ══ 4. ANALYTICS ══ */}
-        {recent.some(t => t.type === 'expense') && (
+        {(recent.some(t => t.type === 'expense') || (dash?.categoryBreakdown?.length ?? 0) > 0) && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Analytics</Text>
@@ -567,13 +541,13 @@ export default function DashboardScreen() {
             <View style={styles.analyticsCard}>
               {/* 7-day sparkline */}
               <Text style={styles.analyticsSubhead}>Daily spending · last 7 days</Text>
-              <SpendingSparkline transactions={recent} />
+              <SpendingSparkline transactions={combinedExpenses} />
 
               <View style={styles.analyticsDivider} />
 
               {/* Category breakdown */}
               <Text style={styles.analyticsSubhead}>Top categories · this month</Text>
-              <CategoryChart transactions={recent} />
+              <CategoryChart breakdown={dash?.categoryBreakdown} />
             </View>
           </View>
         )}
@@ -604,61 +578,12 @@ export default function DashboardScreen() {
 
       </ScrollView>
 
-      {/* ── Budget Modal ── */}
-      <Modal
-        visible={modalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setModalVisible(false)}>
-        <KeyboardAvoidingView
-          style={styles.modalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeaderRow}>
-              <View>
-                <Text style={styles.modalTitle}>
-                  {budget?.budget > 0 ? 'Edit Budget' : 'Set Budget'}
-                </Text>
-                <Text style={styles.modalSub}>
-                  {formatMonth(budget?.month || new Date().toISOString().slice(0, 7))}
-                </Text>
-              </View>
-              <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.modalCloseBtn}>
-                <Ionicons name="close" size={18} color={PC.textSecondary} />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.modalInputBox}>
-              <Text style={styles.modalRupee}>₹</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="e.g. 10000"
-                placeholderTextColor={PC.textMuted}
-                value={budgetInput}
-                onChangeText={setBudgetInput}
-                keyboardType="numeric"
-                autoFocus
-                editable={!budgetSaving}
-              />
-            </View>
-            <View style={styles.modalBtnRow}>
-              <TouchableOpacity
-                style={styles.cancelBtn}
-                onPress={() => setModalVisible(false)}
-                disabled={budgetSaving}>
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.saveBtn, budgetSaving && { opacity: 0.6 }]}
-                onPress={saveBudget}
-                disabled={budgetSaving}>
-                {budgetSaving
-                  ? <ActivityIndicator size="small" color="#060A09" />
-                  : <Text style={styles.saveText}>Save</Text>}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+      <BudgetSetupSheet
+        visible={showBudgetSheet}
+        budgetData={{ budget: budget?.budget ?? 0, categories: budget?.categories ?? [] }}
+        onClose={() => setShowBudgetSheet(false)}
+        onSaved={fetchAll}
+      />
     </SafeAreaView>
   );
 }
@@ -871,40 +796,4 @@ const styles = StyleSheet.create({
   emptyTitle: { color: PC.textPrimary, fontSize: 15, fontWeight: '600', marginBottom: 5 },
   emptyHint:  { color: PC.textMuted, fontSize: 13, textAlign: 'center' },
 
-  // Modal
-  modalOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.65)',
-    justifyContent: 'center', alignItems: 'center', padding: 24,
-  },
-  modalCard: {
-    width: '100%', backgroundColor: PC.bgCard,
-    borderRadius: 20, borderWidth: 1, borderColor: PC.border, padding: 24,
-  },
-  modalHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
-  modalTitle:     { color: PC.textPrimary, fontSize: 18, fontWeight: '700', marginBottom: 3 },
-  modalSub:       { color: PC.textSecondary, fontSize: 13 },
-  modalCloseBtn:  {
-    width: 32, height: 32, borderRadius: 10,
-    backgroundColor: PC.bgCardElevated, borderWidth: 1, borderColor: PC.border,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  modalInputBox: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: PC.bgInput, borderWidth: 1, borderColor: PC.border,
-    borderRadius: 12, paddingHorizontal: 14, height: 52, marginBottom: 20,
-  },
-  modalRupee: { color: PC.textSecondary, fontSize: 20, fontWeight: '600', marginRight: 8 },
-  modalInput: { flex: 1, color: PC.textPrimary, fontSize: 20, fontWeight: '500' },
-  modalBtnRow: { flexDirection: 'row', gap: 12 },
-  cancelBtn: {
-    flex: 1, height: 48, borderRadius: 12,
-    borderWidth: 1, borderColor: PC.border,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  cancelText: { color: PC.textSecondary, fontSize: 14, fontWeight: '500' },
-  saveBtn: {
-    flex: 1, height: 48, borderRadius: 12,
-    backgroundColor: PC.accent, alignItems: 'center', justifyContent: 'center',
-  },
-  saveText: { color: '#060A09', fontSize: 14, fontWeight: '700' },
 });

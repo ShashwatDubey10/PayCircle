@@ -6,12 +6,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  Modal,
-  TextInput,
   RefreshControl,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,6 +14,7 @@ import { useRouter } from 'expo-router';
 
 import { PC } from '@/constants/theme';
 import api from '@/services/api';
+import BudgetSetupSheet from '@/components/BudgetSetupSheet';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -56,269 +52,6 @@ function fmt(n) {
   return (n ?? 0).toLocaleString('en-IN');
 }
 
-// ─── Overall Budget Modal ─────────────────────────────────────────────────────
-
-function OverallBudgetModal({ visible, current, onClose, onSaved }) {
-  const [input,  setInput]  = useState('');
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (visible) setInput(current > 0 ? String(current) : '');
-  }, [visible, current]);
-
-  async function handleSave() {
-    const amt = parseFloat(input);
-    if (!input.trim() || isNaN(amt) || amt < 1) {
-      Alert.alert('Invalid Amount', 'Please enter a valid amount (minimum ₹1).');
-      return;
-    }
-    setSaving(true);
-    try {
-      await api.post('/api/users/me/budget', { amount: amt });
-      onSaved();
-      onClose();
-    } catch (err) {
-      Alert.alert('Error', err.message || 'Could not save budget.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={s.modalOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={s.modalCard}>
-          <Text style={s.modalTitle}>Overall Monthly Budget</Text>
-          <Text style={s.modalSubtitle}>Set your total spending limit for the month</Text>
-          <View style={s.modalInputRow}>
-            <Text style={s.rupee}>₹</Text>
-            <TextInput
-              style={s.modalInput}
-              placeholder="e.g. 10000"
-              placeholderTextColor={PC.textMuted}
-              value={input}
-              onChangeText={setInput}
-              keyboardType="numeric"
-              autoFocus
-              editable={!saving}
-            />
-          </View>
-          <View style={s.modalBtnRow}>
-            <TouchableOpacity style={s.cancelBtn} onPress={onClose} disabled={saving}>
-              <Text style={s.cancelBtnText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[s.saveBtn, saving && { opacity: 0.6 }]}
-              onPress={handleSave}
-              disabled={saving}>
-              {saving
-                ? <ActivityIndicator size="small" color="#060A09" />
-                : <Text style={s.saveBtnText}>Save</Text>
-              }
-            </TouchableOpacity>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
-  );
-}
-
-// ─── Category Budget Modal ─────────────────────────────────────────────────────
-// catModal: null | { mode: 'add' } | { mode: 'edit', item }
-
-function CategoryBudgetModal({ catModal, currentCategories, onClose, onSaved }) {
-  const [nameInput, setNameInput] = useState('');
-  const [amtInput,  setAmtInput]  = useState('');
-  const [saving,    setSaving]    = useState(false);
-  const [deleting,  setDeleting]  = useState(false);
-
-  const isEdit = catModal?.mode === 'edit';
-
-  useEffect(() => {
-    if (!catModal) return;
-    if (isEdit) {
-      setNameInput(catModal.item.category);
-      setAmtInput(catModal.item.limit > 0 ? String(catModal.item.limit) : '');
-    } else {
-      setNameInput('');
-      setAmtInput('');
-    }
-  }, [catModal]);
-
-  if (!catModal) return null;
-
-  function buildBase() {
-    return (currentCategories || []).map(c => ({ category: c.category, amount: c.limit }));
-  }
-
-  async function handleSave() {
-    const name = nameInput.trim();
-    const amt  = parseFloat(amtInput);
-
-    if (!name) {
-      Alert.alert('Name Required', 'Please enter a category name.');
-      return;
-    }
-    if (name.length > 50) {
-      Alert.alert('Too Long', 'Category name must be 50 characters or less.');
-      return;
-    }
-    if (isNaN(amt) || amt < 1) {
-      Alert.alert('Invalid Amount', 'Please enter a valid limit (minimum ₹1).');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const base = buildBase();
-      let updated;
-
-      if (isEdit) {
-        const origName  = catModal.item.category;
-        const collision = base.some(
-          c => c.category.toLowerCase() === name.toLowerCase() && c.category !== origName
-        );
-        if (collision) {
-          Alert.alert('Duplicate', `A category named "${name}" already exists.`);
-          setSaving(false);
-          return;
-        }
-        updated = base.map(c => c.category === origName ? { category: name, amount: amt } : c);
-      } else {
-        const duplicate = base.some(c => c.category.toLowerCase() === name.toLowerCase());
-        if (duplicate) {
-          Alert.alert('Duplicate', `A category named "${name}" already exists.`);
-          setSaving(false);
-          return;
-        }
-        updated = [...base, { category: name, amount: amt }];
-      }
-
-      await api.post('/api/users/me/budget/categories', { categories: updated });
-      onSaved();
-      onClose();
-    } catch (err) {
-      Alert.alert('Error', err.message || 'Could not save category budget.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function handleDelete() {
-    Alert.alert(
-      'Remove Category',
-      `Remove the "${catModal.item.category}" budget?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: async () => {
-            setDeleting(true);
-            try {
-              const updated = buildBase().filter(c => c.category !== catModal.item.category);
-              await api.post('/api/users/me/budget/categories', { categories: updated });
-              onSaved();
-              onClose();
-            } catch (err) {
-              Alert.alert('Error', err.message || 'Could not remove category.');
-            } finally {
-              setDeleting(false);
-            }
-          },
-        },
-      ]
-    );
-  }
-
-  const icon = getCatIcon(nameInput || (isEdit ? catModal.item.category : ''));
-  const busy = saving || deleting;
-
-  return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={s.sheetOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-        <View style={s.sheet}>
-          <View style={s.sheetHandle} />
-
-          {/* Title row */}
-          <View style={s.sheetHeader}>
-            <View style={s.sheetIconBox}>
-              <Ionicons name={icon} size={20} color={PC.textSecondary} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={s.sheetCatName}>
-                {isEdit ? 'Edit Category' : 'New Category'}
-              </Text>
-              {isEdit && (
-                <Text style={s.sheetSpent}>₹{fmt(catModal.item.spent)} spent this month</Text>
-              )}
-            </View>
-            {isEdit && (
-              <TouchableOpacity onPress={handleDelete} disabled={busy} style={s.deleteIconBtn}>
-                {deleting
-                  ? <ActivityIndicator size="small" color={PC.negative} />
-                  : <Ionicons name="trash-outline" size={18} color={PC.negative} />
-                }
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {/* Name input */}
-          <Text style={s.inputLabel}>Category name</Text>
-          <View style={s.modalInputRow}>
-            <TextInput
-              style={[s.modalInput, { fontSize: 15 }]}
-              placeholder="e.g. Rent, Groceries, Netflix…"
-              placeholderTextColor={PC.textMuted}
-              value={nameInput}
-              onChangeText={setNameInput}
-              autoFocus={!isEdit}
-              editable={!busy}
-              maxLength={50}
-            />
-          </View>
-
-          {/* Amount input */}
-          <Text style={s.inputLabel}>Monthly limit</Text>
-          <View style={s.modalInputRow}>
-            <Text style={s.rupee}>₹</Text>
-            <TextInput
-              style={s.modalInput}
-              placeholder="e.g. 5000"
-              placeholderTextColor={PC.textMuted}
-              value={amtInput}
-              onChangeText={setAmtInput}
-              keyboardType="numeric"
-              autoFocus={isEdit}
-              editable={!busy}
-            />
-          </View>
-
-          <View style={[s.modalBtnRow, { marginTop: 8 }]}>
-            <TouchableOpacity style={s.cancelBtn} onPress={onClose} disabled={busy}>
-              <Text style={s.cancelBtnText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[s.saveBtn, busy && { opacity: 0.6 }]}
-              onPress={handleSave}
-              disabled={busy}>
-              {saving
-                ? <ActivityIndicator size="small" color="#060A09" />
-                : <Text style={s.saveBtnText}>{isEdit ? 'Update' : 'Add'}</Text>
-              }
-            </TouchableOpacity>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
-  );
-}
-
 // ─── Progress Bar ─────────────────────────────────────────────────────────────
 
 function ProgressBar({ pct, status, height = 5 }) {
@@ -334,9 +67,10 @@ function ProgressBar({ pct, status, height = 5 }) {
 // ─── Category Row ─────────────────────────────────────────────────────────────
 
 function CategoryRow({ item, onPress, last }) {
-  const barColor = BAR_COLOR[item.status] || PC.textMuted;
-  const pct      = Math.min(Math.round(item.usagePercentage ?? 0), 100);
-  const icon     = getCatIcon(item.category);
+  const isTracking = item.status === null; // no limit set
+  const barColor   = BAR_COLOR[item.status] || PC.textMuted;
+  const pct        = isTracking ? 0 : Math.min(Math.round(item.usagePercentage ?? 0), 100);
+  const icon       = getCatIcon(item.category);
 
   return (
     <>
@@ -347,17 +81,23 @@ function CategoryRow({ item, onPress, last }) {
         <View style={s.catInfo}>
           <View style={s.catTopRow}>
             <Text style={s.catName}>{item.category}</Text>
-            <Text style={[s.catLimitText, { color: barColor }]}>{pct}%</Text>
+            {isTracking
+              ? <Text style={[s.catLimitText, { color: PC.textMuted }]}>No limit</Text>
+              : <Text style={[s.catLimitText, { color: barColor }]}>{pct}%</Text>
+            }
           </View>
-          <ProgressBar pct={pct} status={item.status} />
+          {!isTracking && <ProgressBar pct={pct} status={item.status} />}
           <View style={s.catBottomRow}>
             <Text style={s.catSpentText}>₹{fmt(item.spent)} spent</Text>
-            <Text style={s.catRemainingText}>
-              {item.remaining >= 0
-                ? `₹${fmt(item.remaining)} left of ₹${fmt(item.limit)}`
-                : `₹${fmt(Math.abs(item.remaining))} over ₹${fmt(item.limit)}`
-              }
-            </Text>
+            {isTracking
+              ? <Text style={s.catRemainingText}>Tracking only</Text>
+              : <Text style={s.catRemainingText}>
+                  {item.remaining >= 0
+                    ? `₹${fmt(item.remaining)} left of ₹${fmt(item.limit)}`
+                    : `₹${fmt(Math.abs(item.remaining))} over ₹${fmt(item.limit)}`
+                  }
+                </Text>
+            }
           </View>
         </View>
         <Ionicons name="chevron-forward" size={15} color={PC.textMuted} style={{ marginLeft: 8 }} />
@@ -377,8 +117,7 @@ export default function BudgetScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error,      setError]      = useState('');
 
-  const [overallModal, setOverallModal] = useState(false);
-  const [catModal,     setCatModal]     = useState(null);
+  const [setupSheet, setSetupSheet] = useState(false);
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
   const fetchBudget = useCallback(async () => {
@@ -407,7 +146,7 @@ export default function BudgetScreen() {
   const overallColor   = BAR_COLOR[budget?.status] || PC.textMuted;
   const monthLabel     = formatMonth(budget?.month);
   const cats           = budget?.categories || [];
-  const allocatedTotal = cats.reduce((s, c) => s + c.limit, 0);
+  const allocatedTotal = cats.reduce((s, c) => s + (c.limit ?? 0), 0);
 
   // ── Loading ───────────────────────────────────────────────────────────────
   if (loading) {
@@ -501,13 +240,13 @@ export default function BudgetScreen() {
                 <Text style={s.ringUsed}>used</Text>
               </View>
             </View>
-            <TouchableOpacity style={s.editOverallBtn} onPress={() => setOverallModal(true)}>
+            <TouchableOpacity style={s.editOverallBtn} onPress={() => setSetupSheet(true)}>
               <Ionicons name="create-outline" size={15} color={PC.textSecondary} style={{ marginRight: 6 }} />
-              <Text style={s.editOverallBtnText}>Edit Overall Budget</Text>
+              <Text style={s.editOverallBtnText}>Edit Budget</Text>
             </TouchableOpacity>
           </View>
         ) : (
-          <TouchableOpacity style={s.emptyCard} onPress={() => setOverallModal(true)}>
+          <TouchableOpacity style={s.emptyCard} onPress={() => setSetupSheet(true)}>
             <Ionicons name="add-circle-outline" size={22} color={PC.textSecondary} />
             <Text style={s.emptyCardText}>Set an overall monthly budget</Text>
             <Text style={s.emptyCardSub}>Track total spending across all categories</Text>
@@ -531,7 +270,7 @@ export default function BudgetScreen() {
                 key={item.category}
                 item={item}
                 last={i === cats.length - 1}
-                onPress={() => setCatModal({ mode: 'edit', item })}
+                onPress={() => setSetupSheet(true)}
               />
             ))}
           </View>
@@ -543,7 +282,7 @@ export default function BudgetScreen() {
           </View>
         )}
 
-        <TouchableOpacity style={s.addCatBtn} onPress={() => setCatModal({ mode: 'add' })}>
+        <TouchableOpacity style={s.addCatBtn} onPress={() => setSetupSheet(true)}>
           <Ionicons name="add" size={16} color={PC.textPrimary} style={{ marginRight: 6 }} />
           <Text style={s.addCatBtnText}>Add Category</Text>
         </TouchableOpacity>
@@ -558,19 +297,12 @@ export default function BudgetScreen() {
 
       </ScrollView>
 
-      {/* ── Overall Budget Modal ── */}
-      <OverallBudgetModal
-        visible={overallModal}
-        current={budget?.budget ?? 0}
-        onClose={() => setOverallModal(false)}
-        onSaved={fetchBudget}
-      />
-
-      {/* ── Category Modal (add / edit) ── */}
-      <CategoryBudgetModal
-        catModal={catModal}
+      {/* ── Budget Setup Sheet ── */}
+      <BudgetSetupSheet
+        visible={setupSheet}
+        currentBudget={budget?.budget ?? 0}
         currentCategories={cats}
-        onClose={() => setCatModal(null)}
+        onClose={() => setSetupSheet(false)}
         onSaved={fetchBudget}
       />
     </SafeAreaView>
@@ -765,4 +497,50 @@ const s = StyleSheet.create({
     backgroundColor: PC.bgCardElevated, borderWidth: 1, borderColor: PC.border,
     alignItems: 'center', justifyContent: 'center',
   },
+
+  // Budget Setup Sheet (combined)
+  setupSheet: {
+    backgroundColor: PC.bgCard,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    borderWidth: 1, borderBottomWidth: 0, borderColor: PC.border,
+    padding: 24, paddingBottom: 32,
+    maxHeight: '88%',
+  },
+  setupSheetHeader:  { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 20 },
+  setupSheetTitle:   { color: PC.textPrimary, fontSize: 18, fontWeight: '700' },
+  setupSheetMonth:   { color: PC.textSecondary, fontSize: 12, marginTop: 3 },
+  setupSheetClose: {
+    width: 34, height: 34, borderRadius: 10,
+    backgroundColor: PC.bgCardElevated, borderWidth: 1, borderColor: PC.border,
+    alignItems: 'center', justifyContent: 'center', marginLeft: 12,
+  },
+  setupSectionLabel: {
+    color: PC.textSecondary, fontSize: 12, fontWeight: '600',
+    textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10,
+  },
+  setupCatList:    { gap: 8, marginBottom: 4 },
+  setupCatRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: PC.bgCardElevated, borderRadius: 12,
+    borderWidth: 1, borderColor: PC.border,
+    paddingHorizontal: 10, paddingVertical: 10,
+  },
+  setupCatIconBox: {
+    width: 34, height: 34, borderRadius: 10,
+    backgroundColor: PC.bgCard, borderWidth: 1, borderColor: PC.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  setupCatNameInput: { flex: 1, color: PC.textPrimary, fontSize: 14 },
+  setupCatRupee:     { color: PC.textSecondary, fontSize: 15, fontWeight: '600' },
+  setupCatAmtInput:  { width: 70, color: PC.textPrimary, fontSize: 14, textAlign: 'right' },
+  setupCatDelete: {
+    width: 30, height: 30, borderRadius: 8,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  setupAddCatRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingVertical: 12, paddingHorizontal: 4,
+    borderTopWidth: 1, borderTopColor: PC.border, marginTop: 4,
+  },
+  setupAddCatText: { color: PC.accent, fontSize: 14, fontWeight: '600' },
 });

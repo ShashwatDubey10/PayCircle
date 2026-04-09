@@ -12,8 +12,8 @@ export const addDirectSplit = (friendId, amount, description, paidByMe, myShare)
 export const getAllDirectSplits = () =>
   api.get('/api/users/me/direct').then(r => r.data);
 
-export const requestSettle = (friendId, amount) =>
-  api.post(`/api/users/me/direct/${friendId}/settle`, { amount }).then(r => r.data);
+export const requestSettle = (friendId, amount, fromContact = false) =>
+  api.post(`/api/users/me/direct/${friendId}/settle`, { amount, ...(fromContact ? { fromContact: true } : {}) }).then(r => r.data);
 
 export const confirmSettle = (friendId, requestId) =>
   api.put(`/api/users/me/direct/${friendId}/settle/${requestId}/confirm`).then(r => r.data);
@@ -29,3 +29,6 @@ export const cancelOrRejectSettle = (friendId, requestId) =>
 
 export const getGroupDebtsWithFriend = (friendId) =>
   api.get(`/api/users/me/direct/${friendId}/group-balances`).then(r => r.data);
+
+export const updateDirectSplit = (friendId, splitId, fields) =>
+  api.patch(`/api/users/me/direct/${friendId}/splits/${splitId}`, fields).then(r => r.data);

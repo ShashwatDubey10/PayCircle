@@ -5,7 +5,7 @@ const { protect }  = require('../middleware/auth');
 const { isMember } = require('../middleware/groupAuth');
 
 const { createGroup, getUserGroups, getGroup, getMembers, addMember, removeMember } = require('../controllers/groupController');
-const { addExpense, getExpenses }     = require('../controllers/expenseController');
+const { addExpense, getExpenses, updateExpense } = require('../controllers/expenseController');
 const { getGroupBalances }            = require('../controllers/balanceController');
 const { recordSettlement, getSettlements } = require('../controllers/settlementController');
 
@@ -22,8 +22,9 @@ router.post  ('/:id/members',           isMember, addMember);
 router.delete('/:id/members/:userId',   isMember, removeMember);
 
 // Expenses
-router.post('/:id/expenses', isMember, addExpense);
-router.get ('/:id/expenses', isMember, getExpenses);
+router.post ('/:id/expenses',              isMember, addExpense);
+router.get  ('/:id/expenses',              isMember, getExpenses);
+router.patch('/:id/expenses/:expenseId',   isMember, updateExpense);
 
 // Balances
 router.get('/:id/balances', isMember, getGroupBalances);
