@@ -29,6 +29,7 @@ import { PC } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
 import { getFriends } from '@/services/friends';
+import ErrorBox from '@/components/ErrorBox';
 import { getContacts } from '@/services/contacts';
 import UpiQrModal from '@/components/UpiQrModal';
 import { upsertSplitTag, getSplitTags } from '@/services/splitTag';
@@ -167,12 +168,7 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Add Expense</Text>
 
-          {error ? (
-            <View style={styles.errorBox}>
-              <Ionicons name="alert-circle-outline" size={15} color={PC.negative} />
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          ) : null}
+          <ErrorBox message={error} />
 
           {/* Amount */}
           <Text style={styles.modalLabel}>Amount (₹)</Text>
@@ -538,12 +534,7 @@ function AddMemberModal({ visible, onClose, groupId, existingMemberIds, onAdded 
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Add Member</Text>
 
-          {error ? (
-            <View style={styles.errorBox}>
-              <Ionicons name="alert-circle-outline" size={15} color={PC.negative} />
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          ) : null}
+          <ErrorBox message={error} />
 
           {/* Tab toggle */}
           {!loadingList && hasAny && (
@@ -711,12 +702,7 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Record Settlement</Text>
 
-          {error ? (
-            <View style={styles.errorBox}>
-              <Ionicons name="alert-circle-outline" size={15} color={PC.negative} />
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          ) : null}
+          <ErrorBox message={error} />
 
           {/* Who paid */}
           <Text style={styles.modalLabel}>Who paid</Text>

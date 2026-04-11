@@ -8,7 +8,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
@@ -16,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { PC } from '@/constants/theme';
 import api from '@/services/api';
+import ErrorBox from '@/components/ErrorBox';
 
 function getCatIcon(name = '') {
   const n = name.toLowerCase();
@@ -40,6 +40,7 @@ export default function BudgetSetupSheet({ visible, onClose, onSaved, budgetData
   const [overallInput, setOverallInput] = useState('');
   const [catRows,      setCatRows]      = useState([]);
   const [saving,       setSaving]       = useState(false);
+  const [error,        setError]        = useState('');
 
   const initialBudget = budgetData?.budget ?? currentBudget ?? 0;
   const initialCats   = budgetData?.categories ?? currentCategories ?? [];
@@ -75,29 +76,37 @@ export default function BudgetSetupSheet({ visible, onClose, onSaved, budgetData
   }
 
   async function handleSave() {
+    setError('');
     const overallAmt = parseFloat(overallInput);
     const hasOverall = overallInput.trim().length > 0;
 
     if (hasOverall && (isNaN(overallAmt) || overallAmt < 1)) {
-      Alert.alert('Invalid Amount', 'Overall budget must be at least ₹1.');
+      setError('Overall budget must be at least ₹1.');
       return;
     }
     for (const row of catRows) {
       const trimmed = row.category.trim();
-      if (!trimmed) { Alert.alert('Name Required', 'Each category must have a name.'); return; }
+      if (!trimmed) { setError('Each category must have a name.'); return; }
       const amtStr = row.amount.trim();
       if (amtStr !== '') {
         const amt = parseFloat(amtStr);
         if (isNaN(amt) || amt < 1) {
-          Alert.alert('Invalid Amount', `"${trimmed}" limit must be at least ₹1 (or leave empty for no limit).`);
+          setError(`"${trimmed}" limit must be at least ₹1 (or leave empty for no limit).`);
           return;
         }
       }
     }
     const names = catRows.map(r => r.category.trim().toLowerCase());
     if (new Set(names).size !== names.length) {
-      Alert.alert('Duplicate', 'Category names must be unique.');
+      setError('Category names must be unique.');
       return;
+    }
+    if (hasOverall) {
+      const catTotal = parseFloat(catRows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0).toFixed(2));
+      if (catTotal > overallAmt) {
+        setError(`Category totals (₹${catTotal.toFixed(2)}) cannot exceed your monthly budget of ₹${overallAmt.toFixed(2)}.`);
+        return;
+      }
     }
 
     setSaving(true);
@@ -113,7 +122,7 @@ export default function BudgetSetupSheet({ visible, onClose, onSaved, budgetData
       onSaved();
       onClose();
     } catch (err) {
-      Alert.alert('Error', err.message || 'Could not save budget.');
+      setError(err.message || 'Could not save budget. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -140,6 +149,7 @@ export default function BudgetSetupSheet({ visible, onClose, onSaved, budgetData
           </View>
 
           <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <ErrorBox message={error} />
             {/* Overall limit */}
             <Text style={s.setupSectionLabel}>Overall Limit</Text>
             <View style={s.modalInputRow}>

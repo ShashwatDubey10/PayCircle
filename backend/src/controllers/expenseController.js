@@ -30,6 +30,9 @@ const addExpense = asyncHandler(async (req, res) => {
   if (!memberIds.includes(payerId.toString()))
     return res.status(400).json({ success: false, message: 'Payer must be a group member' });
 
+  if (group.members.length < 2)
+    return res.status(400).json({ success: false, message: 'A group needs at least 2 members before you can add expenses' });
+
   let finalSplits = [];
 
   if (splitType === 'equal') {
@@ -51,6 +54,9 @@ const addExpense = asyncHandler(async (req, res) => {
     for (const s of splits) {
       if (!memberIds.includes(s.userId.toString()))
         return res.status(400).json({ success: false, message: 'All split users must be group members' });
+      const splitAmt = parseFloat(s.amount);
+      if (isNaN(splitAmt) || splitAmt < 0.01)
+        return res.status(400).json({ success: false, message: 'Each split amount must be at least ₹0.01' });
     }
     finalSplits = splits.map(s => ({ userId: s.userId, amount: parseFloat(parseFloat(s.amount).toFixed(2)) }));
   } else {

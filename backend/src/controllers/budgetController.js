@@ -47,6 +47,18 @@ const setCategoryBudgets = asyncHandler(async (req, res) => {
   }
   const cleanCategories = Object.values(catMap);
 
+  // Validate: sum of category budgets must not exceed the overall monthly budget
+  const currentBudget = await Budget.findOne({ userId: req.user._id, month: getMonthStr() });
+  if (currentBudget?.amount) {
+    const catTotal = parseFloat(cleanCategories.reduce((s, c) => s + c.amount, 0).toFixed(2));
+    if (catTotal > currentBudget.amount) {
+      return res.status(400).json({
+        success: false,
+        message: `Category total (₹${catTotal.toFixed(2)}) cannot exceed your monthly budget of ₹${currentBudget.amount.toFixed(2)}`,
+      });
+    }
+  }
+
   await Budget.findOneAndUpdate(
     { userId: req.user._id, month: getMonthStr() },
     { $set: { categories: cleanCategories } },

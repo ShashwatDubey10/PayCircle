@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { PC } from '@/constants/theme';
+import ErrorBox from '@/components/ErrorBox';
 import api from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
 import { getAllDirectSplits, getAllDirectSettlements } from '@/services/directSplit';
@@ -243,12 +244,7 @@ function AddTransactionModal({ visible, onClose, onAdded }) {
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Add Transaction</Text>
 
-          {error ? (
-            <View style={styles.errorBox}>
-              <Ionicons name="alert-circle-outline" size={15} color={PC.negative} />
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          ) : null}
+          <ErrorBox message={error} />
 
           {/* Type toggle */}
           <View style={styles.typeToggle}>
