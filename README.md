@@ -34,7 +34,7 @@ PayCircle/
 │   │   ├── config/db.js          # MongoDB connection
 │   │   ├── middleware/           # auth (JWT protect), groupAuth (isMember), errorHandler
 │   │   ├── models/
-│   │   │   ├── User.js
+│   │   │   ├── User.js           # isVirtual flag for offline contacts
 │   │   │   ├── Group.js
 │   │   │   ├── Expense.js
 │   │   │   ├── PersonalTransaction.js
@@ -42,22 +42,25 @@ PayCircle/
 │   │   │   ├── Budget.js
 │   │   │   ├── Friendship.js     # Friend requests + friendship state
 │   │   │   ├── DirectSplit.js    # 1-on-1 expense splits between friends
-│   │   │   └── DirectSettle.js   # Direct settlement requests between friends
+│   │   │   ├── DirectSettle.js   # Direct settlement requests between friends
+│   │   │   └── SplitTag.js       # Custom category tags on individual expenses
 │   │   ├── controllers/
 │   │   │   ├── authController.js
 │   │   │   ├── groupController.js
 │   │   │   ├── expenseController.js
 │   │   │   ├── settlementController.js
 │   │   │   ├── balanceController.js
-│   │   │   ├── dashboardController.js
+│   │   │   ├── dashboardController.js    # dashboard + spending-history
 │   │   │   ├── budgetController.js
 │   │   │   ├── personalTransactionController.js
 │   │   │   ├── friendController.js       # Friend search, requests, UPI ID
-│   │   │   └── directSplitController.js  # Direct splits + settle flow
+│   │   │   ├── directSplitController.js  # Direct splits + settle flow
+│   │   │   ├── contactController.js      # Virtual contacts (offline users)
+│   │   │   └── splitTagController.js     # Custom expense category tags
 │   │   ├── routes/
 │   │   │   ├── auth.js           # POST /register /login, GET /me
 │   │   │   ├── groups.js         # Groups, members, expenses, balances, settlements
-│   │   │   └── users.js          # Dashboard, budget, transactions, friends, direct
+│   │   │   └── users.js          # Dashboard, budget, transactions, friends, direct, contacts, split-tags
 │   │   ├── services/balanceService.js  # Core balance + debt-simplification algorithm
 │   │   └── utils/                # asyncHandler, logger
 │   └── .env.example              # Required environment variables
@@ -74,8 +77,11 @@ PayCircle/
 │   │   │   ├── groups.jsx        # Split tab — Friends / Groups / Settlements sub-tabs
 │   │   │   ├── transactions.jsx  # Personal income/expense tracker
 │   │   │   └── profile.jsx       # User profile + functional settings
+│   │   ├── analytics.jsx         # Spending analytics — category breakdown, monthly trends, day-of-week heatmap
 │   │   ├── budget.jsx            # Full budget page — overall limit + custom category budgets
+│   │   ├── contacts.jsx          # Virtual contacts — add offline users to splits without a PayCircle account
 │   │   ├── friends.jsx           # Friends management — search, add, accept/reject requests
+│   │   ├── qr-scanner.jsx        # UPI QR code scanner — scan and pay via installed UPI apps
 │   │   ├── groups/[id].jsx       # Group detail — expenses, balances, members, settlements
 │   │   └── direct/[friendId].jsx # Direct split detail — 1-on-1 expenses + settle flow
 │   ├── assets/images/
@@ -86,8 +92,10 @@ PayCircle/
 │   ├── services/
 │   │   ├── api.js                # Axios instance with dynamic BASE_URL + JWT interceptor
 │   │   ├── auth.js               # AsyncStorage helpers for token/user persistence
+│   │   ├── contacts.js           # Virtual contacts CRUD API calls
 │   │   ├── friends.js            # Friend search, requests, friend list API calls
-│   │   └── directSplit.js        # Direct split + settle API calls
+│   │   ├── directSplit.js        # Direct split + settle API calls
+│   │   └── splitTag.js           # Split tag upsert + fetch API calls
 │   ├── utils/
 │   │   └── upiPayment.js         # UPI deep link builder (opens installed UPI apps)
 │   └── constants/theme.js        # PC design tokens (all UI colors)
@@ -153,6 +161,7 @@ All endpoints under `/api/auth/` are public. Everything else requires `Authoriza
 |---|---|
 | `GET` | `/api/users/me/summary` |
 | `GET` | `/api/users/me/dashboard` |
+| `GET` | `/api/users/me/spending-history` |
 | `GET · POST` | `/api/users/me/transactions` |
 | `DELETE` | `/api/users/me/transactions/:id` |
 | `GET · POST` | `/api/users/me/budget` |
@@ -169,6 +178,12 @@ All endpoints under `/api/auth/` are public. Everything else requires `Authoriza
 | `PUT` | `/api/users/me/friends/requests/:id` |
 | `GET` | `/api/users/me/friends` |
 
+### Contacts (Virtual / Offline Users)
+| Method | Endpoint |
+|---|---|
+| `GET · POST` | `/api/users/me/contacts` |
+| `PATCH · DELETE` | `/api/users/me/contacts/:id` |
+
 ### Direct Splits (1-on-1)
 | Method | Endpoint |
 |---|---|
@@ -177,9 +192,15 @@ All endpoints under `/api/auth/` are public. Everything else requires `Authoriza
 | `GET` | `/api/users/me/direct/balances` |
 | `GET` | `/api/users/me/direct/:friendId/group-balances` |
 | `POST · GET` | `/api/users/me/direct/:friendId` |
+| `PATCH` | `/api/users/me/direct/:friendId/splits/:splitId` |
 | `POST` | `/api/users/me/direct/:friendId/settle` |
 | `PUT` | `/api/users/me/direct/:friendId/settle/:requestId/confirm` |
 | `DELETE` | `/api/users/me/direct/:friendId/settle/:requestId` |
+
+### Split Tags
+| Method | Endpoint |
+|---|---|
+| `GET · POST` | `/api/users/me/split-tags` |
 
 Group expense and balance endpoints require group membership (`isMember` middleware). The `isMember` middleware loads the full group document into `req.group` — controllers do not re-fetch it.
 
@@ -203,6 +224,12 @@ Computes `credit[user] - debit[user]` across all group expenses and settlements,
 
 **UPI deep link** (`utils/upiPayment.js`):
 Builds a `upi://pay?...` URL and opens it via `expo-linking`. Works with any installed UPI app (GPay, PhonePe, Paytm, etc.). Falls back to an alert if no UPI app is detected.
+
+**Virtual contacts** (`models/User.js` — `isVirtual: true`):
+Offline users are stored as real `User` documents with a placeholder email and an unusable random password, scoped to their creator via `createdBy`. They participate in direct splits exactly like registered users — no special-casing in the balance or settlement logic.
+
+**Split tags** (`models/SplitTag.js`):
+A tag maps any `DirectSplit` or group `Expense` document to a user-defined category string. Stored as a separate collection with a unique compound index on `(userId, refId, refType)` so tags are per-user and upserted, not duplicated.
 
 ---
 
@@ -281,6 +308,32 @@ Three sub-tabs in one screen:
 - Spend figures combine group expense shares and personal expenses for the current month
 - Pull-to-refresh on the budget page
 
+### Contacts (Virtual / Offline Users)
+- Add people who don't have a PayCircle account as virtual contacts
+- Virtual contacts can be added to direct splits just like registered friends
+- Rename or delete a virtual contact from the Contacts screen
+- Contacts are private — visible only to the user who created them
+
+### Split Tags
+- Tag any direct split or group expense with a custom category label
+- Tags are per-user and per-expense — one tag per user per expense
+- Tags flow into budget category tracking so tagged expenses count against matching category budgets
+- Upsert semantics: re-tagging an expense updates the existing tag rather than creating a duplicate
+
+### Analytics
+- Full-screen analytics page accessible from the dashboard
+- **Category breakdown** — colour-coded bar chart of spending by category for the selected month
+- **Monthly trend** — month-by-month total spend over the last 6 months
+- **Day-of-week heatmap** — average spend per day of the week to identify peak spending days
+- Covers group expense shares, personal expenses, and direct splits combined
+- Month selector to browse historical data; pull-to-refresh
+
+### QR Scanner
+- Built-in UPI QR code scanner using the device camera (`expo-camera`)
+- Parses `upi://pay?...` deep links scanned from any UPI QR code
+- Pre-fills payee name, UPI ID, and amount; hands off to the installed UPI app to complete payment
+- Camera permission request handled gracefully with a fallback UI
+
 ### Profile
 - Displays name, username, email, join date, groups count, total transactions, and net saved
 - **Notifications** — alert with upcoming feature info
@@ -316,6 +369,10 @@ Three sub-tabs in one screen:
 | 15 | Monthly budget with usage indicator | ✅ |
 | 16 | Custom category budgets (user-defined) | ✅ |
 | 17 | UPI payment deep link on settle-up | ✅ |
+| 18 | Virtual contacts (offline users in splits) | ✅ |
+| 19 | Split tags (custom category labels on expenses) | ✅ |
+| 20 | Spending analytics (category, monthly trend, day-of-week) | ✅ |
+| 21 | UPI QR code scanner | ✅ |
 
 ---
 
@@ -329,8 +386,7 @@ Three sub-tabs in one screen:
 
 ### 🔜 Phase 3 — Polish
 
-- Spending charts and analytics (bar, pie, line)
-- Behavioural insights ("You spent 42% on food this month")
+- Behavioural spending insights ("You spent 42% on food this month")
 - Data export — PDF and CSV
 - UI animations and micro-interactions
 
