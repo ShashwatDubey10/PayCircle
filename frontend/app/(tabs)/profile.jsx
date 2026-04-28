@@ -9,7 +9,6 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   TextInput,
-  Alert,
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,6 +19,9 @@ import { PC } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
 import { getFriends, setUsername as apiSetUsername } from '@/services/friends';
+import AppAlert from '@/components/AppAlert';
+import AppToast, { useToast } from '@/components/AppToast';
+import ErrorBox from '@/components/ErrorBox';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -79,32 +81,63 @@ const SETTINGS = [
 const MODAL_CONTENT = {
   privacy: {
     title: 'Privacy & Security',
+    icon:  'shield-checkmark-outline',
     items: [
-      { heading: 'Data Storage', body: 'Your data is stored securely on MongoDB Atlas with encrypted connections.' },
-      { heading: 'Passwords',    body: 'Passwords are never stored in plain text — they are hashed using bcrypt before saving.' },
-      { heading: 'Authentication', body: 'Sessions use JSON Web Tokens (JWT) that expire after 7 days. Tokens are stored locally on your device.' },
-      { heading: 'Data Sharing', body: 'PayCircle does not sell or share your personal data with third parties.' },
+      { icon: 'server-outline',       iconColor: PC.accent,      heading: 'Data Storage',    body: 'Your data is stored securely on MongoDB Atlas with encrypted connections and TLS in transit.' },
+      { icon: 'lock-closed-outline',  iconColor: PC.positive,    heading: 'Passwords',       body: 'Passwords are never stored in plain text — they are hashed using bcrypt before saving.' },
+      { icon: 'key-outline',          iconColor: PC.warning,     heading: 'Authentication',  body: 'Sessions use JSON Web Tokens (JWT) that expire after 7 days. Tokens are stored locally on your device.' },
+      { icon: 'eye-off-outline',      iconColor: PC.textSecondary, heading: 'Data Sharing', body: 'PayCircle does not sell or share your personal data with third parties.' },
     ],
   },
   help: {
     title: 'Help & FAQ',
+    icon:  'help-circle-outline',
     items: [
-      { heading: 'How do I create a group?', body: 'Go to the Groups tab and tap the + button. Enter a name and select a type (Roommates, Trip, Mess, or Miscellaneous).' },
-      { heading: 'How are expenses split?', body: 'Group expenses are split equally among all members by default. Each member\'s share is calculated automatically.' },
-      { heading: 'How do I record a settlement?', body: 'Open a group, go to the Balances tab, and use the Settlements section to record who paid whom.' },
-      { heading: 'What is Monthly Budget?', body: 'Set a monthly spending limit from the Dashboard. It tracks your group expense shares + personal expenses combined.' },
-      { heading: 'How do I track personal spending?', body: 'Use the Transactions tab to add personal income or expenses independently from group activity.' },
-      { heading: 'How do I add a member to a group?', body: 'Open the group, go to Members tab, and tap Add Member. The person must already have a PayCircle account.' },
+      { icon: 'people-outline',       iconColor: PC.accent,      heading: 'How do I create a group?',       body: 'Go to the Groups tab and tap the + button. Enter a name and select a type (Roommates, Trip, Mess, or Miscellaneous).' },
+      { icon: 'receipt-outline',      iconColor: PC.positive,    heading: 'How are expenses split?',        body: 'Group expenses are split equally among all members by default. Each member\'s share is calculated automatically.' },
+      { icon: 'swap-horizontal-outline', iconColor: PC.accent,   heading: 'How do I record a settlement?', body: 'Open a group, go to the Balances tab, and use the Settlements section to record who paid whom.' },
+      { icon: 'wallet-outline',       iconColor: PC.warning,     heading: 'What is Monthly Budget?',        body: 'Set a monthly spending limit from the Dashboard. It tracks your group expense shares + personal expenses combined.' },
+      { icon: 'list-outline',         iconColor: PC.textSecondary, heading: 'How do I track personal spending?', body: 'Use the Transactions tab to add personal income or expenses independently from group activity.' },
+      { icon: 'person-add-outline',   iconColor: PC.accent,      heading: 'How do I add a member?',         body: 'Open the group, go to Members tab, and tap Add Member. The person must already be your friend in PayCircle.' },
     ],
   },
   about: {
     title: 'About PayCircle',
+    icon:  'information-circle-outline',
     items: [
-      { heading: 'Version',     body: '1.0.0 (MVP Release)' },
-      { heading: 'Description', body: 'PayCircle is a group expense management app designed for college students sharing living expenses.' },
-      { heading: 'Tech Stack',  body: 'React Native (Expo) · Node.js · Express · MongoDB Atlas' },
-      { heading: 'Currency',    body: 'Indian Rupee (₹) — INR only' },
-      { heading: 'Support',     body: 'For issues or feedback, contact your group admin or the development team.' },
+      { icon: 'git-commit-outline',   iconColor: PC.accent,      heading: 'Version',      body: '1.0.0 — MVP Release', badge: 'MVP', badgeColor: PC.accent },
+      { icon: 'people-circle-outline', iconColor: PC.positive,   heading: 'Description',  body: 'PayCircle is a group expense management app designed for college students sharing living expenses.' },
+      { icon: 'code-slash-outline',   iconColor: PC.textSecondary, heading: 'Tech Stack', body: 'React Native (Expo) · Node.js · Express · MongoDB Atlas' },
+      { icon: 'cash-outline',         iconColor: PC.positive,    heading: 'Currency',     body: 'Indian Rupee (₹) — INR only', badge: 'INR', badgeColor: PC.positive },
+      { icon: 'chatbubble-outline',   iconColor: PC.textMuted,   heading: 'Support',      body: 'For issues or feedback, contact your group admin or the development team.' },
+    ],
+  },
+  notifications: {
+    title: 'Notifications',
+    icon:  'notifications-outline',
+    items: [
+      { icon: 'receipt-outline',          iconColor: PC.positive,    heading: 'Expense Alerts',        body: 'Get notified when a new expense is added to your groups.',                                         badge: 'Planned', badgeColor: PC.warning },
+      { icon: 'swap-horizontal-outline',  iconColor: PC.accent,      heading: 'Settlement Reminders',  body: 'Receive reminders when you have outstanding balances to settle.',                                  badge: 'Planned', badgeColor: PC.warning },
+      { icon: 'wallet-outline',           iconColor: PC.warning,     heading: 'Budget Warnings',       body: 'Alerts when you\'re approaching or exceeding your monthly budget limit.',                         badge: 'Planned', badgeColor: PC.warning },
+      { icon: 'time-outline',             iconColor: PC.textMuted,   heading: 'Coming Soon',           body: 'Push notification preferences will be fully configurable in a future update.' },
+    ],
+  },
+  currency: {
+    title: 'Currency',
+    icon:  'cash-outline',
+    items: [
+      { icon: 'logo-usd',                 iconColor: PC.positive,    heading: 'Indian Rupee (₹)',  body: 'All amounts in PayCircle are displayed in Indian Rupees — the only supported currency.',             badge: 'Active', badgeColor: PC.positive },
+      { icon: 'people-outline',           iconColor: PC.accent,      heading: 'Why INR?',          body: 'PayCircle is built specifically for Indian college students sharing everyday living expenses.' },
+      { icon: 'globe-outline',            iconColor: PC.textMuted,   heading: 'Multi-currency',    body: 'Support for USD, EUR, and other currencies is planned for a future release.',                        badge: 'Planned', badgeColor: PC.warning },
+    ],
+  },
+  appearance: {
+    title: 'Appearance',
+    icon:  'moon-outline',
+    items: [
+      { icon: 'moon',                     iconColor: PC.accent,      heading: 'Dark Mode',         body: 'PayCircle uses a refined dark theme (Mint Terminal) — optimised for OLED displays and low-light environments.', badge: 'Active', badgeColor: PC.positive },
+      { icon: 'color-palette-outline',    iconColor: '#00E5BE',      heading: 'Accent Colour',     body: 'Electric Mint (#00E5BE) is the primary accent colour across all screens and UI elements.' },
+      { icon: 'sunny-outline',            iconColor: PC.warning,     heading: 'Light Mode',        body: 'A light theme and additional colour options are planned for a future update.',                        badge: 'Planned', badgeColor: PC.warning },
     ],
   },
 };
@@ -117,17 +150,44 @@ function InfoModal({ content, onClose }) {
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <View style={modalStyles.overlay}>
         <View style={modalStyles.sheet}>
+          {/* Accent strip */}
+          <View style={modalStyles.accentStrip} />
           <View style={modalStyles.handle} />
-          <Text style={modalStyles.title}>{content.title}</Text>
-          <ScrollView style={modalStyles.body} showsVerticalScrollIndicator={false}>
+
+          {/* Header */}
+          <View style={modalStyles.headerRow}>
+            {content.icon ? (
+              <View style={modalStyles.titleIconBox}>
+                <Ionicons name={content.icon} size={17} color={PC.accent} />
+              </View>
+            ) : null}
+            <Text style={modalStyles.title}>{content.title}</Text>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 0 }}>
             {content.items.map((item, i) => (
               <View key={i} style={modalStyles.item}>
-                <Text style={modalStyles.itemHeading}>{item.heading}</Text>
-                <Text style={modalStyles.itemBody}>{item.body}</Text>
+                {item.icon ? (
+                  <View style={[modalStyles.itemIconWrap, { backgroundColor: (item.iconColor || PC.accent) + '18' }]}>
+                    <Ionicons name={item.icon} size={15} color={item.iconColor || PC.accent} />
+                  </View>
+                ) : null}
+                <View style={{ flex: 1 }}>
+                  <View style={modalStyles.itemHeadingRow}>
+                    <Text style={modalStyles.itemHeading}>{item.heading}</Text>
+                    {item.badge ? (
+                      <View style={[modalStyles.badge, { backgroundColor: (item.badgeColor || PC.textMuted) + '1A', borderColor: (item.badgeColor || PC.textMuted) + '40' }]}>
+                        <Text style={[modalStyles.badgeText, { color: item.badgeColor || PC.textMuted }]}>{item.badge}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  <Text style={modalStyles.itemBody}>{item.body}</Text>
+                </View>
               </View>
             ))}
             <View style={{ height: 24 }} />
           </ScrollView>
+
           <TouchableOpacity style={modalStyles.closeBtn} onPress={onClose} activeOpacity={0.8}>
             <Text style={modalStyles.closeBtnText}>Close</Text>
           </TouchableOpacity>
@@ -140,7 +200,7 @@ function InfoModal({ content, onClose }) {
 const modalStyles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.60)',
     justifyContent: 'flex-end',
   },
   sheet: {
@@ -149,9 +209,20 @@ const modalStyles = StyleSheet.create({
     borderTopRightRadius: 24,
     borderWidth: 1,
     borderBottomWidth: 0,
-    borderColor: PC.border,
-    padding: 24,
-    maxHeight: '80%',
+    borderColor: PC.borderLight,
+    paddingHorizontal: 24,
+    paddingBottom: 28,
+    maxHeight: '82%',
+    overflow: 'hidden',
+  },
+  accentStrip: {
+    height: 2,
+    backgroundColor: PC.accent,
+    borderRadius: 2,
+    marginHorizontal: 40,
+    marginTop: 10,
+    marginBottom: 14,
+    opacity: 0.55,
   },
   handle: {
     width: 36, height: 4, borderRadius: 2,
@@ -159,16 +230,52 @@ const modalStyles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: 20,
   },
-  title: { color: PC.textPrimary, fontSize: 18, fontWeight: '700', marginBottom: 20 },
-  body:  { flex: 0 },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 20,
+  },
+  titleIconBox: {
+    width: 34, height: 34, borderRadius: 10,
+    backgroundColor: PC.accent10,
+    borderWidth: 1, borderColor: PC.accent + '30',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  title: { color: PC.textPrimary, fontSize: 17, fontWeight: '700' },
   item: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
     backgroundColor: PC.bgCardElevated,
     borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: PC.border,
+    padding: 13,
+    marginBottom: 8,
   },
-  itemHeading: { color: PC.textPrimary,    fontSize: 13, fontWeight: '600', marginBottom: 4 },
-  itemBody:    { color: PC.textSecondary,  fontSize: 13, lineHeight: 19 },
+  itemIconWrap: {
+    width: 32, height: 32, borderRadius: 9,
+    alignItems: 'center', justifyContent: 'center',
+    marginTop: 1,
+    flexShrink: 0,
+  },
+  itemHeadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+    flexWrap: 'wrap',
+  },
+  itemHeading: { color: PC.textPrimary, fontSize: 13, fontWeight: '600' },
+  itemBody:    { color: PC.textSecondary, fontSize: 13, lineHeight: 19 },
+  badge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  badgeText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.4 },
   closeBtn: {
     marginTop: 16,
     backgroundColor: PC.accent,
@@ -188,6 +295,8 @@ export default function ProfileScreen() {
   const { user, logout, updateUser } = useAuth();
   const router = useRouter();
 
+  const { toast, showToast } = useToast();
+
   const [groupsCount,  setGroupsCount]  = useState(null);
   const [txCount,      setTxCount]      = useState(null);
   const [netSaved,     setNetSaved]     = useState(null);
@@ -195,7 +304,8 @@ export default function ProfileScreen() {
   const [statsLoading, setStatsLoading] = useState(true);
   const [refreshing,   setRefreshing]   = useState(false);
   const [signingOut,   setSigningOut]   = useState(false);
-  const [activeModal,  setActiveModal]  = useState(null); // 'privacy' | 'help' | 'about'
+  const [activeModal,  setActiveModal]  = useState(null);
+  const [showSignOutAlert, setShowSignOutAlert] = useState(false);
 
   // Username banner modal
   const [showUsernameModal, setShowUsernameModal] = useState(false);
@@ -253,7 +363,7 @@ export default function ProfileScreen() {
       await updateUser(data?.user ?? { upiId: cleaned });
       setShowUpiModal(false);
       setUpiInput('');
-      Alert.alert('UPI ID saved!', cleaned ? `Your UPI ID is now ${cleaned}` : 'UPI ID cleared.');
+      showToast(cleaned ? `UPI ID saved: ${cleaned}` : 'UPI ID cleared.', 'success');
     } catch (err) {
       setUpiError(err?.message || 'Failed to save UPI ID');
     } finally {
@@ -277,7 +387,7 @@ export default function ProfileScreen() {
       await updateUser(result?.user ?? { username: cleaned });
       setShowUsernameModal(false);
       setUsernameInput('');
-      Alert.alert('Username set!', `Your username is now @${cleaned}`);
+      showToast(`Username set to @${cleaned}`, 'success');
     } catch (err) {
       setUsernameError(err?.message || 'Failed to set username');
     } finally {
@@ -295,28 +405,16 @@ export default function ProfileScreen() {
         router.push('/contacts');
         break;
       case 'notifications':
-        Alert.alert(
-          'Notifications',
-          'Push notification preferences will be available in a future update.\n\nYou\'ll be able to get alerts for new expenses, settlement reminders, and budget warnings.',
-          [{ text: 'OK' }]
-        );
+        setActiveModal('notifications');
         break;
       case 'privacy':
         setActiveModal('privacy');
         break;
       case 'currency':
-        Alert.alert(
-          'Currency',
-          'PayCircle uses Indian Rupee (₹) as the default currency.\n\nMulti-currency support is planned for a future release.',
-          [{ text: 'Got it' }]
-        );
+        setActiveModal('currency');
         break;
       case 'appearance':
-        Alert.alert(
-          'Appearance',
-          'PayCircle currently uses Dark mode.\n\nLight mode and custom themes are planned for a future update.',
-          [{ text: 'OK' }]
-        );
+        setActiveModal('appearance');
         break;
       case 'help':
         setActiveModal('help');
@@ -329,27 +427,19 @@ export default function ProfileScreen() {
 
   // ── Sign out ──────────────────────────────────────────────────────────────
   function handleSignOut() {
-    Alert.alert(
-      'Sign Out',
-      'Are you sure you want to sign out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Sign Out',
-          style: 'destructive',
-          onPress: async () => {
-            setSigningOut(true);
-            try {
-              await logout();
-              // RootGuard in _layout.jsx detects user → null and redirects to /auth/login
-            } catch {
-              setSigningOut(false);
-              Alert.alert('Error', 'Could not sign out. Please try again.');
-            }
-          },
-        },
-      ]
-    );
+    setShowSignOutAlert(true);
+  }
+
+  async function confirmSignOut() {
+    setShowSignOutAlert(false);
+    setSigningOut(true);
+    try {
+      await logout();
+      // RootGuard in _layout.jsx detects user → null and redirects to /auth/login
+    } catch {
+      setSigningOut(false);
+      showToast('Could not sign out. Please try again.', 'error');
+    }
   }
 
   // ── Derived ───────────────────────────────────────────────────────────────
@@ -493,6 +583,23 @@ export default function ProfileScreen() {
         onClose={() => setActiveModal(null)}
       />
 
+      {/* ── Sign-out confirmation ── */}
+      <AppAlert
+        visible={showSignOutAlert}
+        icon="log-out-outline"
+        iconColor={PC.negative}
+        title="Sign Out"
+        message="Are you sure you want to sign out of PayCircle?"
+        onRequestClose={() => setShowSignOutAlert(false)}
+        buttons={[
+          { text: 'Cancel',   style: 'cancel',      onPress: () => setShowSignOutAlert(false) },
+          { text: 'Sign Out', style: 'destructive',  onPress: confirmSignOut },
+        ]}
+      />
+
+      {/* ── Toast ── */}
+      <AppToast toast={toast} />
+
       {/* ── Set Username Modal ── */}
       <Modal visible={showUsernameModal} transparent animationType="slide" onRequestClose={() => { setShowUsernameModal(false); setUsernameError(''); }}>
         <View style={modalStyles.overlay}>
@@ -505,12 +612,7 @@ export default function ProfileScreen() {
                 : 'Choose a unique username so friends can find you.'
               }{' '}3–20 chars: lowercase letters, numbers, underscores.
             </Text>
-            {usernameError ? (
-              <View style={styles.errorBox}>
-                <Ionicons name="alert-circle-outline" size={14} color={PC.negative} />
-                <Text style={styles.errorText}>{usernameError}</Text>
-              </View>
-            ) : null}
+            <ErrorBox message={usernameError} />
             <View style={styles.usernameInputBox}>
               <Ionicons name="at-outline" size={17} color={PC.textMuted} style={{ marginRight: 8 }} />
               <TextInput
@@ -552,12 +654,7 @@ export default function ProfileScreen() {
                 : 'Your UPI ID lets friends pay you directly via UPI apps like GPay or PhonePe.'
               }
             </Text>
-            {upiError ? (
-              <View style={styles.errorBox}>
-                <Ionicons name="alert-circle-outline" size={14} color={PC.negative} />
-                <Text style={styles.errorText}>{upiError}</Text>
-              </View>
-            ) : null}
+            <ErrorBox message={upiError} />
             <View style={styles.usernameInputBox}>
               <Ionicons name="qr-code-outline" size={17} color={PC.textMuted} style={{ marginRight: 8 }} />
               <TextInput

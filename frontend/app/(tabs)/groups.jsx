@@ -18,6 +18,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { PC } from '@/constants/theme';
+import ErrorBox from '@/components/ErrorBox';
 import { useAuth } from '@/context/AuthContext';
 import { useBadge } from '@/context/BadgeContext';
 import api from '@/services/api';
@@ -297,12 +298,7 @@ function AddGroupModal({ visible, onClose, onCreated }) {
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Create Group</Text>
 
-          {error ? (
-            <View style={styles.errorBox}>
-              <Ionicons name="alert-circle-outline" size={15} color={PC.negative} />
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          ) : null}
+          <ErrorBox message={error} />
 
           <Text style={styles.modalLabel}>Group Name</Text>
           <View style={styles.modalInputBox}>
