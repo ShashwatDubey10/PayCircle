@@ -12,8 +12,8 @@ function getBaseUrl() {
     const host = hostUri.split(':')[0]; // strip Metro port, keep the IP
     return `http://${host}:5000`;
   }
-  // Fallback: Android emulator uses 10.0.2.2 to reach host localhost
-  return 'http://10.0.2.2:5000';
+  // Production: deployed backend URL
+  return 'https://paycircle-bvzs.onrender.com';
 }
 
 export const BASE_URL = getBaseUrl();
