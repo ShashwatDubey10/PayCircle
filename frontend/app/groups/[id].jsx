@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -20,7 +20,7 @@ import {
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -96,6 +96,7 @@ function ExpDateSeparator({ label }) {
 // ─── Add Expense Modal ────────────────────────────────────────────────────────
 
 function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
 
   const [amount,    setAmount]    = useState('');
@@ -159,12 +160,12 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
   }
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+    <Modal statusBarTranslucent visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <KeyboardAvoidingView
         style={styles.modalOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        behavior="padding">
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
-        <ScrollView style={styles.modalSheet} bounces={false} keyboardShouldPersistTaps="handled">
+        <ScrollView style={styles.modalSheet} contentContainerStyle={{ padding: 24, paddingBottom: insets.bottom + 40 }} bounces={false} keyboardShouldPersistTaps="handled">
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Add Expense</Text>
 
@@ -323,6 +324,7 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
 // ─── Custom Split Modal ───────────────────────────────────────────────────────
 
 function CustomSplitModal({ visible, onClose, members, payerId, totalAmount, onConfirm }) {
+  const insets = useSafeAreaInsets();
   const [amounts,   setAmounts]   = useState({});
   const [lockedIds, setLockedIds] = useState(new Set());
 
@@ -395,12 +397,12 @@ function CustomSplitModal({ visible, onClose, members, payerId, totalAmount, onC
   }
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal statusBarTranslucent visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView
         style={styles.modalOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        behavior="padding">
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-        <ScrollView style={styles.modalSheet} bounces={false} keyboardShouldPersistTaps="handled">
+        <ScrollView style={styles.modalSheet} contentContainerStyle={{ padding: 24, paddingBottom: insets.bottom + 40 }} bounces={false} keyboardShouldPersistTaps="handled">
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Custom Split</Text>
           <Text style={[styles.modalLabel, { marginBottom: 10 }]}>Total: ₹{totalAmount.toFixed(2)}</Text>
@@ -479,12 +481,18 @@ function CustomSplitModal({ visible, onClose, members, payerId, totalAmount, onC
 // ─── Add Member Modal ─────────────────────────────────────────────────────────
 
 function AddMemberModal({ visible, onClose, groupId, existingMemberIds, onAdded }) {
+  const insets = useSafeAreaInsets();
   const [friends,     setFriends]     = useState([]);
   const [contacts,    setContacts]    = useState([]);
   const [loadingList, setLoadingList] = useState(false);
   const [addingId,    setAddingId]    = useState(null);
   const [error,       setError]       = useState('');
   const [tab,         setTab]         = useState('friends'); // 'friends' | 'contacts'
+
+  // The parent rebuilds `existingMemberIds` on every render, so depending on the
+  // array itself refetched (and reset the tab) on each parent re-render. Depend
+  // on a stable string key instead.
+  const memberKey = existingMemberIds.join(',');
 
   useEffect(() => {
     if (!visible) return;
@@ -502,7 +510,8 @@ function AddMemberModal({ visible, onClose, groupId, existingMemberIds, onAdded 
       .catch(() => { if (!cancelled) setError('Could not load member options.'); })
       .finally(() => { if (!cancelled) setLoadingList(false); });
     return () => { cancelled = true; };
-  }, [visible, existingMemberIds]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, memberKey]);
 
   async function handleAdd(userId, isContact) {
     setAddingId(userId);
@@ -527,10 +536,10 @@ function AddMemberModal({ visible, onClose, groupId, existingMemberIds, onAdded 
   const hasAny = friends.length > 0 || contacts.length > 0;
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+    <Modal statusBarTranslucent visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <View style={styles.modalOverlay}>
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
-        <View style={[styles.modalSheet, { maxHeight: '75%' }]}>
+        <View style={[styles.modalSheet, { maxHeight: "75%", padding: 24, paddingBottom: insets.bottom + 24 }]}>
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Add Member</Text>
 
@@ -619,7 +628,8 @@ function AddMemberModal({ visible, onClose, groupId, existingMemberIds, onAdded 
 
 // ─── Record Settlement Modal ──────────────────────────────────────────────────
 
-function RecordSettlementModal({ visible, onClose, groupId, members, currentUserId, onRecorded }) {
+function RecordSettlementModal({ visible, onClose, groupId, members, currentUserId, memberBalances, onRecorded }) {
+  const insets = useSafeAreaInsets();
   const [fromId,        setFromId]        = useState(currentUserId ?? '');
   const [toId,          setToId]          = useState('');
   const [amount,        setAmount]        = useState('');
@@ -639,6 +649,38 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
     setToId(id);
     if (fromId === id) setFromId('');
   }
+
+  // Mirrors the rule in settlementController: a settlement is valid when the
+  // payer is a net debtor and the receiver a net creditor, capped at the
+  // smaller of the two positions. Deliberately driven by net balances rather
+  // than by the simplified `debts` plan — that plan is one minimal set of
+  // transfers, so a pair can be missing from it while still genuinely owing
+  // each other. Keeping the two in step means the figure shown here is exactly
+  // the ceiling the server will enforce.
+  const settleLimit = useMemo(() => {
+    if (!fromId || !toId || fromId === toId) return { max: 0, reason: '' };
+    const netOf = (id) => (memberBalances || []).find(m => m.user?.id === id)?.netBalance ?? 0;
+    const payerOwes      = -netOf(fromId);
+    const receiverIsOwed =  netOf(toId);
+    if (payerOwes < 0.01)
+      return { max: 0, reason: 'This member has nothing outstanding to settle' };
+    if (receiverIsOwed < 0.01)
+      return { max: 0, reason: 'The receiver is not owed anything in this group' };
+    return { max: Math.round(Math.min(payerOwes, receiverIsOwed) * 100) / 100, reason: '' };
+  }, [memberBalances, fromId, toId]);
+  const outstanding = settleLimit.max;
+
+  // Prefill the full amount once per payer/receiver pair. Keyed on the pair
+  // rather than on `outstanding`, so a balance refresh arriving while the sheet
+  // is open cannot overwrite a figure the user has already edited.
+  const prefilledFor = useRef('');
+  useEffect(() => {
+    if (!visible) { prefilledFor.current = ''; return; }
+    const key = fromId + '>' + toId;
+    if (prefilledFor.current === key) return;
+    prefilledFor.current = key;
+    setAmount(outstanding > 0 ? outstanding.toFixed(2) : '');
+  }, [visible, fromId, toId, outstanding]);
 
   async function handleSubmit() {
     if (!fromId)       { setError('Select who is paying.');    return; }
@@ -693,12 +735,12 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
   function handleClose() { if (!loading) resetAndClose(); }
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+    <Modal statusBarTranslucent visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <KeyboardAvoidingView
         style={styles.modalOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        behavior="padding">
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
-        <ScrollView style={styles.modalSheet} bounces={false} keyboardShouldPersistTaps="handled">
+        <ScrollView style={styles.modalSheet} contentContainerStyle={{ padding: 24, paddingBottom: insets.bottom + 40 }} bounces={false} keyboardShouldPersistTaps="handled">
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Record Settlement</Text>
 
@@ -753,19 +795,78 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
           </ScrollView>
 
           {/* Amount */}
-          <Text style={styles.modalLabel}>Amount (₹)</Text>
-          <View style={styles.modalInputBox}>
+          <View style={styles.settleAmtLabelRow}>
+            <Text style={[styles.modalLabel, { marginBottom: 0 }]}>Amount (₹)</Text>
+            {outstanding > 0 && (
+              <Text style={styles.settleOfLabel}>of ₹{outstanding.toLocaleString('en-IN')}</Text>
+            )}
+          </View>
+          <View style={[styles.modalInputBox, outstanding > 0 && { marginBottom: 10 }]}>
             <Text style={styles.rupeePrefix}>₹</Text>
             <TextInput
               style={[styles.modalInput, { flex: 1 }]}
-              placeholder="0.00"
+              placeholder={outstanding > 0 ? outstanding.toFixed(2) : '0.00'}
               placeholderTextColor={PC.textMuted}
               value={amount}
-              onChangeText={(v) => { setAmount(v); setError(''); }}
+              onChangeText={(v) => {
+                // Same clamp as the 1-on-1 sheet: keep digits and a single dot,
+                // then hold the value at the outstanding debt, which is the
+                // ceiling the server enforces anyway.
+                const cleaned = v.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1');
+                const n = parseFloat(cleaned);
+                setAmount(outstanding > 0 && !isNaN(n) && n > outstanding ? outstanding.toFixed(2) : cleaned);
+                setError('');
+              }}
               keyboardType="decimal-pad"
               editable={!loading}
             />
           </View>
+
+          {/* Partial-payment presets — only once a pair with a real debt is chosen */}
+          {outstanding > 0 && (
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+              {[25, 50, 75, 100].map((pct) => {
+                const presetVal = pct === 100
+                  ? outstanding
+                  : parseFloat((outstanding * pct / 100).toFixed(2));
+                const isActive = Math.abs((parseFloat(amount) || 0) - presetVal) < 0.01;
+                return (
+                  <TouchableOpacity
+                    key={pct}
+                    style={[styles.chip, isActive && styles.chipActive]}
+                    onPress={() => { setAmount(presetVal.toFixed(2)); setError(''); }}
+                    disabled={loading}
+                    activeOpacity={0.75}>
+                    <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
+                      {pct === 100 ? 'Full' : pct + '%'}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+
+          {/* What is left after a partial settle */}
+          {outstanding > 0 && (() => {
+            const remaining = Math.round((outstanding - (parseFloat(amount) || 0)) * 100) / 100;
+            if (remaining <= 0.01) return null;
+            return (
+              <View style={styles.settleNoteRow}>
+                <Ionicons name="time-outline" size={12} color={PC.textMuted} />
+                <Text style={styles.settleRemainingText}>
+                  ₹{remaining.toLocaleString('en-IN')} still owed after this
+                </Text>
+              </View>
+            );
+          })()}
+
+          {/* Nothing settleable for this pair — the server would refuse it, so say why first */}
+          {!!settleLimit.reason && (
+            <View style={styles.settleNoteRow}>
+              <Ionicons name="information-circle-outline" size={12} color={PC.textMuted} />
+              <Text style={styles.settleNoteText}>{settleLimit.reason}</Text>
+            </View>
+          )}
 
           {/* Payment method */}
           <Text style={styles.modalLabel}>How was it paid?</Text>
@@ -866,6 +967,7 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function GroupDetailScreen() {
+  const insets = useSafeAreaInsets();
   const { id }     = useLocalSearchParams();
   const router     = useRouter();
   const { user }   = useAuth();
@@ -901,7 +1003,7 @@ export default function GroupDetailScreen() {
       const g = groupRes.data.group;
       setGroup(g);
       setMembers(
-        (g.members || []).map(m => ({
+        (g.members || []).filter(Boolean).map(m => ({
           id:        m._id,
           name:      m.name,
           email:     m.email,
@@ -1357,7 +1459,7 @@ export default function GroupDetailScreen() {
 
       {/* ── Add Expense FAB ── */}
       {tab === 'expenses' && (
-        <TouchableOpacity style={styles.fab} onPress={() => setShowAddExpense(true)} activeOpacity={0.85}>
+        <TouchableOpacity style={[styles.fab, { bottom: insets.bottom + 24 }]} onPress={() => setShowAddExpense(true)} activeOpacity={0.85}>
           <Ionicons name="add" size={24} color="#060A09" />
           <Text style={styles.fabText}>Add Expense</Text>
         </TouchableOpacity>
@@ -1383,6 +1485,7 @@ export default function GroupDetailScreen() {
         groupId={id}
         members={members}
         currentUserId={user._id}
+        memberBalances={balances.members || []}
         onRecorded={handleSettlementRecorded}
       />
 
@@ -1572,8 +1675,11 @@ const styles = StyleSheet.create({
     backgroundColor: PC.bgCard,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    padding: 24,
     maxHeight: '90%',
+    // NOTE: no padding here. On a ScrollView, padding on `style` clips the
+    // content within it, so the last paddingBottom pixels can never be
+    // scrolled into view. Padding goes on contentContainerStyle instead.
+    // AddMemberModal uses a plain View for its sheet and adds padding inline.
   },
   modalHandle:  { width: 36, height: 4, backgroundColor: PC.border, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
   modalTitle:   { color: PC.textPrimary, fontSize: 18, fontWeight: '700', marginBottom: 20 },
@@ -1590,6 +1696,11 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   modalInput:   { color: PC.textPrimary, fontSize: 15 },
+  settleAmtLabelRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  settleOfLabel:       { color: PC.textMuted, fontSize: 12 },
+  settleNoteRow:       { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16 },
+  settleRemainingText: { color: PC.negative, fontSize: 12, fontWeight: '500' },
+  settleNoteText:      { color: PC.textMuted, fontSize: 12, fontWeight: '500' },
   rupeePrefix:  { color: PC.textPrimary, fontSize: 18, fontWeight: '700', marginRight: 8 },
 
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },

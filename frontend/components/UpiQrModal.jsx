@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import QRCode from 'react-native-qrcode-svg';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -30,6 +31,7 @@ import { buildUpiQrPayload } from '@/utils/upiPayment';
  *   fromName  : string         — payer's name for subtitle (optional)
  */
 export default function UpiQrModal({ visible, onClose, onPaid, upiId, name, amount, note, txnId, fromName }) {
+  const insets = useSafeAreaInsets();
   const svgRef = useRef(null);
   const [sharing, setSharing] = useState(false);
 
@@ -81,10 +83,10 @@ export default function UpiQrModal({ visible, onClose, onPaid, upiId, name, amou
   }
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal statusBarTranslucent visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, { paddingBottom: insets.bottom + 24 }]}>
           <View style={styles.handle} />
 
           <Text style={styles.title}>Payment QR</Text>

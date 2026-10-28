@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -15,7 +16,7 @@ import {
   LayoutAnimation,
   UIManager,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -169,6 +170,19 @@ export default function DirectSplitScreen() {
   const listRef      = useRef(null);
 
   const [friend,           setFriend]           = useState(null);
+  const insets = useSafeAreaInsets();
+
+  // The input bar lives inside a KeyboardAvoidingView, so it only wants the
+  // gesture-bar inset while the keyboard is DOWN. Once the keyboard is up the
+  // KAV has already lifted the bar clear of it, and adding the inset as well
+  // would leave a visible strip of dead space between the bar and the keyboard.
+  const [keyboardUp, setKeyboardUp] = useState(false);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardUp(true));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardUp(false));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+
   const [isVirtualContact, setIsVirtualContact] = useState(false);
   const [splits,      setSplits]      = useState([]);
   const [balance,     setBalance]     = useState(0);
@@ -372,7 +386,10 @@ export default function DirectSplitScreen() {
   }
 
   async function handleRequestSettle(overrideAmt) {
-    const amt = overrideAmt ?? Math.abs(balance);
+    // Second line of defence behind the input clamp: the balance may have moved
+    // since the sheet opened, and the server now rejects anything above it.
+    const balAbs_ = Math.abs(balance);
+    const amt = Math.min(overrideAmt ?? balAbs_, balAbs_);
     setSettleLoading(true);
     try {
       const data = await requestSettle(friendId, amt);
@@ -672,7 +689,7 @@ export default function DirectSplitScreen() {
       {/* ── Chat + Input ── */}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        behavior="padding">
 
         {/* Chat list */}
         {loading ? (
@@ -740,7 +757,7 @@ export default function DirectSplitScreen() {
         )}
 
         {/* ── Input bar ── */}
-        <View style={s.inputBar}>
+        <View style={[s.inputBar, { paddingBottom: (keyboardUp ? 0 : insets.bottom) + 14 }]}>
           {/* Mint glow line at top edge */}
           <View style={s.inputBarAccentLine} />
 
@@ -868,10 +885,24 @@ export default function DirectSplitScreen() {
       />
 
       {/* ── Payment method modal ── */}
-      <Modal visible={showPayModal} transparent animationType="slide" onRequestClose={() => { setShowPayModal(false); setSettleAllMode(false); }}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+      <Modal statusBarTranslucent visible={showPayModal} transparent animationType="slide" onRequestClose={() => { setShowPayModal(false); setSettleAllMode(false); }}>
+        <KeyboardAvoidingView
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}
+          behavior="padding">
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => { setShowPayModal(false); setSettleAllMode(false); }} />
-          <View style={{ backgroundColor: PC.bgCard, borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, borderBottomWidth: 0, borderColor: PC.border, padding: 24 }}>
+          {/* Scrollable because the keyboard shrinks the sheet: with a plain View
+              the payment buttons below the amount field become unreachable.
+              NOTE: padding goes on contentContainerStyle, never on `style` --
+              on a ScrollView that clips the content, so the last paddingBottom
+              pixels can never be scrolled into view. maxHeight is required too,
+              or the sheet splits the screen with the flex:1 backdrop. Do NOT
+              add flexGrow:0 here: ScrollView keeps flexShrink:1, so it would
+              shrink for the keyboard and never grow back. */}
+          <ScrollView
+            style={{ backgroundColor: PC.bgCard, borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, borderBottomWidth: 0, borderColor: PC.border, maxHeight: '85%' }}
+            contentContainerStyle={{ padding: 24, paddingBottom: insets.bottom + 24 }}
+            bounces={false}
+            keyboardShouldPersistTaps="handled">
             <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: PC.border, alignSelf: 'center', marginBottom: 20 }} />
             <Text style={{ color: PC.textPrimary, fontSize: 17, fontWeight: '700', marginBottom: 6 }}>How are you paying?</Text>
             {settleAllMode ? (() => {
@@ -906,7 +937,16 @@ export default function DirectSplitScreen() {
                   <TextInput
                     style={s.customAmtInput}
                     value={settleCustomAmt}
-                    onChangeText={v => setSettleCustomAmt(v)}
+                    onChangeText={v => {
+                      // Strip anything the decimal-pad can still produce on some
+                      // locales (commas, a second dot), then hold the value at the
+                      // outstanding balance. Overpaying does not just overshoot —
+                      // it carries the balance past zero and shows the debt as
+                      // running the other way.
+                      const cleaned = v.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1');
+                      const n = parseFloat(cleaned);
+                      setSettleCustomAmt(!isNaN(n) && n > balAbs ? balAbs.toFixed(2) : cleaned);
+                    }}
                     keyboardType="decimal-pad"
                     selectTextOnFocus
                     placeholder={balAbs.toFixed(2)}
@@ -1003,8 +1043,8 @@ export default function DirectSplitScreen() {
               </View>
               <Ionicons name="chevron-forward" size={16} color={PC.textMuted} />
             </TouchableOpacity>
-          </View>
-        </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </Modal>
 
       {upiQrData && (
@@ -1036,6 +1076,7 @@ export default function DirectSplitScreen() {
 // ─── Two-Person Split Modal ───────────────────────────────────────────────────
 
 function TwoPersonSplitModal({ visible, onClose, totalAmount, myName, friendName, onConfirm }) {
+  const insets = useSafeAreaInsets();
   const [myAmt,     setMyAmt]     = useState('');
   const [friendAmt, setFriendAmt] = useState('');
 
@@ -1068,12 +1109,12 @@ function TwoPersonSplitModal({ visible, onClose, totalAmount, myName, friendName
   const isValid = Math.abs(leftover) <= 0.02 && myN > 0 && friendN > 0;
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal statusBarTranslucent visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView
         style={s2.overlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        behavior="padding">
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-        <View style={s2.sheet}>
+        <View style={[s2.sheet, { paddingBottom: insets.bottom + 24 }]}>
           <View style={s2.handle} />
           <Text style={s2.title}>Custom Split</Text>
           <Text style={s2.subtitle}>Total: ₹{totalAmount.toFixed(2)}</Text>

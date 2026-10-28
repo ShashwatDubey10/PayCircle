@@ -151,9 +151,15 @@ const getDashboard = asyncHandler(async (req, res) => {
     }),
     ...recentDirect.map(s => {
       const payerIdStr = s.payerId._id?.toString() ?? s.payerId.toString();
-      const iAm = payerIdStr === userId.toString();
+      const iAmPayer   = payerIdStr === userId.toString();
+      // Report MY share, not the full bill, and always as an expense — matching
+      // how group_expense is reported above. Previously this sent the full amount
+      // with sign +1, so paying for a shared meal showed up as green income.
+      const payerShare = s.payerShare ?? s.amount / 2;
+      const myShare    = iAmPayer ? payerShare : s.amount - payerShare;
       return { _id: s._id, type: 'direct_split', date: s.date,
-               amount: s.amount, description: s.description || 'Direct split', sign: iAm ? 1 : -1 };
+               amount: parseFloat(myShare.toFixed(2)),
+               description: s.description || 'Direct split', sign: -1 };
     }),
   ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
 

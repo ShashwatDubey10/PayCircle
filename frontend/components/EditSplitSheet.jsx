@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, Modal, StyleSheet,
-  KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator,
+  KeyboardAvoidingView, ScrollView, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PC } from '@/constants/theme';
 
 const CATEGORIES = [
@@ -27,6 +28,7 @@ export default function EditSplitSheet({
   initialAmount,
   initialCategory,
 }) {
+  const insets = useSafeAreaInsets();
   const [amount,   setAmount]   = useState('');
   const [selected, setSelected] = useState('');
   const [custom,   setCustom]   = useState('');
@@ -66,12 +68,16 @@ export default function EditSplitSheet({
   }
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal statusBarTranslucent visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView
         style={sh.overlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        behavior="padding">
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-        <ScrollView style={sh.sheet} bounces={false} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          style={sh.sheet}
+          contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: insets.bottom + 40 }}
+          bounces={false}
+          keyboardShouldPersistTaps="handled">
           <View style={sh.handle} />
           <Text style={sh.title}>Edit Split</Text>
 
@@ -153,7 +159,11 @@ const sh = StyleSheet.create({
     backgroundColor: PC.bgCard,
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
     borderWidth: 1, borderBottomWidth: 0, borderColor: PC.border,
-    paddingHorizontal: 24, paddingTop: 0,
+    paddingTop: 0, // padding lives on contentContainerStyle
+    // Needs an explicit cap, otherwise it splits the screen with the flex:1
+    // backdrop and sits at ~75% height. Do NOT add flexGrow:0 — ScrollView keeps
+    // flexShrink:1, so it would shrink for the keyboard and never grow back.
+    maxHeight: '85%',
   },
   handle:     { width: 36, height: 4, borderRadius: 2, backgroundColor: PC.border, alignSelf: 'center', marginTop: 12, marginBottom: 20 },
   title:      { color: PC.textPrimary, fontSize: 17, fontWeight: '700', marginBottom: 20 },

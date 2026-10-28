@@ -35,7 +35,7 @@ export default function AppAlert({
   const resolvedIconColor = iconColor || PC.accent;
 
   return (
-    <Modal
+    <Modal statusBarTranslucent
       visible={visible}
       transparent
       animationType="fade"

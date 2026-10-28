@@ -4,6 +4,7 @@ import {
   Text,
   Modal,
   Platform,
+  KeyboardAvoidingView,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
@@ -11,7 +12,7 @@ import {
   TextInput,
   RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
@@ -145,11 +146,12 @@ const MODAL_CONTENT = {
 // ─── InfoModal ────────────────────────────────────────────────────────────────
 
 function InfoModal({ content, onClose }) {
+  const insets = useSafeAreaInsets();
   if (!content) return null;
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+    <Modal statusBarTranslucent visible transparent animationType="slide" onRequestClose={onClose}>
       <View style={modalStyles.overlay}>
-        <View style={modalStyles.sheet}>
+        <View style={[modalStyles.sheet, { paddingBottom: insets.bottom + 28 }]}>
           {/* Accent strip */}
           <View style={modalStyles.accentStrip} />
           <View style={modalStyles.handle} />
@@ -164,7 +166,10 @@ function InfoModal({ content, onClose }) {
             <Text style={modalStyles.title}>{content.title}</Text>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 0 }}>
+          {/* No `flex: 0` here — in RN that means flexShrink: 0, so the list kept
+              its full content height, overflowed the sheet's maxHeight and the
+              `overflow: hidden` clipped the Close button away. */}
+          <ScrollView showsVerticalScrollIndicator={false}>
             {content.items.map((item, i) => (
               <View key={i} style={modalStyles.item}>
                 {item.icon ? (
@@ -292,6 +297,7 @@ const modalStyles = StyleSheet.create({
 const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
 
 export default function ProfileScreen() {
+  const insets = useSafeAreaInsets();
   const { user, logout, updateUser } = useAuth();
   const router = useRouter();
 
@@ -318,6 +324,12 @@ export default function ProfileScreen() {
   const [upiInput,     setUpiInput]     = useState('');
   const [upiLoading,   setUpiLoading]   = useState(false);
   const [upiError,     setUpiError]     = useState('');
+
+  // Delete account modal
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletePassword,  setDeletePassword]  = useState('');
+  const [deleteLoading,   setDeleteLoading]   = useState(false);
+  const [deleteError,     setDeleteError]     = useState('');
 
   // ── Fetch stats ───────────────────────────────────────────────────────────
   const fetchStats = useCallback(async () => {
@@ -428,6 +440,31 @@ export default function ProfileScreen() {
   // ── Sign out ──────────────────────────────────────────────────────────────
   function handleSignOut() {
     setShowSignOutAlert(true);
+  }
+
+  // Account deletion is irreversible, so the password is re-entered here rather
+  // than trusting an unlocked phone. The screen unmounts on success (RootGuard
+  // sees user -> null), so the loading flag is only cleared on failure.
+  async function handleDeleteAccount() {
+    if (!deletePassword) { setDeleteError('Enter your password to confirm.'); return; }
+    setDeleteLoading(true);
+    setDeleteError('');
+    try {
+      await api.delete('/api/auth/me', { data: { password: deletePassword } });
+      setShowDeleteModal(false);
+      setDeletePassword('');
+      await logout();
+    } catch (err) {
+      setDeleteError(err.message || 'Could not delete your account. Please try again.');
+      setDeleteLoading(false);
+    }
+  }
+
+  function closeDeleteModal() {
+    if (deleteLoading) return;
+    setShowDeleteModal(false);
+    setDeletePassword('');
+    setDeleteError('');
   }
 
   async function confirmSignOut() {
@@ -574,6 +611,22 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        {/* ── Delete Account ── */}
+        <View style={styles.settingsGroup}>
+          <View style={styles.settingsCard}>
+            <TouchableOpacity
+              style={styles.settingsRow}
+              activeOpacity={0.7}
+              onPress={() => setShowDeleteModal(true)}
+              disabled={signingOut}>
+              <View style={styles.settingsIconBox}>
+                <Ionicons name="trash-outline" size={18} color={PC.negative} />
+              </View>
+              <Text style={[styles.settingsLabel, { color: PC.negative }]}>Delete Account</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         <Text style={styles.version}>PayCircle v1.0.0 · MVP</Text>
       </ScrollView>
 
@@ -601,9 +654,9 @@ export default function ProfileScreen() {
       <AppToast toast={toast} />
 
       {/* ── Set Username Modal ── */}
-      <Modal visible={showUsernameModal} transparent animationType="slide" onRequestClose={() => { setShowUsernameModal(false); setUsernameError(''); }}>
-        <View style={modalStyles.overlay}>
-          <View style={modalStyles.sheet}>
+      <Modal statusBarTranslucent visible={showUsernameModal} transparent animationType="slide" onRequestClose={() => { setShowUsernameModal(false); setUsernameError(''); }}>
+        <KeyboardAvoidingView style={modalStyles.overlay} behavior="padding">
+          <View style={[modalStyles.sheet, { paddingBottom: insets.bottom + 28 }]}>
             <View style={modalStyles.handle} />
             <Text style={modalStyles.title}>{user?.username ? 'Change Username' : 'Set Username'}</Text>
             <Text style={[modalStyles.itemBody, { marginBottom: 16 }]}>
@@ -640,12 +693,12 @@ export default function ProfileScreen() {
               <Text style={styles.cancelText}>Cancel</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
       {/* ── Set UPI ID Modal ── */}
-      <Modal visible={showUpiModal} transparent animationType="slide" onRequestClose={() => { setShowUpiModal(false); setUpiError(''); }}>
-        <View style={modalStyles.overlay}>
-          <View style={modalStyles.sheet}>
+      <Modal statusBarTranslucent visible={showUpiModal} transparent animationType="slide" onRequestClose={() => { setShowUpiModal(false); setUpiError(''); }}>
+        <KeyboardAvoidingView style={modalStyles.overlay} behavior="padding">
+          <View style={[modalStyles.sheet, { paddingBottom: insets.bottom + 28 }]}>
             <View style={modalStyles.handle} />
             <Text style={modalStyles.title}>{user?.upiId ? 'Change UPI ID' : 'Add UPI ID'}</Text>
             <Text style={[modalStyles.itemBody, { marginBottom: 16 }]}>
@@ -682,7 +735,53 @@ export default function ProfileScreen() {
               <Text style={styles.cancelText}>Cancel</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
+      </Modal>
+      {/* ── Delete Account Modal ── */}
+      <Modal statusBarTranslucent visible={showDeleteModal} transparent animationType="slide" onRequestClose={closeDeleteModal}>
+        <KeyboardAvoidingView style={modalStyles.overlay} behavior="padding">
+          <View style={[modalStyles.sheet, { paddingBottom: insets.bottom + 28 }]}>
+            <View style={modalStyles.handle} />
+            <Text style={modalStyles.title}>Delete Account</Text>
+            <Text style={[modalStyles.itemBody, { marginBottom: 10 }]}>
+              This cannot be undone. Your personal transactions, budgets, private
+              categories and friend connections are deleted permanently.
+            </Text>
+            <Text style={[modalStyles.itemBody, { marginBottom: 16 }]}>
+              Shared records stay: expenses, settlements and splits you took part in
+              remain in other people’ groups so their balances still add up, but your
+              name and details are removed from them.
+            </Text>
+            <ErrorBox message={deleteError} />
+            <View style={styles.usernameInputBox}>
+              <Ionicons name="lock-closed-outline" size={17} color={PC.textMuted} style={{ marginRight: 8 }} />
+              <TextInput
+                style={styles.usernameInput}
+                placeholder="Confirm your password"
+                placeholderTextColor={PC.textMuted}
+                value={deletePassword}
+                onChangeText={(v) => { setDeletePassword(v); setDeleteError(''); }}
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!deleteLoading}
+              />
+            </View>
+            <TouchableOpacity
+              style={[modalStyles.closeBtn, { backgroundColor: PC.negative }, deleteLoading && { opacity: 0.6 }]}
+              onPress={handleDeleteAccount}
+              disabled={deleteLoading}
+              activeOpacity={0.85}>
+              {deleteLoading
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Text style={[modalStyles.closeBtnText, { color: '#fff' }]}>Delete My Account</Text>
+              }
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.cancelBtn} onPress={closeDeleteModal} disabled={deleteLoading}>
+              <Text style={styles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );

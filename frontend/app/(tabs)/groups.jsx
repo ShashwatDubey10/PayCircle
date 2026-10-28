@@ -10,9 +10,8 @@ import {
   TextInput,
   RefreshControl,
   KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -258,7 +257,9 @@ function ChatRow({ item, onPress, last }) {
 // ─── Add Group Modal ──────────────────────────────────────────────────────────
 
 function AddGroupModal({ visible, onClose, onCreated }) {
+  const insets = useSafeAreaInsets();
   const [name,    setName]    = useState('');
+  const [type,    setType]    = useState('Miscellaneous');
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState('');
 
@@ -270,9 +271,11 @@ function AddGroupModal({ visible, onClose, onCreated }) {
     setLoading(true);
     setError('');
     try {
-      const { data } = await api.post('/api/groups', { name: name.trim() });
+      // `type` is required by the API — omitting it rejected every create.
+      const { data } = await api.post('/api/groups', { name: name.trim(), type });
       onCreated(data.group);
       setName('');
+      setType('Miscellaneous');
       onClose();
     } catch (err) {
       setError(err.message);
@@ -284,17 +287,18 @@ function AddGroupModal({ visible, onClose, onCreated }) {
   function handleClose() {
     if (loading) return;
     setName('');
+    setType('Miscellaneous');
     setError('');
     onClose();
   }
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+    <Modal statusBarTranslucent visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <KeyboardAvoidingView
         style={styles.modalOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        behavior="padding">
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
-        <View style={styles.modalSheet}>
+        <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 40 }]}>
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Create Group</Text>
 
@@ -311,6 +315,29 @@ function AddGroupModal({ visible, onClose, onCreated }) {
               autoCapitalize="words"
               editable={!loading}
             />
+          </View>
+
+          <Text style={styles.modalLabel}>Group Type</Text>
+          <View style={styles.typeGrid}>
+            {GROUP_TYPES.map((t) => {
+              const active = type === t;
+              return (
+                <TouchableOpacity
+                  key={t}
+                  style={[styles.typeChip, active && styles.typeChipActive]}
+                  onPress={() => setType(t)}
+                  disabled={loading}
+                  activeOpacity={0.75}>
+                  <Ionicons
+                    name={groupIcon(t)}
+                    size={14}
+                    color={active ? PC.accent : PC.textMuted}
+                    style={{ marginRight: 5 }}
+                  />
+                  <Text style={[styles.typeChipText, active && styles.typeChipTextActive]}>{t}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
           <TouchableOpacity
@@ -332,6 +359,7 @@ function AddGroupModal({ visible, onClose, onCreated }) {
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function GroupsScreen() {
+  const insets = useSafeAreaInsets();
   const router     = useRouter();
   const { user }   = useAuth();
 
@@ -689,7 +717,7 @@ export default function GroupsScreen() {
       </TouchableOpacity>
 
       {/* ── Settlements Modal ── */}
-      <Modal visible={showSettlements} animationType="slide" onRequestClose={() => setShowSettlements(false)}>
+      <Modal statusBarTranslucent visible={showSettlements} animationType="slide" onRequestClose={() => setShowSettlements(false)}>
         <SafeAreaView style={styles.safe} edges={['top']}>
           <View style={styles.settleModalHeader}>
             <TouchableOpacity onPress={() => setShowSettlements(false)} style={styles.settleBackBtn}>
@@ -782,7 +810,7 @@ export default function GroupsScreen() {
       </Modal>
 
       {/* ── Action Sheet Modal ── */}
-      <Modal
+      <Modal statusBarTranslucent
         visible={showActionSheet}
         transparent
         animationType="slide"
@@ -792,7 +820,7 @@ export default function GroupsScreen() {
           activeOpacity={1}
           onPress={() => setShowActionSheet(false)}>
           <TouchableOpacity activeOpacity={1} onPress={() => {}}>
-            <View style={styles.actionSheet}>
+            <View style={[styles.actionSheet, { paddingBottom: insets.bottom + 40 }]}>
               <View style={styles.actionHandle} />
 
               <TouchableOpacity
@@ -846,14 +874,14 @@ export default function GroupsScreen() {
       </Modal>
 
       {/* ── Contact Picker Modal ── */}
-      <Modal
+      <Modal statusBarTranslucent
         visible={showContactPicker}
         transparent
         animationType="slide"
         onRequestClose={() => setShowContactPicker(false)}>
         <View style={styles.actionOverlay}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setShowContactPicker(false)} />
-          <View style={[styles.actionSheet, { paddingBottom: 36 }]}>
+          <View style={[styles.actionSheet, { paddingBottom: insets.bottom + 36 }]}>
             <View style={styles.actionHandle} />
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
               <Text style={[styles.modalTitle, { marginBottom: 0, flex: 1 }]}>Personal Contacts</Text>
@@ -917,9 +945,9 @@ export default function GroupsScreen() {
       />
 
       {/* ── Filter Sheet Modal ── */}
-      <Modal visible={showFilterSheet} transparent animationType="slide" onRequestClose={() => setShowFilterSheet(false)}>
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowFilterSheet(false)} />
-        <View style={styles.pickerSheet}>
+      <Modal statusBarTranslucent visible={showFilterSheet} transparent animationType="slide" onRequestClose={() => setShowFilterSheet(false)}>
+        <TouchableOpacity style={styles.filterOverlay} activeOpacity={1} onPress={() => setShowFilterSheet(false)} />
+        <View style={[styles.pickerSheet, { paddingBottom: insets.bottom + 36 }]}>
           <Text style={styles.pickerTitle}>Show</Text>
           {[
             { key: 'all',     label: 'All',              icon: 'apps-outline' },
@@ -1286,7 +1314,10 @@ const styles = StyleSheet.create({
   fabActive: { borderWidth: 2, borderColor: '#fff' },
 
   // Filter sheet
-  modalOverlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
+  // NOTE: must not be called `modalOverlay` — that key already exists above for
+  // the Add Group sheet, and the duplicate silently overrode it (dropping
+  // `justifyContent: 'flex-end'`, which rendered that sheet at the top).
+  filterOverlay:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
   pickerSheet:     { backgroundColor: PC.bgCard, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 36 },
   pickerTitle:     { color: PC.textPrimary, fontSize: 17, fontWeight: '700', marginBottom: 12 },
   pickerRow:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 14, borderRadius: 10, paddingHorizontal: 8, marginBottom: 2 },

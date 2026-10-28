@@ -13,7 +13,7 @@ import {
   Platform,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { PC } from '@/constants/theme';
 import ErrorBox from '@/components/ErrorBox';
@@ -185,6 +185,7 @@ function TxRow({ tx, onLongPress, last }) {
 // ─── Add Transaction Modal ────────────────────────────────────────────────────
 
 function AddTransactionModal({ visible, onClose, onAdded }) {
+  const insets = useSafeAreaInsets();
   const [type,     setType]     = useState('expense');
   const [amount,   setAmount]   = useState('');
   const [category, setCategory] = useState('Food');
@@ -235,12 +236,16 @@ function AddTransactionModal({ visible, onClose, onAdded }) {
   }
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+    <Modal statusBarTranslucent visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <KeyboardAvoidingView
         style={styles.modalOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        behavior="padding">
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
-        <ScrollView style={styles.modalSheet} bounces={false} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          style={styles.modalSheet}
+          contentContainerStyle={{ padding: 24, paddingBottom: insets.bottom + 40 }}
+          bounces={false}
+          keyboardShouldPersistTaps="handled">
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Add Transaction</Text>
 
@@ -758,8 +763,8 @@ const styles = StyleSheet.create({
     backgroundColor: PC.bgCard,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    padding: 24,
     maxHeight: '92%',
+    // padding lives on contentContainerStyle — on style it clips scroll content
   },
   modalHandle: { width: 36, height: 4, backgroundColor: PC.border, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
   modalTitle:  { color: PC.textPrimary, fontSize: 18, fontWeight: '700', marginBottom: 20 },

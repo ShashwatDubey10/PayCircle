@@ -9,7 +9,7 @@ import {
   Dimensions,
   Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -63,8 +63,9 @@ function Corner({ position }) {
 // ─── Payment Sheet ─────────────────────────────────────────────────────────────
 
 function PaymentSheet({ upi, onClose, onPay }) {
+  const insets = useSafeAreaInsets();
   return (
-    <View style={styles.sheet}>
+    <View style={[styles.sheet, { paddingBottom: insets.bottom + 24 }]}>
       <View style={styles.sheetHandle} />
 
       <View style={styles.sheetHeader}>
@@ -114,6 +115,7 @@ function PaymentSheet({ upi, onClose, onPay }) {
 // ─── Main Screen ───────────────────────────────────────────────────────────────
 
 export default function QrScannerScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
@@ -181,7 +183,7 @@ export default function QrScannerScreen() {
           <Text style={styles.permDesc}>
             PayCircle needs camera access to scan UPI QR codes for payments.
           </Text>
-          <TouchableOpacity style={styles.btnPrimary} onPress={requestPermission} activeOpacity={0.85}>
+          <TouchableOpacity style={styles.btnPrimarySolo} onPress={requestPermission} activeOpacity={0.85}>
             <Text style={styles.btnPrimaryText}>Allow Camera</Text>
           </TouchableOpacity>
         </View>
@@ -244,8 +246,8 @@ export default function QrScannerScreen() {
 
       {/* Scan-again button when error */}
       {error && !upiData && (
-        <View style={styles.retryWrap}>
-          <TouchableOpacity style={styles.btnSecondary} onPress={resetScan} activeOpacity={0.8}>
+        <View style={[styles.retryWrap, { bottom: insets.bottom + 48 }]}>
+          <TouchableOpacity style={styles.btnSecondarySolo} onPress={resetScan} activeOpacity={0.8}>
             <Text style={styles.btnSecondaryText}>Try Again</Text>
           </TouchableOpacity>
         </View>
@@ -462,6 +464,9 @@ const styles = StyleSheet.create({
   },
 
   // ── Buttons
+  // `btnPrimary` / `btnSecondary` carry `flex: 1` because they sit side by side in
+  // the `sheetActions` ROW. The *Solo variants drop it — used inside column
+  // containers, where `flex: 1` stretched them to fill the screen height.
   btnPrimary: {
     flex: 1,
     flexDirection: 'row',
@@ -470,6 +475,25 @@ const styles = StyleSheet.create({
     backgroundColor: PC.accent,
     borderRadius: 14,
     paddingVertical: 14,
+  },
+  btnPrimarySolo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: PC.accent,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+  },
+  btnSecondarySolo: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: PC.bgCardElevated,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderWidth: 1,
+    borderColor: PC.border,
   },
   btnPrimaryText: {
     color: PC.bg,

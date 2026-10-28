@@ -9,10 +9,10 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PC } from '@/constants/theme';
 import api from '@/services/api';
 import ErrorBox from '@/components/ErrorBox';
@@ -37,6 +37,7 @@ function getCatIcon(name = '') {
 //   budgetData   — { budget: number, categories: [{ category, limit?, amount? }] }
 //                  (also accepts currentBudget/currentCategories for backwards compat)
 export default function BudgetSetupSheet({ visible, onClose, onSaved, budgetData, currentBudget, currentCategories }) {
+  const insets = useSafeAreaInsets();
   const [overallInput, setOverallInput] = useState('');
   const [catRows,      setCatRows]      = useState([]);
   const [saving,       setSaving]       = useState(false);
@@ -129,12 +130,12 @@ export default function BudgetSetupSheet({ visible, onClose, onSaved, budgetData
   }
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal statusBarTranslucent visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView
         style={s.sheetOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        behavior="padding">
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-        <View style={s.setupSheet}>
+        <View style={[s.setupSheet, { paddingBottom: insets.bottom + 32 }]}>
           <View style={s.sheetHandle} />
 
           {/* Header */}

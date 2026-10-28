@@ -10,8 +10,11 @@ const VALID_TYPES = ['Roommates', 'Trip', 'Mess', 'Miscellaneous'];
 
 // POST /api/groups
 const createGroup = asyncHandler(async (req, res) => {
-  const { name, type } = req.body;
-  if (!name || !type) return res.status(400).json({ success: false, message: 'Name and type are required' });
+  const { name } = req.body;
+  // `type` is optional — fall back to the schema default rather than rejecting.
+  const type = req.body.type ?? 'Miscellaneous';
+
+  if (!name) return res.status(400).json({ success: false, message: 'Name is required' });
   if (name.trim().length < 3 || name.trim().length > 50)
     return res.status(400).json({ success: false, message: 'Group name must be 3–50 characters' });
   if (!VALID_TYPES.includes(type))
@@ -66,7 +69,7 @@ const getGroup = asyncHandler(async (req, res) => {
     .populate('adminId', 'name email');
   if (!group) return res.status(404).json({ success: false, message: 'Group not found' });
 
-  const isMember = group.members.some(m => m._id.toString() === req.user._id.toString());
+  const isMember = group.members.some(m => m?._id?.toString() === req.user._id.toString());
   if (!isMember) {
     logger.warn('GROUP', `Access denied — user not a member`, { groupId: req.params.id, userId: req.user._id });
     return res.status(403).json({ success: false, message: 'Not a group member' });
@@ -81,7 +84,9 @@ const getMembers = asyncHandler(async (req, res) => {
   const group = await Group.findById(req.params.id).populate('members', 'name email isVirtual');
   if (!group) return res.status(404).json({ success: false, message: 'Group not found' });
 
-  const members = group.members.map(m => ({
+  // Filter nulls: populate() yields null for ids whose User was hard-deleted by
+  // the pre-soft-delete contact flow. Without this, m._id throws a 500.
+  const members = group.members.filter(Boolean).map(m => ({
     id:        m._id,
     name:      m.name,
     email:     m.email,
@@ -114,6 +119,7 @@ const addMember = asyncHandler(async (req, res) => {
 
   const friends = await areFriends(req.user._id, userToAdd._id);
   const isOwnContact = userToAdd.isVirtual &&
+    !userToAdd.deletedAt &&
     userToAdd.createdBy?.toString() === req.user._id.toString();
   if (!friends && !isOwnContact) {
     logger.warn('GROUP', `Add member denied — not friends or own contact`, { groupId: group._id, targetUserId: userToAdd._id });

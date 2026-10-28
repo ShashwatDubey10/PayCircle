@@ -29,17 +29,37 @@ const recordSettlement = asyncHandler(async (req, res) => {
   if (isNaN(amt) || amt < 0.01)
     return res.status(400).json({ success: false, message: 'Amount must be greater than 0' });
 
-  // Validate amount against actual outstanding debt
-  const { debts } = await calculateGroupBalances(group._id);
-  const debt = debts.find(
-    d => d.from.id === fromUserId.toString() && d.to.id === toUserId.toString()
-  );
-  if (!debt)
-    return res.status(400).json({ success: false, message: 'No outstanding debt exists from this person to the receiver' });
-  if (amt > debt.amount + 0.01)
+  // Validate the amount against the two parties' net positions, not against the
+  // simplified `debts` plan. That plan is one minimal set of transfers, so a
+  // pair can be absent from it while still genuinely owing each other: with A
+  // owing 30, B owing 70, X owed 60 and Y owed 40, greedy matching emits
+  // B->X 60, B->Y 10 and A->Y 30, and A handing X money was refused outright
+  // even though it is a perfectly good transfer that leaves the group solvable.
+  //
+  // A settlement is sound whenever the payer is a net debtor and the receiver a
+  // net creditor. The ceiling is the smaller of the two positions: beyond that
+  // it carries one of them past zero and invents a debt the other way.
+  const { members } = await calculateGroupBalances(group._id);
+  const netOf = (id) => members.find(m => m.user.id === id.toString())?.netBalance ?? 0;
+  const payerOwes      = -netOf(fromUserId);
+  const receiverIsOwed =  netOf(toUserId);
+
+  if (payerOwes < 0.01)
     return res.status(400).json({
       success: false,
-      message: `Settlement amount (₹${amt.toFixed(2)}) exceeds the outstanding debt of ₹${debt.amount.toFixed(2)}`,
+      message: 'This member has no outstanding balance to settle in this group',
+    });
+  if (receiverIsOwed < 0.01)
+    return res.status(400).json({
+      success: false,
+      message: 'The receiver is not owed anything in this group',
+    });
+
+  const maxSettle = Math.min(payerOwes, receiverIsOwed);
+  if (amt > maxSettle + 0.01)
+    return res.status(400).json({
+      success: false,
+      message: `Settlement amount (₹${amt.toFixed(2)}) exceeds the outstanding balance of ₹${maxSettle.toFixed(2)}`,
     });
 
   const settlement = await Settlement.create({

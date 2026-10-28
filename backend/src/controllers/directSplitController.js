@@ -8,15 +8,65 @@ const logger       = require('../utils/logger');
 const { areFriends }            = require('./friendController');
 const { calculateGroupBalances } = require('../services/balanceService');
 
-// Returns true if otherId is a personal contact created by meId
+// Returns true if otherId is a personal contact created by meId.
+// Archived contacts still pass so their history stays readable and settleable;
+// creating NEW debt with one is blocked in addDirectSplit instead.
 async function isMyVirtualContact(meId, otherId) {
   const u = await User.findOne({ _id: otherId, isVirtual: true, createdBy: meId });
+  return !!u;
+}
+
+// Stricter variant: must be an active (non-archived) contact.
+async function isMyActiveVirtualContact(meId, otherId) {
+  const u = await User.findOne({ _id: otherId, isVirtual: true, createdBy: meId, deletedAt: null });
   return !!u;
 }
 
 // Returns true if meId is authorised to transact with otherId
 async function canTransact(meId, otherId) {
   return (await areFriends(meId, otherId)) || (await isMyVirtualContact(meId, otherId));
+}
+
+// Net balance between two users, from meId's point of view, derived from their
+// splits plus confirmed settles. Positive = the other user owes me, negative =
+// I owe them. The arithmetic lives here so the balance reported by
+// getDirectSplits and the cap enforced by requestSettle can never drift apart.
+function netDirectBalance(meIdStr, splits, settles) {
+  let balance = 0;
+  for (const s of splits) {
+    const payerIdStr = s.payerId?._id?.toString() ?? s.payerId?.toString();
+    if (!payerIdStr) continue; // skip if payer was deleted
+    const theirShare = s.amount - (s.payerShare ?? s.amount / 2);
+    if (payerIdStr === meIdStr) balance += theirShare;
+    else                        balance -= theirShare;
+  }
+  for (const st of settles) {
+    const fromStr = st.fromUserId?._id?.toString() ?? st.fromUserId?.toString();
+    if (fromStr === meIdStr) balance += st.amount; // I paid the debt -> I owe less
+    else                     balance -= st.amount; // They paid me    -> I'm owed less
+  }
+  return balance;
+}
+
+// Loads the splits and confirmed settles for a pair and reduces them to one
+// net balance. Used where only the number is needed, not the history.
+async function fetchDirectBalance(meId, friendId) {
+  const [splits, settles] = await Promise.all([
+    DirectSplit.find({
+      $or: [
+        { payerId: meId,     otherUserId: friendId },
+        { payerId: friendId, otherUserId: meId     },
+      ],
+    }).lean(),
+    DirectSettle.find({
+      status: 'confirmed',
+      $or: [
+        { fromUserId: meId,     toUserId: friendId },
+        { fromUserId: friendId, toUserId: meId     },
+      ],
+    }).lean(),
+  ]);
+  return netDirectBalance(meId.toString(), splits, settles);
 }
 
 // POST /api/users/me/direct/:friendId
@@ -35,7 +85,8 @@ const addDirectSplit = asyncHandler(async (req, res) => {
   if (!Object.prototype.hasOwnProperty.call(req.body, 'paidByMe') || typeof paidByMe !== 'boolean' && paidByMe !== 'true' && paidByMe !== 'false')
     return res.status(400).json({ success: false, message: 'paidByMe (boolean) is required' });
 
-  if (!(await canTransact(meId, friendId)))
+  const canAdd = (await areFriends(meId, friendId)) || (await isMyActiveVirtualContact(meId, friendId));
+  if (!canAdd)
     return res.status(403).json({ success: false, message: 'User must be a friend or personal contact to track splits' });
 
   // Normalize to boolean — body values arrive as JSON but can be string "false" from some clients
@@ -90,20 +141,6 @@ const getDirectSplits = asyncHandler(async (req, res) => {
     .populate('payerId',     'name username')
     .populate('otherUserId', 'name username');
 
-  // Positive = friend owes me; negative = I owe friend
-  let balance = 0;
-  for (const s of splits) {
-    const payerIdStr = s.payerId?._id?.toString() ?? s.payerId?.toString();
-    if (!payerIdStr) continue; // skip if payer was deleted
-    const theirShare = s.amount - (s.payerShare ?? s.amount / 2);
-    if (payerIdStr === meId.toString()) {
-      balance += theirShare;
-    } else {
-      balance -= theirShare;
-    }
-  }
-
-  // Add confirmed direct settlements to balance
   const settles = await DirectSettle.find({
     status: 'confirmed',
     $or: [
@@ -111,14 +148,9 @@ const getDirectSplits = asyncHandler(async (req, res) => {
       { fromUserId: friendId, toUserId: meId     },
     ],
   });
-  for (const st of settles) {
-    const fromStr = st.fromUserId?.toString();
-    if (fromStr === meId.toString()) {
-      balance += st.amount;   // I paid the debt → I owe less
-    } else {
-      balance -= st.amount;   // Friend paid me → I'm owed less
-    }
-  }
+
+  // Positive = friend owes me; negative = I owe friend
+  const balance = netDirectBalance(meId.toString(), splits, settles);
 
   // Fetch pending settle for this pair
   const pendingSettle = await DirectSettle.findOne({
@@ -175,6 +207,33 @@ const requestSettle = asyncHandler(async (req, res) => {
   const amt = parseFloat(amount);
   if (!amt || isNaN(amt) || amt <= 0)
     return res.status(400).json({ success: false, message: 'Valid amount required' });
+
+  // Cap the settle at what the payer actually owes. Paying more than the
+  // outstanding balance does not just overshoot — it carries the balance past
+  // zero and invents a debt in the opposite direction. The group settlement
+  // path has guarded this from the start (see settlementController); this one
+  // only checked that the amount was positive.
+  //
+  // Direction matters: for a friend the requester is always the payer, while
+  // for a personal contact `fromContact` flips it so the creditor can record
+  // that the contact paid them. `!!fromContact` mirrors the truthiness the
+  // insert below already uses, so the two can't disagree about who is paying.
+  const contactIsPaying = isContact && !!fromContact;
+  const balance     = await fetchDirectBalance(meId, friendId);
+  const outstanding = contactIsPaying ? balance : -balance;
+
+  if (outstanding < 0.01)
+    return res.status(400).json({
+      success: false,
+      message: contactIsPaying
+        ? 'They have no outstanding balance to settle'
+        : 'You have no outstanding balance to settle',
+    });
+  if (amt > outstanding + 0.01)
+    return res.status(400).json({
+      success: false,
+      message: `Settle amount (₹${amt.toFixed(2)}) exceeds the outstanding balance of ₹${outstanding.toFixed(2)}`,
+    });
 
   // Personal contacts settle immediately — no pending/confirm flow needed
   if (isContact) {
@@ -388,17 +447,35 @@ const getGroupDebtsWithFriend = asyncHandler(async (req, res) => {
 
   const groupDebts = [];
   for (const group of groups) {
-    const { debts } = await calculateGroupBalances(group._id);
-    const debt = debts.find(d =>
-      (d.from.id === meStr && d.to.id === friendId) ||
-      (d.from.id === friendId && d.to.id === meStr)
-    );
-    if (debt) {
+    // Driven by the two net positions, not by the simplified `debts` plan. That
+    // plan is one minimal set of transfers, so the pair of us can be missing
+    // from it while still genuinely owing each other — which dropped real group
+    // debts out of this list, and so out of the Settle All total. This is the
+    // same rule recordSettlement validates against.
+    const { members } = await calculateGroupBalances(group._id);
+    const netOf = (id) => members.find(m => m.user.id === id)?.netBalance ?? 0;
+    const myNet     = netOf(meStr);
+    const friendNet = netOf(friendId);
+
+    // Only one direction can be owed: an obligation exists when we sit on
+    // opposite sides of zero, and the settleable figure is the smaller of the
+    // two positions — past that, a payment would carry one of us through zero.
+    let amount = 0;
+    let iOwe   = false;
+    if (myNet < -0.005 && friendNet > 0.005) {
+      amount = Math.min(-myNet, friendNet);
+      iOwe   = true;
+    } else if (myNet > 0.005 && friendNet < -0.005) {
+      amount = Math.min(myNet, -friendNet);
+      iOwe   = false;
+    }
+
+    if (amount >= 0.01) {
       groupDebts.push({
         groupId:   group._id.toString(),
         groupName: group.name,
-        amount:    debt.amount,
-        iOwe:      debt.from.id === meStr,
+        amount:    Math.round(amount * 100) / 100,
+        iOwe,
       });
     }
   }
@@ -426,12 +503,20 @@ const updateDirectSplit = asyncHandler(async (req, res) => {
     const amt = parseFloat(amount);
     if (isNaN(amt) || amt <= 0)
       return res.status(400).json({ success: false, message: 'Amount must be positive' });
+
+    // Rescale any custom split proportionally. Leaving payerShare untouched let
+    // it exceed the new amount, making the other party's share negative and
+    // silently corrupting every balance derived from this split.
+    if (split.payerShare != null && split.amount > 0) {
+      const ratio = split.payerShare / split.amount;
+      split.payerShare = Math.round(amt * ratio * 100) / 100;
+    }
     split.amount = amt;
   }
   if (description !== undefined) split.description = String(description).trim();
   if (payerShare !== undefined) {
     const ps = parseFloat(payerShare);
-    split.payerShare = (!isNaN(ps) && ps >= 0) ? ps : null;
+    split.payerShare = (!isNaN(ps) && ps >= 0 && ps <= split.amount) ? ps : null;
   }
 
   await split.save();

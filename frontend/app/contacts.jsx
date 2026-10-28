@@ -11,9 +11,8 @@ import {
   Alert,
   RefreshControl,
   KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 
@@ -63,6 +62,7 @@ function ContactCard({ contact, onEdit, onDelete, onPress }) {
 // ─── Add / Edit Modal ─────────────────────────────────────────────────────────
 
 function ContactModal({ visible, editTarget, onClose, onSaved }) {
+  const insets = useSafeAreaInsets();
   const [name,    setName]    = useState('');
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState('');
@@ -102,12 +102,12 @@ function ContactModal({ visible, editTarget, onClose, onSaved }) {
   }
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+    <Modal statusBarTranslucent visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <KeyboardAvoidingView
         style={styles.modalOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        behavior="padding">
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
-        <View style={styles.modalSheet}>
+        <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 36 }]}>
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>
             {editTarget ? 'Edit Contact' : 'New Personal Contact'}

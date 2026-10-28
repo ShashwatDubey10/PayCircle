@@ -1,8 +1,7 @@
 import { DarkTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useRef } from 'react';
-import { Text, TextInput } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
 import 'react-native-reanimated';
 import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
@@ -14,9 +13,12 @@ import {
   Roboto_700Bold,
 } from '@expo-google-fonts/roboto';
 
+import { PC } from '@/constants/theme';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { BadgeProvider } from '@/context/BadgeContext';
 import { updatePushToken } from '@/services/friends';
+import { setServerWakingHandler } from '@/services/api';
+import ServerWakingOverlay from '@/components/ServerWakingOverlay';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -50,6 +52,22 @@ function RootGuard() {
   // • Registration is skipped for the same user (prevents duplicate calls).
   // • Registration re-runs when a different user logs in after a sign-out.
   const lastRegisteredUserId = useRef(null);
+
+  // Set by services/api.js when a request times out and is being retried against
+  // a server that is probably still booting.
+  const [waking, setWaking] = useState(false);
+  useEffect(() => {
+    setServerWakingHandler(setWaking);
+    return () => setServerWakingHandler(null);
+  }, []);
+
+  // Hide the splash once the session restore has settled, so the user never sees
+  // a flash of the dashboard before being redirected to login (or vice versa) —
+  // or early if the server turns out to be asleep, because otherwise the splash
+  // sits there looking frozen for a minute with nothing explaining why.
+  useEffect(() => {
+    if (!loading || waking) SplashScreen.hideAsync().catch(() => {});
+  }, [loading, waking]);
 
   // Redirect based on auth state
   useEffect(() => {
@@ -90,6 +108,11 @@ function RootGuard() {
     })();
   }, [user]);
 
+  // Covers the app while the server is waking, and until the session restore
+  // settles, so the early splash hide above cannot expose a screen before the
+  // redirect below has chosen one.
+  if (waking || loading) return <ServerWakingOverlay waking={waking} />;
+
   return null;
 }
 
@@ -102,18 +125,6 @@ export default function RootLayout() {
     Roboto_700Bold,
   });
 
-  useEffect(() => {
-    if (fontsLoaded) {
-      // Apply Roboto globally — iOS will now match Android's default font
-      Text.defaultProps = Text.defaultProps ?? {};
-      Text.defaultProps.style = { fontFamily: 'Roboto_400Regular' };
-      TextInput.defaultProps = TextInput.defaultProps ?? {};
-      TextInput.defaultProps.style = { fontFamily: 'Roboto_400Regular' };
-
-      SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded]);
-
   if (!fontsLoaded) return null;
 
   return (
@@ -123,7 +134,7 @@ export default function RootLayout() {
         <Stack
           screenOptions={{
             headerShown: false,
-            contentStyle: { backgroundColor: '#0A0A0A' },
+            contentStyle: { backgroundColor: PC.bg },
             animation: 'slide_from_right',
           }}>
           <Stack.Screen name="(tabs)" />

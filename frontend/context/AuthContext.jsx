@@ -1,8 +1,19 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import api from '@/services/api';
-import { saveToken, getToken, saveUser, getUser, clearAuth } from '@/services/auth';
+import api, { setUnauthorizedHandler } from '@/services/api';
+import { saveToken, getToken, saveUser, clearAuth } from '@/services/auth';
 
 const AuthContext = createContext(null);
+
+// Guarantee both `_id` and `id` exist on the user object. The API has returned
+// `{ id }` from login/register and `{ _id }` from /me, and ~28 screens read
+// `user._id` — so a mismatch silently breaks admin checks, "is this mine?"
+// comparisons and the direct-split filters for the whole session.
+function normalizeUser(u) {
+  if (!u) return u;
+  const _id = u._id ?? u.id;
+  const id  = u.id ?? u._id;
+  return { ...u, _id, id };
+}
 
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
@@ -21,7 +32,7 @@ export function AuthProvider({ children }) {
         // Verify the token is still valid against the server
         const { data } = await api.get('/api/auth/me');
         setToken(storedToken);
-        setUser(data.user);
+        setUser(normalizeUser(data.user));
       } catch {
         // Token expired / invalid — wipe storage silently
         await clearAuth();
@@ -32,22 +43,31 @@ export function AuthProvider({ children }) {
     restoreSession();
   }, []);
 
+  // Let the axios 401 interceptor drop us back to the login screen.
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      setToken(null);
+      setUser(null);
+    });
+    return () => setUnauthorizedHandler(null);
+  }, []);
+
   // ── Auth methods ────────────────────────────────────────────────────────────
 
   const login = async (email, password) => {
     const { data } = await api.post('/api/auth/login', { email, password });
     await saveToken(data.token);
-    await saveUser(data.user);
+    await saveUser(normalizeUser(data.user));
     setToken(data.token);
-    setUser(data.user);
+    setUser(normalizeUser(data.user));
   };
 
   const register = async (name, username, email, password) => {
     const { data } = await api.post('/api/auth/register', { name, username, email, password });
     await saveToken(data.token);
-    await saveUser(data.user);
+    await saveUser(normalizeUser(data.user));
     setToken(data.token);
-    setUser(data.user);
+    setUser(normalizeUser(data.user));
   };
 
   const logout = async () => {
@@ -64,7 +84,7 @@ export function AuthProvider({ children }) {
     setUser(prev => {
       if (!prev) return prev; // no-op when not logged in
       prevSnapshot = prev;
-      merged = { ...prev, ...updatedUser };
+      merged = normalizeUser({ ...prev, ...updatedUser });
       return merged;
     });
     if (!merged) return; // was not logged in — nothing to persist

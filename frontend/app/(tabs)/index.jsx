@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 
 import { PC } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
@@ -57,10 +57,12 @@ function formatDate(dateStr) {
   return `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]} ${d.getDate()}`;
 }
 
-function shortDay(dateStr) {
-  if (!dateStr) return '';
-  const d = new Date(dateStr);
-  return ['S','M','T','W','T','F','S'][d.getDay()];
+const DOW_INITIALS = ['S','M','T','W','T','F','S'];
+
+// Local-time day key (YYYY-MM-DD). Must NOT use toISOString(), which converts to
+// UTC — in IST (+5:30) that pushes anything before 05:30 into the previous day.
+function localDayKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 const CATEGORY_ICONS = {
@@ -83,8 +85,10 @@ const STATUS_COLOR = { healthy: PC.positive, warning: PC.warning, critical: PC.n
 function AnimatedBar({ pct, color, height = 5, delay = 0 }) {
   const anim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
+    // Animated.timing throws on a NaN toValue, which a missing API amount can produce.
+    const target = Number.isFinite(pct) ? Math.min(Math.max(pct, 0), 100) / 100 : 0;
     Animated.timing(anim, {
-      toValue: pct / 100,
+      toValue: target,
       duration: 900,
       delay,
       useNativeDriver: false,
@@ -201,13 +205,14 @@ function SpendingSparkline({ transactions }) {
   const buckets = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(today);
     d.setDate(today.getDate() - (6 - i));
-    return { label: shortDay(d.toISOString()), date: d.toISOString().slice(0, 10), amount: 0 };
+    return { label: DOW_INITIALS[d.getDay()], date: localDayKey(d), amount: 0 };
   });
 
   for (const tx of transactions) {
     if (tx.type !== 'expense') continue;
-    const txDate = new Date(tx.date).toISOString().slice(0, 10);
-    const bucket = buckets.find(b => b.date === txDate);
+    const d = new Date(tx.date);
+    if (isNaN(d.getTime())) continue; // malformed date would throw below
+    const bucket = buckets.find(b => b.date === localDayKey(d));
     if (bucket) bucket.amount += tx.amount ?? 0;
   }
 
@@ -319,7 +324,7 @@ function ActivityRow({ item, last }) {
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
-function Skeleton({ h = 100, r = 16, mb = 12 }) {
+function Skeleton({ h = 100, r = 16, mb = 12, w = '100%' }) {
   const anim = useRef(new Animated.Value(0.4)).current;
   useEffect(() => {
     const loop = Animated.loop(
@@ -332,7 +337,7 @@ function Skeleton({ h = 100, r = 16, mb = 12 }) {
     return () => loop.stop();
   }, []);
   return (
-    <Animated.View style={{ height: h, borderRadius: r, marginBottom: mb, backgroundColor: PC.bgCard, opacity: anim }} />
+    <Animated.View style={{ width: w, height: h, borderRadius: r, marginBottom: mb, backgroundColor: PC.bgCard, opacity: anim }} />
   );
 }
 
@@ -369,7 +374,9 @@ export default function DashboardScreen() {
     }
   }, []);
 
-  useEffect(() => { fetchAll(); }, [fetchAll]);
+  // Refetch whenever the tab regains focus. Mount-only fetching left the
+  // dashboard stale after adding a split/expense/transaction on another screen.
+  useFocusEffect(useCallback(() => { fetchAll(); }, [fetchAll]));
 
   function onRefresh() { setRefreshing(true); fetchAll(); }
 
@@ -394,8 +401,8 @@ export default function DashboardScreen() {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.loadingHeader}>
-          <Skeleton h={22} r={8} mb={6} />
-          <Skeleton h={38} r={10} mb={0} />
+          <Skeleton h={22} r={8} mb={6} w="45%" />
+          <Skeleton h={38} r={10} mb={0} w="65%" />
         </View>
         <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
           <Skeleton h={110} r={20} mb={12} />
@@ -599,9 +606,10 @@ const styles = StyleSheet.create({
   retryBtn:      { paddingHorizontal: 24, paddingVertical: 10, backgroundColor: PC.bgCard, borderRadius: 10, borderWidth: 1, borderColor: PC.border },
   retryText:     { color: PC.textPrimary, fontSize: 14 },
 
+  // Column, not row: the children are width-less placeholder bars, so a row
+  // container collapsed them to zero width and nothing rendered.
   loadingHeader: {
     paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16,
-    flexDirection: 'row', justifyContent: 'space-between', gap: 12,
   },
 
   // Header

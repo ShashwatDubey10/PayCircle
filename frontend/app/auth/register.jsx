@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   KeyboardAvoidingView,
-  Platform,
   ScrollView,
   ActivityIndicator,
   Animated,
@@ -109,7 +108,7 @@ export default function RegisterScreen() {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        behavior="padding">
         <ScrollView
           contentContainerStyle={styles.container}
           keyboardShouldPersistTaps="handled"
