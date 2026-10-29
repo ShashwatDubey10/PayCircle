@@ -9,8 +9,8 @@ colors:
   border: "#1C2822"
   borderLight: "#243328"
   textPrimary: "#EFF9F6"
-  textSecondary: "#637870"
-  textMuted: "#4A6058"
+  textSecondary: "#92A59E"
+  textMuted: "#68877C"
   accent: "#00E5BE"
   accent10: "rgba(0,229,190,0.10)"
   accent20: "rgba(0,229,190,0.20)"
@@ -212,11 +212,16 @@ two status colours held in reserve.
 - **Hairline Bright** (`borderLight`): A slightly lifted rule, reserved for dialog edges and
   secondary-button outlines where the border is doing more work.
 - **Primary Text** (`textPrimary`): Off-white with a green cast. Amounts, names, titles, input
-  values — anything a user reads as content.
+  values — anything a user reads as content. 16.5:1 on the lightest surface.
 - **Secondary Text** (`textSecondary`): Muted teal-grey. Labels, supporting copy, metadata, and
-  the inactive side of a two-state pair.
-- **Muted Text** (`textMuted`): Hints, timestamps, inactive chip text, inactive tab icons. At
-  roughly 3.2:1 on the ground it is **below AA and must not carry body copy** — see Don'ts.
+  the inactive side of a two-state pair. 6.8:1 on the lightest surface.
+- **Muted Text** (`textMuted`): Hints, timestamps, inactive chip text, inactive tab icons. 4.5:1
+  on the lightest surface — it sits exactly on the AA floor, so it may carry hints and inactive
+  states but nothing that must be read to complete a task.
+
+The three text tones form a deliberate ramp with roughly 2.4× between primary and secondary and
+1.5× between secondary and muted, so tier is legible from weight of colour alone. All three, plus
+all three status colours, clear 4.5:1 against every surface in the system.
 
 ### Tertiary
 
@@ -389,9 +394,22 @@ by a border and wash change rather than by movement.
   `negative` label at 600.
 - **Compact accent (Pay via UPI):** Pill, mint fill, ground label at 600/13px, 14px × 9px
   padding, a 16px leading icon and a 6px gap, self-aligned left rather than stretched.
-- **Press:** `activeOpacity` on touch, 0.8 being the system value. The codebase currently spreads
-  across 0.7 / 0.75 / 0.8 / 0.85 with no pattern behind the choice; normalise to 0.8 for buttons
-  and 0.85 for rows. There is no hover state and none should be added.
+- **Press:** A Material ripple spreading from the point of contact, never an opacity fade — the
+  fade is the iOS idiom and the clearest tell of an app built for iPhone and shipped to Android.
+  Every interactive control presses through `components/Touchable.jsx`; `TouchableOpacity` and
+  `activeOpacity` no longer appear in the app. There is no hover state and none should be added.
+
+#### Named Rules
+
+**The One Press Surface Rule.** Every interactive control renders `Touchable`, so how a press
+feels is one edit in one file rather than a decision repeated across ~160 call sites. The ripple
+is neutral (`white05`-weight translucent white) by default; `tone="accent"` gives the
+ground-colour ripple to a control with a *solid* mint fill, because the Dark-On-Mint rule puts
+dark on mint and a light ripple there reads as a glow. A control whose mint fill is conditional —
+an active chip, a selected pill — keeps the neutral ripple, since a dark ripple on its inactive
+dark fill would be invisible. `borderless` is required for anything carrying a shadow: the
+overflow clip that contains a bounded ripple also flattens elevation, so the two FABs would
+otherwise lose their lift. Modal dismiss backdrops take a bare `Pressable` with no ripple at all.
 
 ### Chips
 
@@ -468,8 +486,22 @@ or above the action it blocks, with 14px of clearance beneath.
 - **Do** keep an empty state on the same card geometry with a dashed border.
 - **Do** size an icon tile's radius at roughly a third of its side.
 - **Do** give every interactive control a 48dp minimum touch target, per the accessibility
-  standard recorded in PRODUCT.md. The 38px stack back control and the 11×7-padded chips are
-  below it today; expand the hit area rather than the visual box.
+  standard recorded in PRODUCT.md. Expand the hit area, not the visual box: pass the rendered
+  size to `touchSlop()` from `constants/theme.js` (`touchSlop(38)` for a square control,
+  `touchSlop(0, 30)` for a wide short one like a chip, so only its vertical reach grows).
+- **Do** give every icon-only control an `accessibilityRole` and an `accessibilityLabel` that
+  names the action rather than the glyph — "Scan a UPI QR code", not "scan". Toggles also carry
+  `accessibilityState` (`selected` for chips and filters, and a label that flips, as the password
+  reveal does between "Show password" and "Hide password").
+- **Do** guard display figures against large amounts with `numberOfLines={1}`,
+  `adjustsFontSizeToFit` and a `minimumFontScale` floor. A lakh-plus balance must shrink inside
+  its card, never overflow it.
+- **Do** cap user-supplied names with `numberOfLines={1}` wherever the parent is `flex: 1`, so a
+  long name truncates instead of pushing the amount off the row.
+- **Do** give a text-bearing control `minHeight` rather than `height`, so it grows when the OS
+  font-size setting does instead of clipping its label. Prefer letting the container grow over
+  capping type with `maxFontSizeMultiplier`, which works against the accessibility standard in
+  PRODUCT.md.
 
 ### Don't:
 
@@ -480,8 +512,12 @@ or above the action it blocks, with 14px of clearance beneath.
 - **Don't** fill a surface with saturated `negative` or `warning` — especially behind copy.
 - **Don't** introduce a second accent. Mint is the only voice, and it also means positive money;
   a second hue would break that reading.
-- **Don't** use `textMuted` (`#4A6058`, ~3.2:1) for body copy or any text a user must read. It is
-  for hints and inactive states only, and it already fails the AA bar set in PRODUCT.md.
+- **Don't** use `textMuted` for body copy or any text a user must read to finish a task. It sits
+  on the AA floor by design and is reserved for hints, timestamps and inactive states; content
+  belongs in `textSecondary` or `textPrimary`.
+- **Don't** darken any text token below 4.5:1 against `bgCardElevated` (`#131A17`), the lightest
+  surface in the system and therefore the one that sets the floor. Every token is currently
+  measured against it, so a "slightly dimmer" variant is a regression, not a nuance.
 - **Don't** apply `FONTS.*` to isolated styles. Mixing a named Roboto family with the numeric
   `fontWeight` used everywhere else produces inconsistent weight rendering on Android — either
   convert a whole surface or leave the platform face alone.

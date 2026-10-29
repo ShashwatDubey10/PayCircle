@@ -7,11 +7,11 @@ import {
   KeyboardAvoidingView,
   ScrollView,
   StyleSheet,
-  TouchableOpacity,
   ActivityIndicator,
   TextInput,
   RefreshControl,
 } from 'react-native';
+import Touchable from '@/components/Touchable';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -193,9 +193,9 @@ function InfoModal({ content, onClose }) {
             <View style={{ height: 24 }} />
           </ScrollView>
 
-          <TouchableOpacity style={modalStyles.closeBtn} onPress={onClose} activeOpacity={0.8}>
+          <Touchable tone="accent" style={modalStyles.closeBtn} onPress={onClose}>
             <Text style={modalStyles.closeBtnText}>Close</Text>
-          </TouchableOpacity>
+          </Touchable>
         </View>
       </View>
     </Modal>
@@ -285,7 +285,7 @@ const modalStyles = StyleSheet.create({
     marginTop: 16,
     backgroundColor: PC.accent,
     borderRadius: 14,
-    height: 50,
+    minHeight: 50,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -507,28 +507,26 @@ export default function ProfileScreen() {
           <Text style={styles.userEmail}>{user?.email ?? '—'}</Text>
 
           {/* Username — always visible, always tappable */}
-          <TouchableOpacity
+          <Touchable
             style={styles.usernameRow}
-            onPress={() => { setUsernameInput(user?.username || ''); setShowUsernameModal(true); }}
-            activeOpacity={0.7}>
+            onPress={() => { setUsernameInput(user?.username || ''); setShowUsernameModal(true); }}>
             <Ionicons name="at" size={13} color={user?.username ? PC.accent : PC.warning} />
             <Text style={[styles.usernameDisplay, !user?.username && styles.usernameUnset]}>
               {user?.username ? user.username : 'Set username'}
             </Text>
             <Ionicons name="pencil-outline" size={12} color={PC.textMuted} />
-          </TouchableOpacity>
+          </Touchable>
 
           {/* UPI ID — always visible, tappable to set/change */}
-          <TouchableOpacity
+          <Touchable
             style={[styles.usernameRow, { marginTop: 6, borderColor: user?.upiId ? PC.positive : PC.border }]}
-            onPress={() => { setUpiInput(user?.upiId || ''); setShowUpiModal(true); }}
-            activeOpacity={0.7}>
+            onPress={() => { setUpiInput(user?.upiId || ''); setShowUpiModal(true); }}>
             <Ionicons name="qr-code-outline" size={13} color={user?.upiId ? PC.positive : PC.textMuted} />
             <Text style={[styles.usernameDisplay, { color: user?.upiId ? PC.positive : PC.textMuted }, !user?.upiId && styles.usernameUnset]}>
               {user?.upiId ? user.upiId : 'Add UPI ID'}
             </Text>
             <Ionicons name="pencil-outline" size={12} color={PC.textMuted} />
-          </TouchableOpacity>
+          </Touchable>
 
           {user?.phone ? (
             <Text style={styles.userPhone}>{user.phone}</Text>
@@ -575,16 +573,15 @@ export default function ProfileScreen() {
             <View style={styles.settingsCard}>
               {group.items.map((item, ii) => (
                 <View key={item.id}>
-                  <TouchableOpacity
+                  <Touchable
                     style={styles.settingsRow}
-                    activeOpacity={0.7}
                     onPress={() => handleSettingsPress(item.id)}>
                     <View style={styles.settingsIconBox}>
                       <Ionicons name={item.icon} size={18} color={PC.textSecondary} />
                     </View>
                     <Text style={styles.settingsLabel}>{item.label}</Text>
                     <Ionicons name="chevron-forward" size={15} color={PC.textMuted} />
-                  </TouchableOpacity>
+                  </Touchable>
                   {ii < group.items.length - 1 && <View style={styles.settingsDivider} />}
                 </View>
               ))}
@@ -595,9 +592,8 @@ export default function ProfileScreen() {
         {/* ── Sign Out ── */}
         <View style={styles.settingsGroup}>
           <View style={styles.settingsCard}>
-            <TouchableOpacity
+            <Touchable
               style={styles.settingsRow}
-              activeOpacity={0.7}
               onPress={handleSignOut}
               disabled={signingOut}>
               <View style={styles.settingsIconBox}>
@@ -607,23 +603,22 @@ export default function ProfileScreen() {
                 }
               </View>
               <Text style={[styles.settingsLabel, { color: PC.negative }]}>Sign Out</Text>
-            </TouchableOpacity>
+            </Touchable>
           </View>
         </View>
 
         {/* ── Delete Account ── */}
         <View style={styles.settingsGroup}>
           <View style={styles.settingsCard}>
-            <TouchableOpacity
+            <Touchable
               style={styles.settingsRow}
-              activeOpacity={0.7}
               onPress={() => setShowDeleteModal(true)}
               disabled={signingOut}>
               <View style={styles.settingsIconBox}>
                 <Ionicons name="trash-outline" size={18} color={PC.negative} />
               </View>
               <Text style={[styles.settingsLabel, { color: PC.negative }]}>Delete Account</Text>
-            </TouchableOpacity>
+            </Touchable>
           </View>
         </View>
 
@@ -677,21 +672,21 @@ export default function ProfileScreen() {
                 autoCapitalize="none"
                 autoCorrect={false}
                 editable={!usernameLoading}
+                maxLength={20}
               />
             </View>
-            <TouchableOpacity
+            <Touchable tone="accent"
               style={[modalStyles.closeBtn, usernameLoading && { opacity: 0.6 }]}
               onPress={handleSetUsername}
-              disabled={usernameLoading}
-              activeOpacity={0.85}>
+              disabled={usernameLoading}>
               {usernameLoading
                 ? <ActivityIndicator color="#060A09" size="small" />
                 : <Text style={modalStyles.closeBtnText}>Save Username</Text>
               }
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.cancelBtn} onPress={() => { setShowUsernameModal(false); setUsernameError(''); }} disabled={usernameLoading}>
+            </Touchable>
+            <Touchable style={styles.cancelBtn} onPress={() => { setShowUsernameModal(false); setUsernameError(''); }} disabled={usernameLoading}>
               <Text style={styles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
+            </Touchable>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -719,21 +714,21 @@ export default function ProfileScreen() {
                 autoCapitalize="none"
                 autoCorrect={false}
                 editable={!upiLoading}
+                maxLength={64}
               />
             </View>
-            <TouchableOpacity
+            <Touchable tone="accent"
               style={[modalStyles.closeBtn, upiLoading && { opacity: 0.6 }]}
               onPress={handleSetUpiId}
-              disabled={upiLoading}
-              activeOpacity={0.85}>
+              disabled={upiLoading}>
               {upiLoading
                 ? <ActivityIndicator color="#060A09" size="small" />
                 : <Text style={modalStyles.closeBtnText}>Save UPI ID</Text>
               }
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.cancelBtn} onPress={() => { setShowUpiModal(false); setUpiError(''); }} disabled={upiLoading}>
+            </Touchable>
+            <Touchable style={styles.cancelBtn} onPress={() => { setShowUpiModal(false); setUpiError(''); }} disabled={upiLoading}>
               <Text style={styles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
+            </Touchable>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -767,19 +762,18 @@ export default function ProfileScreen() {
                 editable={!deleteLoading}
               />
             </View>
-            <TouchableOpacity
+            <Touchable tone="accent"
               style={[modalStyles.closeBtn, { backgroundColor: PC.negative }, deleteLoading && { opacity: 0.6 }]}
               onPress={handleDeleteAccount}
-              disabled={deleteLoading}
-              activeOpacity={0.85}>
+              disabled={deleteLoading}>
               {deleteLoading
                 ? <ActivityIndicator color="#fff" size="small" />
                 : <Text style={[modalStyles.closeBtnText, { color: '#fff' }]}>Delete My Account</Text>
               }
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.cancelBtn} onPress={closeDeleteModal} disabled={deleteLoading}>
+            </Touchable>
+            <Touchable style={styles.cancelBtn} onPress={closeDeleteModal} disabled={deleteLoading}>
               <Text style={styles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
+            </Touchable>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -934,7 +928,7 @@ const styles = StyleSheet.create({
     borderColor: PC.border,
     borderRadius: 12,
     paddingHorizontal: 14,
-    height: 50,
+    minHeight: 50,
     marginBottom: 16,
   },
   usernameInput: { flex: 1, color: PC.textPrimary, fontSize: 15 },

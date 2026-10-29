@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, Modal, StyleSheet,
+  Pressable,
+  View, Text, TextInput, Modal, StyleSheet,
   KeyboardAvoidingView, ScrollView, ActivityIndicator,
 } from 'react-native';
+import Touchable from '@/components/Touchable';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PC } from '@/constants/theme';
@@ -72,7 +74,7 @@ export default function EditSplitSheet({
       <KeyboardAvoidingView
         style={sh.overlay}
         behavior="padding">
-        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
+        <Pressable style={{ flex: 1 }} onPress={onClose} />
         <ScrollView
           style={sh.sheet}
           contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: insets.bottom + 40 }}
@@ -108,11 +110,10 @@ export default function EditSplitSheet({
             {CATEGORIES.map(c => {
               const active = selected === c.label;
               return (
-                <TouchableOpacity
+                <Touchable
                   key={c.label}
                   style={[sh.chip, active && sh.chipActive]}
-                  onPress={() => { setSelected(active ? '' : c.label); setCustom(''); }}
-                  activeOpacity={0.75}>
+                  onPress={() => { setSelected(active ? '' : c.label); setCustom(''); }}>
                   <Ionicons
                     name={c.icon}
                     size={12}
@@ -120,7 +121,7 @@ export default function EditSplitSheet({
                     style={{ marginRight: 4 }}
                   />
                   <Text style={[sh.chipText, active && sh.chipTextActive]}>{c.label}</Text>
-                </TouchableOpacity>
+                </Touchable>
               );
             })}
           </View>
@@ -137,15 +138,14 @@ export default function EditSplitSheet({
             />
           </View>
 
-          <TouchableOpacity
+          <Touchable tone="accent"
             style={[sh.saveBtn, saving && { opacity: 0.6 }]}
             onPress={handleSave}
-            disabled={saving}
-            activeOpacity={0.85}>
+            disabled={saving}>
             {saving
               ? <ActivityIndicator size="small" color="#060A09" />
               : <Text style={sh.saveBtnText}>Save Changes</Text>}
-          </TouchableOpacity>
+          </Touchable>
           <View style={{ height: 20 }} />
         </ScrollView>
       </KeyboardAvoidingView>

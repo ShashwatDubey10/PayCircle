@@ -31,8 +31,8 @@
           "#131A17",
           "#1C2822",
           "#243328",
-          "#4A6058",
-          "#637870",
+          "#68877C",
+          "#92A59E",
           "#EFF9F6"
         ]
       },
@@ -75,14 +75,14 @@
       "textSecondary": {
         "role": "neutral",
         "displayName": "Secondary Text",
-        "canonical": "#637870",
-        "note": "Labels, supporting copy, metadata."
+        "canonical": "#92A59E",
+        "note": "Labels, supporting copy, metadata. 6.8:1 on bgCardElevated, the lightest surface and therefore the binding one."
       },
       "textMuted": {
         "role": "neutral",
         "displayName": "Muted Text",
-        "canonical": "#4A6058",
-        "note": "~3.2:1 on the ground. Below AA — hints and inactive states only, never body copy."
+        "canonical": "#68877C",
+        "note": "4.5:1 on bgCardElevated — exactly on the AA floor. Hints, timestamps and inactive states only, never text a user must read to finish a task."
       },
       "positive": {
         "role": "primary",
@@ -142,19 +142,58 @@
       }
     },
     "typographyMeta": {
-      "display": { "displayName": "Display Figure", "purpose": "The one figure a screen is about — the dashboard net balance. Never more than one per screen." },
-      "headline": { "displayName": "Headline Figure", "purpose": "The hero figure of a secondary card, e.g. budget spend-to-date." },
-      "figure": { "displayName": "Figure", "purpose": "Supporting amounts inside a card — balance halves, per-member totals." },
-      "figureSmall": { "displayName": "Stat Figure", "purpose": "Stat-card amounts in a multi-up row." },
-      "title": { "displayName": "Title", "purpose": "The user's own name in the dashboard header. The only body-face type this large." },
-      "heading": { "displayName": "Heading", "purpose": "Stack-screen page titles beside the back control." },
-      "subheading": { "displayName": "Subheading", "purpose": "Section titles, card titles, empty-state headlines." },
-      "body": { "displayName": "Body", "purpose": "Row labels, dialog messages, content copy." },
-      "caption": { "displayName": "Caption", "purpose": "Supporting copy, hints, toast text, secondary links." },
-      "button": { "displayName": "Button Label", "purpose": "Primary CTA labels." },
-      "label": { "displayName": "Label", "purpose": "Card eyebrows, legend text, metadata. Often uppercase." },
-      "overline": { "displayName": "Overline", "purpose": "Input field labels. The widest tracking in the system." },
-      "micro": { "displayName": "Micro", "purpose": "Status pips inside rows, e.g. a SETTLED badge." }
+      "display": {
+        "displayName": "Display Figure",
+        "purpose": "The one figure a screen is about — the dashboard net balance. Never more than one per screen."
+      },
+      "headline": {
+        "displayName": "Headline Figure",
+        "purpose": "The hero figure of a secondary card, e.g. budget spend-to-date."
+      },
+      "figure": {
+        "displayName": "Figure",
+        "purpose": "Supporting amounts inside a card — balance halves, per-member totals."
+      },
+      "figureSmall": {
+        "displayName": "Stat Figure",
+        "purpose": "Stat-card amounts in a multi-up row."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "The user's own name in the dashboard header. The only body-face type this large."
+      },
+      "heading": {
+        "displayName": "Heading",
+        "purpose": "Stack-screen page titles beside the back control."
+      },
+      "subheading": {
+        "displayName": "Subheading",
+        "purpose": "Section titles, card titles, empty-state headlines."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Row labels, dialog messages, content copy."
+      },
+      "caption": {
+        "displayName": "Caption",
+        "purpose": "Supporting copy, hints, toast text, secondary links."
+      },
+      "button": {
+        "displayName": "Button Label",
+        "purpose": "Primary CTA labels."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Card eyebrows, legend text, metadata. Often uppercase."
+      },
+      "overline": {
+        "displayName": "Overline",
+        "purpose": "Input field labels. The widest tracking in the system."
+      },
+      "micro": {
+        "displayName": "Micro",
+        "purpose": "Status pips inside rows, e.g. a SETTLED badge."
+      }
     },
     "shadows": [
       {
@@ -178,9 +217,9 @@
     ],
     "motion": [
       {
-        "name": "press-opacity",
-        "value": "0.8",
-        "purpose": "activeOpacity on touch. 0.8 for buttons, 0.85 for rows. The codebase currently spreads across 0.7/0.75/0.8/0.85 with no pattern; normalise toward these two."
+        "name": "press-ripple",
+        "value": "rgba(239,249,246,0.10)",
+        "purpose": "Material ripple from the point of contact, via components/Touchable.jsx. Neutral by default; tone=\"accent\" uses rgba(6,10,9,0.18) on a solid mint fill; borderless for anything with a shadow. activeOpacity is no longer used anywhere in the app."
       },
       {
         "name": "micro",
@@ -376,14 +415,18 @@
       "Do put dark ground-coloured text on a mint fill.",
       "Do keep an empty state on the same card geometry with a dashed border.",
       "Do size an icon tile's radius at roughly a third of its side.",
-      "Do give every interactive control a 48dp minimum touch target, per the accessibility standard recorded in PRODUCT.md. The 38px stack back control and the 11×7-padded chips are below it today; expand the hit area rather than the visual box."
+      "Do give every interactive control a 48dp minimum touch target, per the accessibility standard recorded in PRODUCT.md. Expand the hit area, not the visual box: pass the rendered size to touchSlop() from constants/theme.js — touchSlop(38) for a square control, touchSlop(0, 30) for a wide short one like a chip, so only its vertical reach grows.",
+      "Do give every icon-only control an accessibilityRole and an accessibilityLabel that names the action rather than the glyph — \"Scan a UPI QR code\", not \"scan\". Toggles also carry accessibilityState (selected for chips and filters, and a label that flips, as the password reveal does between \"Show password\" and \"Hide password\").",
+      "Do guard display figures against large amounts with numberOfLines={1}, adjustsFontSizeToFit and a minimumFontScale floor. A lakh-plus balance must shrink inside its card, never overflow it.",
+      "Do cap user-supplied names with numberOfLines={1} wherever the parent is flex: 1, so a long name truncates instead of pushing the amount off the row."
     ],
     "donts": [
       "Don't hardcode #060A09 as the on-accent text colour. It appears literally in several files; it is PC.bg and should be referenced as such.",
       "Don't add a shadow to a card, row, sheet, input or header. Shadows belong only to elements that leave the layer stack.",
       "Don't fill a surface with saturated negative or warning — especially behind copy.",
       "Don't introduce a second accent. Mint is the only voice, and it also means positive money; a second hue would break that reading.",
-      "Don't use textMuted (#4A6058, ~3.2:1) for body copy or any text a user must read. It is for hints and inactive states only, and it already fails the AA bar set in PRODUCT.md.",
+      "Don't use textMuted for body copy or any text a user must read to finish a task. It sits on the AA floor by design and is reserved for hints, timestamps and inactive states; content belongs in textSecondary or textPrimary.",
+      "Don't darken any text token below 4.5:1 against bgCardElevated (#131A17), the lightest surface in the system and therefore the one that sets the floor. Every token is currently measured against it, so a \"slightly dimmer\" variant is a regression, not a nuance.",
       "Don't apply FONTS.* to isolated styles. Mixing a named Roboto family with the numeric fontWeight used everywhere else produces inconsistent weight rendering on Android — either convert a whole surface or leave the platform face alone.",
       "Don't use white text on mint, and don't put mint text on bgCardElevated at small sizes without checking it.",
       "Don't change a chip's or control's dimensions on state change. Only fill, border and text colour move, so nothing reflows."

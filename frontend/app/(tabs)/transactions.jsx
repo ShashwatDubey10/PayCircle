@@ -4,8 +4,8 @@ import {
   Text,
   ScrollView,
   StyleSheet,
-  TouchableOpacity,
   ActivityIndicator,
+  Pressable,
   Modal,
   TextInput,
   RefreshControl,
@@ -13,9 +13,10 @@ import {
   Platform,
   Alert,
 } from 'react-native';
+import Touchable from '@/components/Touchable';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { PC } from '@/constants/theme';
+import { PC, touchSlop } from '@/constants/theme';
 import ErrorBox from '@/components/ErrorBox';
 import api from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
@@ -154,11 +155,10 @@ function TxRow({ tx, onLongPress, last }) {
 
   return (
     <>
-      <TouchableOpacity
+      <Touchable
         style={styles.txRow}
         onLongPress={() => !tx._isSettlement && !tx._isDirectSplit && onLongPress(tx)}
-        delayLongPress={400}
-        activeOpacity={0.7}>
+        delayLongPress={400}>
         <View style={[styles.txIconBox, (tx._isSettlement || tx._isDirectSplit) && styles.txIconBoxSettlement]}>
           <Ionicons name={icon} size={18} color={PC.textSecondary} />
         </View>
@@ -176,7 +176,7 @@ function TxRow({ tx, onLongPress, last }) {
             <Text style={styles.settlementBadge}>settlement</Text>
           )}
         </View>
-      </TouchableOpacity>
+      </Touchable>
       {!last && <View style={styles.txDivider} />}
     </>
   );
@@ -240,7 +240,7 @@ function AddTransactionModal({ visible, onClose, onAdded }) {
       <KeyboardAvoidingView
         style={styles.modalOverlay}
         behavior="padding">
-        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
+        <Pressable style={{ flex: 1 }} onPress={handleClose} />
         <ScrollView
           style={styles.modalSheet}
           contentContainerStyle={{ padding: 24, paddingBottom: insets.bottom + 40 }}
@@ -253,7 +253,7 @@ function AddTransactionModal({ visible, onClose, onAdded }) {
 
           {/* Type toggle */}
           <View style={styles.typeToggle}>
-            <TouchableOpacity
+            <Touchable
               style={[styles.typeBtn, type === 'expense' && styles.typeBtnActive]}
               onPress={() => setType('expense')}
               disabled={loading}>
@@ -266,8 +266,8 @@ function AddTransactionModal({ visible, onClose, onAdded }) {
               <Text style={[styles.typeBtnText, type === 'expense' && { color: PC.negative }]}>
                 Expense
               </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
+            </Touchable>
+            <Touchable
               style={[styles.typeBtn, type === 'income' && styles.typeBtnActiveIncome]}
               onPress={() => setType('income')}
               disabled={loading}>
@@ -280,7 +280,7 @@ function AddTransactionModal({ visible, onClose, onAdded }) {
               <Text style={[styles.typeBtnText, type === 'income' && { color: PC.positive }]}>
                 Income
               </Text>
-            </TouchableOpacity>
+            </Touchable>
           </View>
 
           {/* Amount */}
@@ -302,11 +302,14 @@ function AddTransactionModal({ visible, onClose, onAdded }) {
           <Text style={styles.modalLabel}>Category</Text>
           <View style={styles.chipGrid}>
             {cats.map((c) => (
-              <TouchableOpacity
+              <Touchable
                 key={c}
                 style={[styles.chip, category === c && styles.chipActive]}
                 onPress={() => setCategory(c)}
-                disabled={loading}>
+                disabled={loading}
+                hitSlop={touchSlop(0, 30)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: category === c }}>
                 <Ionicons
                   name={CATEGORY_ICONS[c] || 'grid-outline'}
                   size={13}
@@ -314,7 +317,7 @@ function AddTransactionModal({ visible, onClose, onAdded }) {
                   style={{ marginRight: 4 }}
                 />
                 <Text style={[styles.chipText, category === c && styles.chipTextActive]}>{c}</Text>
-              </TouchableOpacity>
+              </Touchable>
             ))}
           </View>
 
@@ -332,16 +335,15 @@ function AddTransactionModal({ visible, onClose, onAdded }) {
             />
           </View>
 
-          <TouchableOpacity
+          <Touchable tone="accent"
             style={[styles.submitBtn, loading && styles.submitBtnDisabled]}
             onPress={handleSubmit}
-            disabled={loading}
-            activeOpacity={0.85}>
+            disabled={loading}>
             {loading
               ? <ActivityIndicator color="#060A09" size="small" />
               : <Text style={styles.submitBtnText}>Add Transaction</Text>
             }
-          </TouchableOpacity>
+          </Touchable>
           <View style={{ height: 20 }} />
         </ScrollView>
       </KeyboardAvoidingView>
@@ -481,9 +483,14 @@ export default function TransactionsScreen() {
       {/* ── Header ── */}
       <View style={styles.header}>
         <Text style={styles.title}>Transactions</Text>
-        <TouchableOpacity style={styles.addBtn} onPress={() => setShowModal(true)}>
+        <Touchable
+          style={styles.addBtn}
+          onPress={() => setShowModal(true)}
+          hitSlop={touchSlop(38)}
+          accessibilityRole="button"
+          accessibilityLabel="Add transaction">
           <Ionicons name="add" size={22} color={PC.accent} />
-        </TouchableOpacity>
+        </Touchable>
       </View>
 
       {/* ── Summary Card ── */}
@@ -527,14 +534,14 @@ export default function TransactionsScreen() {
           { key: 'expense',     label: 'Expense' },
           { key: 'settlements', label: 'Settled' },
         ].map(({ key, label }) => (
-          <TouchableOpacity
+          <Touchable
             key={key}
             style={[styles.toggleBtn, activeTab === key && styles.toggleActive]}
             onPress={() => setActiveTab(key)}>
             <Text style={[styles.toggleText, activeTab === key && styles.toggleTextActive]}>
               {label}
             </Text>
-          </TouchableOpacity>
+          </Touchable>
         ))}
       </View>
 
@@ -547,7 +554,7 @@ export default function TransactionsScreen() {
         <View style={styles.centered}>
           <Ionicons name="cloud-offline-outline" size={36} color={PC.textMuted} />
           <Text style={styles.errorMsg}>Something went wrong. Please try again.</Text>
-          <TouchableOpacity
+          <Touchable
             style={styles.retryBtn}
             onPress={async () => {
               setError('');
@@ -561,7 +568,7 @@ export default function TransactionsScreen() {
               }
             }}>
             <Text style={styles.retryText}>Retry</Text>
-          </TouchableOpacity>
+          </Touchable>
         </View>
       ) : (
         <ScrollView
@@ -800,7 +807,7 @@ const styles = StyleSheet.create({
     borderColor: PC.border,
     borderRadius: 12,
     paddingHorizontal: 14,
-    height: 50,
+    minHeight: 50,
     marginBottom: 20,
   },
   modalInput:  { color: PC.textPrimary, fontSize: 15 },
@@ -821,7 +828,7 @@ const styles = StyleSheet.create({
   chipText:       { color: PC.textMuted, fontSize: 12 },
   chipTextActive: { color: PC.accent },
 
-  submitBtn:         { backgroundColor: PC.accent, borderRadius: 14, height: 52, alignItems: 'center', justifyContent: 'center' },
+  submitBtn:         { backgroundColor: PC.accent, borderRadius: 14, minHeight: 52, alignItems: 'center', justifyContent: 'center' },
   submitBtnDisabled: { opacity: 0.6 },
   submitBtnText:     { color: '#060A09', fontSize: 15, fontWeight: '700' },
 

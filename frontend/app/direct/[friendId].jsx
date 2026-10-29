@@ -5,23 +5,24 @@ import {
   FlatList,
   ScrollView,
   StyleSheet,
-  TouchableOpacity,
   TextInput,
   ActivityIndicator,
   Keyboard,
   KeyboardAvoidingView,
+  Pressable,
   Modal,
   Platform,
   RefreshControl,
   LayoutAnimation,
   UIManager,
 } from 'react-native';
+import Touchable from '@/components/Touchable';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { PC } from '@/constants/theme';
+import { PC, touchSlop } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { getDirectSplits, addDirectSplit, requestSettle, confirmSettle, cancelOrRejectSettle, getGroupDebtsWithFriend, updateDirectSplit } from '@/services/directSplit';
 import { getFriends } from '@/services/friends';
@@ -88,10 +89,9 @@ function Bubble({ split, isMine, friendFirstName, tag, onTagPress, onLongPress }
         </View>
       )}
 
-      <TouchableOpacity
+      <Touchable
         onLongPress={onLongPress}
-        delayLongPress={350}
-        activeOpacity={0.92}>
+        delayLongPress={350}>
         <View style={[s.bubble, isMine ? s.bubbleMine : s.bubbleFriend]}>
 
           {/* Row 1: Payer + Amount inline */}
@@ -123,7 +123,7 @@ function Bubble({ split, isMine, friendFirstName, tag, onTagPress, onLongPress }
 
           {/* Row 4: Tag chip */}
           <View style={s.bubbleFooter}>
-            <TouchableOpacity onPress={onTagPress} activeOpacity={0.7}>
+            <Touchable onPress={onTagPress}>
               {tag ? (
                 <View style={[s.tagChip, isMine && s.tagChipMine]}>
                   <Ionicons
@@ -145,7 +145,7 @@ function Bubble({ split, isMine, friendFirstName, tag, onTagPress, onLongPress }
                   <Text style={[s.tagChipEmpty, isMine && { color: 'rgba(6,10,9,0.4)' }]}>Tag</Text>
                 </View>
               )}
-            </TouchableOpacity>
+            </Touchable>
           </View>
 
           {/* Row 5: Timestamp */}
@@ -156,7 +156,7 @@ function Bubble({ split, isMine, friendFirstName, tag, onTagPress, onLongPress }
           </View>
 
         </View>
-      </TouchableOpacity>
+      </Touchable>
     </View>
   );
 }
@@ -510,9 +510,14 @@ export default function DirectSplitScreen() {
 
       {/* ── Header ── */}
       <View style={s.header}>
-        <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
+        <Touchable
+          style={s.backBtn}
+          onPress={() => router.back()}
+          hitSlop={touchSlop(38)}
+          accessibilityRole="button"
+          accessibilityLabel="Go back">
           <Ionicons name="arrow-back" size={20} color={PC.textPrimary} />
-        </TouchableOpacity>
+        </Touchable>
 
         <View style={s.headerAvatar}>
           <Text style={s.headerAvatarText}>{getInitials(friend?.name || '?')}</Text>
@@ -560,16 +565,15 @@ export default function DirectSplitScreen() {
 
           {/* Mark Settled — shown to creditor when friend is a personal contact */}
           {youAreOwed && isVirtualContact && (
-            <TouchableOpacity
+            <Touchable
               style={[s.settleChip, settleLoading && { opacity: 0.5 }]}
               onPress={!settleLoading ? handleMarkContactSettled : undefined}
-              disabled={settleLoading}
-              activeOpacity={0.75}>
+              disabled={settleLoading}>
               {settleLoading
                 ? <ActivityIndicator size="small" color={PC.textMuted} />
                 : <Text style={s.settleChipText}>Mark Settled</Text>
               }
-            </TouchableOpacity>
+            </Touchable>
           )}
 
           {/* Settle Up / Cancel chip — shown to debtor */}
@@ -578,28 +582,29 @@ export default function DirectSplitScreen() {
               <View style={[s.settleChip, s.settleChipMuted]}>
                 <Text style={[s.settleChipText, s.settleChipTextMuted]}>Pending…</Text>
               </View>
-              <TouchableOpacity
+              <Touchable
                 style={s.cancelChip}
                 onPress={handleCancelOrReject}
                 disabled={cancelLoading}
-                activeOpacity={0.75}>
+                hitSlop={touchSlop(30)}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel settlement request">
                 {cancelLoading
                   ? <ActivityIndicator size="small" color={PC.negative} />
                   : <Ionicons name="close" size={13} color={PC.negative} />
                 }
-              </TouchableOpacity>
+              </Touchable>
             </>
           ) : iAmDebtor ? (
-            <TouchableOpacity
+            <Touchable
               style={[s.settleChip, settleLoading && { opacity: 0.5 }]}
               onPress={!settleLoading ? () => setShowPayModal(true) : undefined}
-              disabled={settleLoading}
-              activeOpacity={0.75}>
+              disabled={settleLoading}>
               {settleLoading
                 ? <ActivityIndicator size="small" color={PC.textMuted} />
                 : <Text style={s.settleChipText}>Settle Up</Text>
               }
-            </TouchableOpacity>
+            </Touchable>
           ) : null}
         </View>
       )}
@@ -608,13 +613,12 @@ export default function DirectSplitScreen() {
       {groupDebts.length > 0 && (
         <View style={s.gdPanel}>
           {/* Header — tap to expand / collapse */}
-          <TouchableOpacity
+          <Touchable
             style={s.gdHeader}
             onPress={() => {
               LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
               setGroupDebtsExpanded(v => !v);
-            }}
-            activeOpacity={0.8}>
+            }}>
             <View style={s.gdHeaderLeft}>
               <Ionicons name="layers-outline" size={14} color={PC.accent} />
               <Text style={s.gdHeaderTitle}>Group Debts</Text>
@@ -636,7 +640,7 @@ export default function DirectSplitScreen() {
                 color={PC.textMuted}
               />
             </View>
-          </TouchableOpacity>
+          </Touchable>
 
           {/* Expanded body */}
           {groupDebtsExpanded && (
@@ -653,12 +657,14 @@ export default function DirectSplitScreen() {
                   <Text style={[s.gdRowAmt, { color: item.iOwe ? PC.negative : PC.positive }]}>
                     {item.iOwe ? '−' : '+'}₹{item.amount.toLocaleString('en-IN')}
                   </Text>
-                  <TouchableOpacity
+                  <Touchable
                     style={s.gdRowNavBtn}
                     onPress={() => router.push(`/groups/${item.groupId}`)}
-                    activeOpacity={0.8}>
+                    hitSlop={touchSlop(30)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Open group ${item.groupName || ''}`.trim()}>
                     <Ionicons name="arrow-forward" size={13} color={PC.accent} />
-                  </TouchableOpacity>
+                  </Touchable>
                 </View>
               ))}
 
@@ -669,16 +675,15 @@ export default function DirectSplitScreen() {
                 const combined = groupIOweTotal + directOwed;
                 if (combined < 0.01) return null;
                 return (
-                  <TouchableOpacity
+                  <Touchable tone="accent"
                     style={[s.settleAllBtn, (settleLoading || !!pendingSettle) && { opacity: 0.5 }]}
                     disabled={settleLoading || !!pendingSettle}
-                    onPress={() => { setSettleAllMode(true); setShowPayModal(true); }}
-                    activeOpacity={0.8}>
+                    onPress={() => { setSettleAllMode(true); setShowPayModal(true); }}>
                     <Ionicons name="checkmark-done-outline" size={15} color="#060A09" />
                     <Text style={s.settleAllBtnText}>
                       Settle All · ₹{combined.toLocaleString('en-IN')}
                     </Text>
-                  </TouchableOpacity>
+                  </Touchable>
                 );
               })()}
             </View>
@@ -730,21 +735,19 @@ export default function DirectSplitScreen() {
                 {friendFirst} says they paid ₹{(pendingSettle.amount ?? 0).toLocaleString('en-IN')}
               </Text>
             </View>
-            <TouchableOpacity
+            <Touchable
               style={[s.settleRejectBtn, (settleLoading || cancelLoading) && { opacity: 0.5 }]}
               onPress={handleCancelOrReject}
-              disabled={settleLoading || cancelLoading}
-              activeOpacity={0.8}>
+              disabled={settleLoading || cancelLoading}>
               {cancelLoading
                 ? <ActivityIndicator size="small" color={PC.negative} />
                 : <Text style={s.settleRejectBtnText}>Reject</Text>
               }
-            </TouchableOpacity>
-            <TouchableOpacity
+            </Touchable>
+            <Touchable
               style={[s.settleConfirmBtn, (settleLoading || cancelLoading) && { opacity: 0.5 }]}
               onPress={handleConfirmSettle}
-              disabled={settleLoading || cancelLoading}
-              activeOpacity={0.8}>
+              disabled={settleLoading || cancelLoading}>
               {settleLoading
                 ? <ActivityIndicator size="small" color="#060A09" />
                 : <>
@@ -752,7 +755,7 @@ export default function DirectSplitScreen() {
                     <Text style={s.settleConfirmBtnText}>Confirm</Text>
                   </>
               }
-            </TouchableOpacity>
+            </Touchable>
           </View>
         )}
 
@@ -773,26 +776,24 @@ export default function DirectSplitScreen() {
           <View style={s.paidByRow}>
             <Text style={s.paidByLabel}>PAID BY</Text>
             <View style={s.paidBySegment}>
-              <TouchableOpacity
+              <Touchable
                 style={[s.paidByOption, paidByMe && s.paidByOptionActive]}
                 onPress={() => setPaidByMe(true)}
-                disabled={sending}
-                activeOpacity={0.8}>
+                disabled={sending}>
                 <Text style={[s.paidByOptionText, paidByMe && s.paidByOptionTextActive]}>You</Text>
-              </TouchableOpacity>
+              </Touchable>
               <View style={s.paidByDivider} />
-              <TouchableOpacity
+              <Touchable
                 style={[s.paidByOption, !paidByMe && s.paidByOptionActive]}
                 onPress={() => setPaidByMe(false)}
-                disabled={sending}
-                activeOpacity={0.8}>
+                disabled={sending}>
                 <Text style={[s.paidByOptionText, !paidByMe && s.paidByOptionTextActive]}>
                   {friendFirst}
                 </Text>
-              </TouchableOpacity>
+              </Touchable>
             </View>
             <View style={{ flex: 1 }} />
-            <TouchableOpacity
+            <Touchable
               style={[s.customBtn, myShare !== null && s.customBtnActive]}
               onPress={() => {
                 if (!amount || isNaN(parseFloat(amount))) {
@@ -801,8 +802,7 @@ export default function DirectSplitScreen() {
                 }
                 setShowSplit(true);
               }}
-              disabled={sending}
-              activeOpacity={0.75}>
+              disabled={sending}>
               <Ionicons
                 name={myShare !== null ? 'checkmark-circle' : 'git-branch-outline'}
                 size={12}
@@ -811,7 +811,7 @@ export default function DirectSplitScreen() {
               <Text style={[s.customBtnText, myShare !== null && s.customBtnTextActive]}>
                 {myShare !== null ? `₹${myShare}` : 'Custom'}
               </Text>
-            </TouchableOpacity>
+            </Touchable>
           </View>
 
           {/* Amount — hero field */}
@@ -859,16 +859,17 @@ export default function DirectSplitScreen() {
                 maxLength={50}
               />
             </View>
-            <TouchableOpacity
+            <Touchable tone="accent"
               style={[s.sendBtn, sending && { opacity: 0.5 }]}
               onPress={handleSend}
               disabled={sending}
-              activeOpacity={0.8}>
+              accessibilityRole="button"
+              accessibilityLabel="Add split">
               {sending
                 ? <ActivityIndicator size="small" color="#060A09" />
                 : <Ionicons name="arrow-up" size={17} color="#060A09" />
               }
-            </TouchableOpacity>
+            </Touchable>
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -889,7 +890,7 @@ export default function DirectSplitScreen() {
         <KeyboardAvoidingView
           style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}
           behavior="padding">
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => { setShowPayModal(false); setSettleAllMode(false); }} />
+          <Pressable style={{ flex: 1 }} onPress={() => { setShowPayModal(false); setSettleAllMode(false); }} />
           {/* Scrollable because the keyboard shrinks the sheet: with a plain View
               the payment buttons below the amount field become unreachable.
               NOTE: padding goes on contentContainerStyle, never on `style` --
@@ -963,15 +964,14 @@ export default function DirectSplitScreen() {
                     const presetVal = pct === 100 ? balAbs : parseFloat((balAbs * pct / 100).toFixed(2));
                     const isActive  = Math.abs((parseFloat(settleCustomAmt) || 0) - presetVal) < 0.01;
                     return (
-                      <TouchableOpacity
+                      <Touchable
                         key={pct}
                         style={[s.customAmtPresetBtn, isActive && s.customAmtPresetBtnActive]}
-                        onPress={() => setSettleCustomAmt(presetVal.toFixed(2))}
-                        activeOpacity={0.75}>
+                        onPress={() => setSettleCustomAmt(presetVal.toFixed(2))}>
                         <Text style={[s.customAmtPresetText, isActive && s.customAmtPresetTextActive]}>
                           {pct === 100 ? 'Full' : `${pct}%`}
                         </Text>
-                      </TouchableOpacity>
+                      </Touchable>
                     );
                   })}
                 </View>
@@ -995,7 +995,7 @@ export default function DirectSplitScreen() {
 
             {/* UPI option */}
             {(() => { const friendHasUpi = !!(friend?.upiId); return (
-            <TouchableOpacity
+            <Touchable
               style={{ flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: PC.bgCardElevated, borderRadius: 14, borderWidth: 1, borderColor: PC.border, padding: 16, marginBottom: 10, ...(!friendHasUpi && { opacity: 0.45 }) }}
               disabled={!friendHasUpi}
               onPress={() => {
@@ -1010,8 +1010,7 @@ export default function DirectSplitScreen() {
                   txnId: directTxnId,
                 });
                 setShowUpiQr(true);
-              }}
-              activeOpacity={0.8}>
+              }}>
               <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,229,190,0.12)', alignItems: 'center', justifyContent: 'center' }}>
                 <Ionicons name="qr-code-outline" size={20} color={PC.positive} />
               </View>
@@ -1022,18 +1021,17 @@ export default function DirectSplitScreen() {
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={16} color={PC.textMuted} />
-            </TouchableOpacity>
+            </Touchable>
             ); })()}
 
             {/* Outside App option */}
-            <TouchableOpacity
+            <Touchable
               style={{ flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: PC.bgCardElevated, borderRadius: 14, borderWidth: 1, borderColor: PC.border, padding: 16, marginBottom: 24 }}
               onPress={async () => {
                 setShowPayModal(false);
                 const customAmt = parseFloat(settleCustomAmt) || balAbs;
                 if (settleAllMode) { await handleSettleAll(); } else { await handleRequestSettle(customAmt); }
-              }}
-              activeOpacity={0.8}>
+              }}>
               <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(148,163,184,0.12)', alignItems: 'center', justifyContent: 'center' }}>
                 <Ionicons name="swap-horizontal-outline" size={20} color={PC.textSecondary} />
               </View>
@@ -1042,7 +1040,7 @@ export default function DirectSplitScreen() {
                 <Text style={{ color: PC.textSecondary, fontSize: 12, marginTop: 2 }}>Cash, bank transfer, or other</Text>
               </View>
               <Ionicons name="chevron-forward" size={16} color={PC.textMuted} />
-            </TouchableOpacity>
+            </Touchable>
           </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
@@ -1113,7 +1111,7 @@ function TwoPersonSplitModal({ visible, onClose, totalAmount, myName, friendName
       <KeyboardAvoidingView
         style={s2.overlay}
         behavior="padding">
-        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
+        <Pressable style={{ flex: 1 }} onPress={onClose} />
         <View style={[s2.sheet, { paddingBottom: insets.bottom + 24 }]}>
           <View style={s2.handle} />
           <Text style={s2.title}>Custom Split</Text>
@@ -1156,13 +1154,12 @@ function TwoPersonSplitModal({ visible, onClose, totalAmount, myName, friendName
             </Text>
           </View>
 
-          <TouchableOpacity
+          <Touchable tone="accent"
             style={[s2.confirmBtn, !isValid && { opacity: 0.5 }]}
             onPress={() => isValid && onConfirm(myN)}
-            disabled={!isValid}
-            activeOpacity={0.85}>
+            disabled={!isValid}>
             <Text style={s2.confirmBtnText}>Confirm</Text>
-          </TouchableOpacity>
+          </Touchable>
           <View style={{ height: 20 }} />
         </View>
       </KeyboardAvoidingView>
@@ -1610,6 +1607,6 @@ const s2 = StyleSheet.create({
   rupee:        { color: PC.textPrimary, fontSize: 15, fontWeight: '700', marginRight: 4 },
   input:        { flex: 1, color: PC.textPrimary, fontSize: 15 },
   remainingRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderTopWidth: 1, borderTopColor: PC.border, marginBottom: 16 },
-  confirmBtn:     { backgroundColor: PC.accent, borderRadius: 14, height: 52, alignItems: 'center', justifyContent: 'center' },
+  confirmBtn:     { backgroundColor: PC.accent, borderRadius: 14, minHeight: 52, alignItems: 'center', justifyContent: 'center' },
   confirmBtnText: { color: '#060A09', fontSize: 15, fontWeight: '700' },
 });

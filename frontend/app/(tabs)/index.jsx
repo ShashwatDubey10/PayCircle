@@ -4,18 +4,18 @@ import {
   Text,
   ScrollView,
   StyleSheet,
-  TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
   Animated,
   Dimensions,
   Platform,
 } from 'react-native';
+import Touchable from '@/components/Touchable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 
-import { PC } from '@/constants/theme';
+import { PC, touchSlop } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
 import BudgetSetupSheet from '@/components/BudgetSetupSheet';
@@ -118,7 +118,7 @@ function BudgetHero({ budget, onEdit, onManage }) {
 
   if (!hasData) {
     return (
-      <TouchableOpacity style={styles.budgetHeroEmpty} onPress={onEdit} activeOpacity={0.8}>
+      <Touchable style={styles.budgetHeroEmpty} onPress={onEdit}>
         <View style={styles.budgetHeroEmptyInner}>
           <View style={styles.budgetEmptyIcon}>
             <Ionicons name="wallet-outline" size={24} color={PC.accent} />
@@ -129,17 +129,21 @@ function BudgetHero({ budget, onEdit, onManage }) {
           </View>
           <Ionicons name="chevron-forward" size={18} color={PC.textMuted} />
         </View>
-      </TouchableOpacity>
+      </Touchable>
     );
   }
 
   return (
-    <TouchableOpacity style={styles.budgetHero} activeOpacity={0.9} onPress={onManage}>
+    <Touchable style={styles.budgetHero} onPress={onManage}>
       {/* Top row */}
       <View style={styles.budgetHeroTop}>
         <View>
           <Text style={styles.budgetHeroLabel}>Monthly Budget · {month}</Text>
-          <Text style={styles.budgetHeroAmount}>
+          <Text
+            style={styles.budgetHeroAmount}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.75}>
             ₹{(budget.spent ?? 0).toLocaleString('en-IN')}
             <Text style={styles.budgetHeroOf}> / ₹{(budget.budget ?? 0).toLocaleString('en-IN')}</Text>
           </Text>
@@ -162,11 +166,11 @@ function BudgetHero({ budget, onEdit, onManage }) {
               : `₹${Math.abs(remaining).toLocaleString('en-IN')} over`}
           </Text>
         </View>
-        <TouchableOpacity onPress={onEdit} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <Touchable onPress={onEdit} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Text style={styles.budgetEditLink}>Edit budget</Text>
-        </TouchableOpacity>
+        </Touchable>
       </View>
-    </TouchableOpacity>
+    </Touchable>
   );
 }
 
@@ -424,9 +428,9 @@ export default function DashboardScreen() {
         <View style={styles.centered}>
           <Ionicons name="cloud-offline-outline" size={42} color={PC.textMuted} />
           <Text style={styles.errorMsg}>Something went wrong.</Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={fetchAll}>
+          <Touchable style={styles.retryBtn} onPress={fetchAll}>
             <Text style={styles.retryText}>Retry</Text>
-          </TouchableOpacity>
+          </Touchable>
         </View>
       </SafeAreaView>
     );
@@ -448,15 +452,30 @@ export default function DashboardScreen() {
             <Text style={styles.greeting}>{getGreeting()}</Text>
             <Text style={styles.userName}>{user?.name?.split(' ')[0] ?? 'there'}</Text>
           </View>
-          <TouchableOpacity style={[styles.avatarBtn, { marginRight: 10 }]} onPress={() => router.push('/friends')}>
+          <Touchable
+            style={[styles.avatarBtn, { marginRight: 10 }]}
+            onPress={() => router.push('/friends')}
+            hitSlop={touchSlop(46)}
+            accessibilityRole="button"
+            accessibilityLabel="People — friends and contacts">
             <Ionicons name="people-outline" size={20} color={PC.textPrimary} />
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.avatarBtn, styles.scanBtn, { marginRight: 10 }]} onPress={() => router.push('/qr-scanner')}>
+          </Touchable>
+          <Touchable
+            style={[styles.avatarBtn, styles.scanBtn, { marginRight: 10 }]}
+            onPress={() => router.push('/qr-scanner')}
+            hitSlop={touchSlop(46)}
+            accessibilityRole="button"
+            accessibilityLabel="Scan a UPI QR code">
             <Ionicons name="scan-outline" size={20} color={PC.accent} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.avatarBtn} onPress={() => router.push('/(tabs)/profile')}>
+          </Touchable>
+          <Touchable
+            style={styles.avatarBtn}
+            onPress={() => router.push('/(tabs)/profile')}
+            hitSlop={touchSlop(46)}
+            accessibilityRole="button"
+            accessibilityLabel="Your profile">
             <Text style={styles.avatarText}>{getInitials(user?.name)}</Text>
-          </TouchableOpacity>
+          </Touchable>
         </View>
 
         {/* ══ 1. BUDGET HERO ══ */}
@@ -472,10 +491,14 @@ export default function DashboardScreen() {
           <View style={styles.balanceNetRow}>
             <View>
               <Text style={styles.balanceNetLabel}>Group net balance</Text>
-              <Text style={[
-                styles.balanceNetAmt,
-                { color: netGroupBalance >= 0 ? PC.positive : PC.negative },
-              ]}>
+              <Text
+                style={[
+                  styles.balanceNetAmt,
+                  { color: netGroupBalance >= 0 ? PC.positive : PC.negative },
+                ]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.7}>
                 {netGroupBalance >= 0 ? '+' : ''}₹{Math.abs(netGroupBalance).toLocaleString('en-IN')}
               </Text>
             </View>
@@ -500,7 +523,11 @@ export default function DashboardScreen() {
                 <View style={[styles.balanceSubDot, { backgroundColor: PC.positive }]} />
                 <Text style={styles.balanceSubLabel}>Owed to you</Text>
               </View>
-              <Text style={[styles.balanceSubAmt, { color: PC.positive }]}>
+              <Text
+                style={[styles.balanceSubAmt, { color: PC.positive }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}>
                 +₹{(dash?.totalToReceive ?? 0).toLocaleString('en-IN')}
               </Text>
             </View>
@@ -510,7 +537,11 @@ export default function DashboardScreen() {
                 <View style={[styles.balanceSubDot, { backgroundColor: PC.negative }]} />
                 <Text style={styles.balanceSubLabel}>You owe</Text>
               </View>
-              <Text style={[styles.balanceSubAmt, { color: PC.negative }]}>
+              <Text
+                style={[styles.balanceSubAmt, { color: PC.negative }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}>
                 −₹{(dash?.totalOwed ?? 0).toLocaleString('en-IN')}
               </Text>
             </View>
@@ -523,14 +554,18 @@ export default function DashboardScreen() {
             <View style={[styles.statIconBox, { backgroundColor: PC.negative + '18' }]}>
               <Ionicons name="arrow-up-outline" size={16} color={PC.negative} />
             </View>
-            <Text style={styles.statAmt}>₹{(dash?.totalSpent?.combined ?? 0).toLocaleString('en-IN')}</Text>
+            <Text style={styles.statAmt} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+              ₹{(dash?.totalSpent?.combined ?? 0).toLocaleString('en-IN')}
+            </Text>
             <Text style={styles.statLabel}>Spent this month</Text>
           </View>
           <View style={styles.statCard}>
             <View style={[styles.statIconBox, { backgroundColor: PC.positive + '18' }]}>
               <Ionicons name="arrow-down-outline" size={16} color={PC.positive} />
             </View>
-            <Text style={styles.statAmt}>₹{(dash?.personalIncome ?? 0).toLocaleString('en-IN')}</Text>
+            <Text style={styles.statAmt} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+              ₹{(dash?.personalIncome ?? 0).toLocaleString('en-IN')}
+            </Text>
             <Text style={styles.statLabel}>Earned this month</Text>
           </View>
         </View>
@@ -540,9 +575,9 @@ export default function DashboardScreen() {
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Analytics</Text>
-              <TouchableOpacity onPress={() => router.push('/analytics')}>
+              <Touchable onPress={() => router.push('/analytics')}>
                 <Text style={styles.seeAll}>View more →</Text>
-              </TouchableOpacity>
+              </Touchable>
             </View>
 
             <View style={styles.analyticsCard}>
@@ -563,9 +598,9 @@ export default function DashboardScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Recent Activity</Text>
-            <TouchableOpacity onPress={() => router.push('/(tabs)/transactions')}>
+            <Touchable onPress={() => router.push('/(tabs)/transactions')}>
               <Text style={styles.seeAll}>See all →</Text>
-            </TouchableOpacity>
+            </Touchable>
           </View>
 
           {activityFeed.length === 0 ? (
@@ -785,7 +820,7 @@ const styles = StyleSheet.create({
   actCatText: { fontSize: 10, fontWeight: '600', letterSpacing: 0.3 },
   actDate:    { color: PC.textMuted, fontSize: 11 },
   actRight:   { alignItems: 'flex-end', flexShrink: 0 },
-  actAmount:  { fontSize: 14, fontWeight: '600', marginBottom: 3 },
+  actAmount:  { fontVariant: ['tabular-nums'], fontSize: 14, fontWeight: '600', marginBottom: 3 },
   amtPos:     { color: PC.positive },
   amtNeg:     { color: PC.negative },
   actSettleBadge: {

@@ -4,19 +4,20 @@ import {
   Text,
   ScrollView,
   StyleSheet,
-  TouchableOpacity,
   TextInput,
+  Pressable,
   Modal,
   ActivityIndicator,
   Alert,
   RefreshControl,
   KeyboardAvoidingView,
 } from 'react-native';
+import Touchable from '@/components/Touchable';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 
-import { PC } from '@/constants/theme';
+import { PC, touchSlop } from '@/constants/theme';
 import { getContacts, createContact, updateContact, deleteContact } from '@/services/contacts';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -30,32 +31,36 @@ function getInitials(name) {
 
 function ContactCard({ contact, onEdit, onDelete, onPress }) {
   return (
-    <TouchableOpacity style={styles.card} activeOpacity={0.75} onPress={onPress}>
+    <Touchable style={styles.card} onPress={onPress}>
       <View style={styles.cardAvatar}>
         <Text style={styles.cardAvatarText}>{getInitials(contact.name)}</Text>
       </View>
       <View style={styles.cardInfo}>
-        <Text style={styles.cardName}>{contact.name}</Text>
+        <Text style={styles.cardName} numberOfLines={1}>{contact.name}</Text>
         <View style={styles.virtualBadge}>
           <Ionicons name="person-add-outline" size={10} color={PC.accent} />
           <Text style={styles.virtualBadgeText}>Personal Contact</Text>
         </View>
       </View>
       <View style={styles.cardActions}>
-        <TouchableOpacity
+        <Touchable
           style={styles.cardActionBtn}
           onPress={() => onEdit(contact)}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          hitSlop={touchSlop(32)}
+          accessibilityRole="button"
+          accessibilityLabel={`Rename ${contact.name}`}>
           <Ionicons name="pencil-outline" size={17} color={PC.textSecondary} />
-        </TouchableOpacity>
-        <TouchableOpacity
+        </Touchable>
+        <Touchable
           style={[styles.cardActionBtn, { marginLeft: 8 }]}
           onPress={() => onDelete(contact)}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          hitSlop={touchSlop(32)}
+          accessibilityRole="button"
+          accessibilityLabel={`Delete ${contact.name}`}>
           <Ionicons name="trash-outline" size={17} color={PC.negative} />
-        </TouchableOpacity>
+        </Touchable>
       </View>
-    </TouchableOpacity>
+    </Touchable>
   );
 }
 
@@ -106,7 +111,7 @@ function ContactModal({ visible, editTarget, onClose, onSaved }) {
       <KeyboardAvoidingView
         style={styles.modalOverlay}
         behavior="padding">
-        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
+        <Pressable style={{ flex: 1 }} onPress={handleClose} />
         <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 36 }]}>
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>
@@ -140,19 +145,18 @@ function ContactModal({ visible, editTarget, onClose, onSaved }) {
             />
           </View>
 
-          <TouchableOpacity
+          <Touchable tone="accent"
             style={[styles.saveBtn, loading && { opacity: 0.6 }]}
             onPress={handleSave}
-            disabled={loading}
-            activeOpacity={0.85}>
+            disabled={loading}>
             {loading
               ? <ActivityIndicator color="#060A09" size="small" />
               : <Text style={styles.saveBtnText}>{editTarget ? 'Save Changes' : 'Add Contact'}</Text>
             }
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.cancelBtn} onPress={handleClose} disabled={loading}>
+          </Touchable>
+          <Touchable style={styles.cancelBtn} onPress={handleClose} disabled={loading}>
             <Text style={styles.cancelText}>Cancel</Text>
-          </TouchableOpacity>
+          </Touchable>
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -230,13 +234,23 @@ export default function ContactsScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* ── Header ── */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <Touchable
+          style={styles.backBtn}
+          onPress={() => router.back()}
+          hitSlop={touchSlop(38)}
+          accessibilityRole="button"
+          accessibilityLabel="Go back">
           <Ionicons name="arrow-back" size={20} color={PC.textPrimary} />
-        </TouchableOpacity>
+        </Touchable>
         <Text style={styles.title}>Personal Contacts</Text>
-        <TouchableOpacity style={styles.addBtn} onPress={openAdd}>
+        <Touchable
+          style={styles.addBtn}
+          onPress={openAdd}
+          hitSlop={touchSlop(36)}
+          accessibilityRole="button"
+          accessibilityLabel="Add contact">
           <Ionicons name="add" size={22} color={PC.accent} />
-        </TouchableOpacity>
+        </Touchable>
       </View>
 
       {/* ── Info banner ── */}
@@ -267,10 +281,10 @@ export default function ContactsScreen() {
               <Text style={styles.emptyText}>
                 Add someone by name to start splitting expenses with them — no PayCircle account needed.
               </Text>
-              <TouchableOpacity style={styles.emptyBtn} onPress={openAdd} activeOpacity={0.85}>
+              <Touchable tone="accent" style={styles.emptyBtn} onPress={openAdd}>
                 <Ionicons name="add" size={16} color="#060A09" style={{ marginRight: 6 }} />
                 <Text style={styles.emptyBtnText}>Add First Contact</Text>
-              </TouchableOpacity>
+              </Touchable>
             </View>
           ) : (
             <View style={styles.list}>
@@ -436,13 +450,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: PC.bgInput,
     borderWidth: 1, borderColor: PC.border,
-    borderRadius: 12, paddingHorizontal: 14, height: 50, marginBottom: 20,
+    borderRadius: 12, paddingHorizontal: 14, minHeight: 50, marginBottom: 20,
   },
   input: { flex: 1, color: PC.textPrimary, fontSize: 15 },
 
   saveBtn: {
     backgroundColor: PC.accent, borderRadius: 14,
-    height: 50, alignItems: 'center', justifyContent: 'center', marginBottom: 10,
+    minHeight: 50, alignItems: 'center', justifyContent: 'center', marginBottom: 10,
   },
   saveBtnText: { color: '#060A09', fontSize: 15, fontWeight: '700' },
   cancelBtn: { alignItems: 'center', paddingVertical: 10 },

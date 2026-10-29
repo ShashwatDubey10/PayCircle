@@ -4,17 +4,17 @@ import {
   Text,
   ScrollView,
   StyleSheet,
-  TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
   Animated,
   Platform,
 } from 'react-native';
+import Touchable from '@/components/Touchable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
-import { PC } from '@/constants/theme';
+import { PC, touchSlop } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
 
@@ -289,9 +289,14 @@ export default function AnalyticsScreen() {
 
   const Header = () => (
     <View style={ss.header}>
-      <TouchableOpacity style={ss.backBtn} onPress={() => router.back()}>
+      <Touchable
+        style={ss.backBtn}
+        onPress={() => router.back()}
+        hitSlop={touchSlop(38)}
+        accessibilityRole="button"
+        accessibilityLabel="Go back">
         <Ionicons name="arrow-back" size={20} color={PC.textPrimary} />
-      </TouchableOpacity>
+      </Touchable>
       <Text style={ss.headerTitle}>Analytics</Text>
       <View style={{ width: 38 }} />
     </View>
@@ -303,14 +308,14 @@ export default function AnalyticsScreen() {
         { key: 'thisMonth', label: 'This Month' },
         { key: 'history',   label: 'History' },
       ].map(tab => (
-        <TouchableOpacity
+        <Touchable
           key={tab.key}
           style={[ss.tabPill, activeTab === tab.key && ss.tabPillActive]}
           onPress={() => setActiveTab(tab.key)}>
           <Text style={[ss.tabPillText, activeTab === tab.key && ss.tabPillTextActive]}>
             {tab.label}
           </Text>
-        </TouchableOpacity>
+        </Touchable>
       ))}
     </View>
   );
@@ -333,9 +338,9 @@ export default function AnalyticsScreen() {
         <View style={ss.centered}>
           <Ionicons name="cloud-offline-outline" size={40} color={PC.textMuted} />
           <Text style={ss.errTxt}>Failed to load analytics</Text>
-          <TouchableOpacity style={ss.retryBtn} onPress={fetchAll}>
+          <Touchable style={ss.retryBtn} onPress={fetchAll}>
             <Text style={ss.retryTxt}>Retry</Text>
-          </TouchableOpacity>
+          </Touchable>
         </View>
       </SafeAreaView>
     );

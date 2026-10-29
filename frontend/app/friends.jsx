@@ -4,16 +4,16 @@ import {
   Text,
   ScrollView,
   StyleSheet,
-  TouchableOpacity,
   TextInput,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import Touchable from '@/components/Touchable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
-import { PC } from '@/constants/theme';
+import { PC, touchSlop } from '@/constants/theme';
 import {
   searchUsers,
   sendFriendRequest,
@@ -115,7 +115,7 @@ function PersonRow({ item, isContact, balanceMap, onPress, isLast }) {
 
   return (
     <>
-      <TouchableOpacity style={s.personRow} activeOpacity={0.7} onPress={onPress}>
+      <Touchable style={s.personRow} onPress={onPress}>
         <Avatar name={item.name} isContact={isContact} />
         <View style={s.personInfo}>
           <View style={s.personNameRow}>
@@ -141,7 +141,7 @@ function PersonRow({ item, isContact, balanceMap, onPress, isLast }) {
             </View>
         }
         <Ionicons name="chevron-forward" size={14} color={PC.textMuted} style={{ marginLeft: 6 }} />
-      </TouchableOpacity>
+      </Touchable>
       {!isLast && <View style={s.divider} />}
     </>
   );
@@ -249,9 +249,14 @@ export default function FriendsScreen() {
     <SafeAreaView style={s.safe} edges={['top']}>
       {/* ── Header ── */}
       <View style={s.header}>
-        <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
+        <Touchable
+          style={s.backBtn}
+          onPress={() => router.back()}
+          hitSlop={touchSlop(38)}
+          accessibilityRole="button"
+          accessibilityLabel="Go back">
           <Ionicons name="arrow-back" size={20} color={PC.textPrimary} />
-        </TouchableOpacity>
+        </Touchable>
         <View style={{ flex: 1 }}>
           <Text style={s.title}>People</Text>
           <Text style={s.subtitle}>Friends & contacts</Text>
@@ -282,7 +287,7 @@ export default function FriendsScreen() {
                 <View style={s.row}>
                   <Avatar name={u.name} />
                   <View style={s.rowInfo}>
-                    <Text style={s.rowName}>{u.name}</Text>
+                    <Text style={s.rowName} numberOfLines={1}>{u.name}</Text>
                     <Text style={s.rowSub}>@{u.username}</Text>
                   </View>
                   {sent[u._id] ? (
@@ -290,10 +295,10 @@ export default function FriendsScreen() {
                   ) : sending[u._id] ? (
                     <ActivityIndicator size="small" color={PC.textMuted} />
                   ) : (
-                    <TouchableOpacity style={s.addBtn} onPress={() => handleSend(u._id)} activeOpacity={0.8}>
+                    <Touchable tone="accent" style={s.addBtn} onPress={() => handleSend(u._id)}>
                       <Ionicons name="person-add-outline" size={14} color="#060A09" />
                       <Text style={s.addBtnText}>Add</Text>
-                    </TouchableOpacity>
+                    </Touchable>
                   )}
                 </View>
                 {i < results.length - 1 && <View style={s.divider} />}
@@ -321,28 +326,32 @@ export default function FriendsScreen() {
                     <View style={s.row}>
                       <Avatar name={r.requester?.name} />
                       <View style={s.rowInfo}>
-                        <Text style={s.rowName}>{r.requester?.name}</Text>
+                        <Text style={s.rowName} numberOfLines={1}>{r.requester?.name}</Text>
                         <Text style={s.rowSub}>@{r.requester?.username}</Text>
                       </View>
                       <View style={s.actionPair}>
-                        <TouchableOpacity
+                        <Touchable
                           style={s.acceptBtn}
                           onPress={() => handleRespond(r._id, 'accept')}
                           disabled={!!responding[r._id]}
-                          activeOpacity={0.8}>
+                          hitSlop={touchSlop(34)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Accept friend request from ${r.name || 'this person'}`}>
                           {responding[r._id] === 'accept'
                             ? <ActivityIndicator size="small" color="#060A09" />
                             : <Ionicons name="checkmark" size={16} color="#060A09" />}
-                        </TouchableOpacity>
-                        <TouchableOpacity
+                        </Touchable>
+                        <Touchable
                           style={s.rejectBtn}
                           onPress={() => handleRespond(r._id, 'reject')}
                           disabled={!!responding[r._id]}
-                          activeOpacity={0.8}>
+                          hitSlop={touchSlop(34)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Reject friend request from ${r.name || 'this person'}`}>
                           {responding[r._id] === 'reject'
                             ? <ActivityIndicator size="small" color={PC.textMuted} />
                             : <Ionicons name="close" size={16} color={PC.textMuted} />}
-                        </TouchableOpacity>
+                        </Touchable>
                       </View>
                     </View>
                     {i < requests.length - 1 && <View style={s.divider} />}
@@ -459,7 +468,7 @@ const s = StyleSheet.create({
     borderColor: PC.border,
     borderRadius: 14,
     paddingHorizontal: 14,
-    height: 46,
+    minHeight: 46,
   },
   searchInput: { flex: 1, color: PC.textPrimary, fontSize: 15 },
 

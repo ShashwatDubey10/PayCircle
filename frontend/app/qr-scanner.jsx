@@ -3,18 +3,18 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
   Linking,
   Animated,
   Dimensions,
   Platform,
 } from 'react-native';
+import Touchable from '@/components/Touchable';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 
-import { PC } from '@/constants/theme';
+import { PC, touchSlop } from '@/constants/theme';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const FRAME_SIZE = SCREEN_W * 0.68;
@@ -100,13 +100,13 @@ function PaymentSheet({ upi, onClose, onPay }) {
       )}
 
       <View style={styles.sheetActions}>
-        <TouchableOpacity style={styles.btnSecondary} onPress={onClose} activeOpacity={0.8}>
+        <Touchable style={styles.btnSecondary} onPress={onClose}>
           <Text style={styles.btnSecondaryText}>Scan Again</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.btnPrimary} onPress={onPay} activeOpacity={0.8}>
+        </Touchable>
+        <Touchable tone="accent" style={styles.btnPrimary} onPress={onPay}>
           <Ionicons name="arrow-forward" size={16} color={PC.bg} style={{ marginRight: 6 }} />
           <Text style={styles.btnPrimaryText}>Open UPI App</Text>
-        </TouchableOpacity>
+        </Touchable>
       </View>
     </View>
   );
@@ -172,9 +172,14 @@ export default function QrScannerScreen() {
   if (!permission.granted) {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <Touchable
+          style={styles.backBtn}
+          onPress={() => router.back()}
+          hitSlop={touchSlop(44)}
+          accessibilityRole="button"
+          accessibilityLabel="Go back">
           <Ionicons name="arrow-back" size={22} color={PC.textPrimary} />
-        </TouchableOpacity>
+        </Touchable>
         <View style={styles.centered}>
           <View style={styles.permIconWrap}>
             <Ionicons name="camera-outline" size={42} color={PC.accent} />
@@ -183,9 +188,9 @@ export default function QrScannerScreen() {
           <Text style={styles.permDesc}>
             PayCircle needs camera access to scan UPI QR codes for payments.
           </Text>
-          <TouchableOpacity style={styles.btnPrimarySolo} onPress={requestPermission} activeOpacity={0.85}>
+          <Touchable tone="accent" style={styles.btnPrimarySolo} onPress={requestPermission}>
             <Text style={styles.btnPrimaryText}>Allow Camera</Text>
-          </TouchableOpacity>
+          </Touchable>
         </View>
       </SafeAreaView>
     );
@@ -223,9 +228,14 @@ export default function QrScannerScreen() {
 
       {/* Top bar */}
       <SafeAreaView style={styles.topBar} edges={['top']}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <Touchable
+          style={styles.backBtn}
+          onPress={() => router.back()}
+          hitSlop={touchSlop(44)}
+          accessibilityRole="button"
+          accessibilityLabel="Go back">
           <Ionicons name="arrow-back" size={22} color={PC.textPrimary} />
-        </TouchableOpacity>
+        </Touchable>
         <Text style={styles.screenTitle}>Scan QR Code</Text>
         <View style={{ width: 44 }} />
       </SafeAreaView>
@@ -247,9 +257,9 @@ export default function QrScannerScreen() {
       {/* Scan-again button when error */}
       {error && !upiData && (
         <View style={[styles.retryWrap, { bottom: insets.bottom + 48 }]}>
-          <TouchableOpacity style={styles.btnSecondarySolo} onPress={resetScan} activeOpacity={0.8}>
+          <Touchable style={styles.btnSecondarySolo} onPress={resetScan}>
             <Text style={styles.btnSecondaryText}>Try Again</Text>
-          </TouchableOpacity>
+          </Touchable>
         </View>
       )}
 

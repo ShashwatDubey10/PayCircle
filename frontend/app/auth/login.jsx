@@ -4,18 +4,18 @@ import {
   Text,
   Image,
   TextInput,
-  TouchableOpacity,
   StyleSheet,
   KeyboardAvoidingView,
   ScrollView,
   ActivityIndicator,
   Animated,
 } from 'react-native';
+import Touchable from '@/components/Touchable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
-import { PC } from '@/constants/theme';
+import { PC, touchSlop } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 
 export default function LoginScreen() {
@@ -172,27 +172,29 @@ export default function LoginScreen() {
                   onFocus={() => setFocusedField('password')}
                   onBlur={() => setFocusedField(null)}
                 />
-                <TouchableOpacity
+                <Touchable
                   onPress={() => setShowPassword(!showPassword)}
-                  style={styles.eyeBtn}>
+                  style={styles.eyeBtn}
+                  hitSlop={touchSlop(24)}
+                  accessibilityRole="button"
+                  accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}>
                   <Ionicons
                     name={showPassword ? 'eye-off-outline' : 'eye-outline'}
                     size={15}
                     color={PC.textMuted}
                   />
-                </TouchableOpacity>
+                </Touchable>
               </View>
             </View>
 
-            <TouchableOpacity style={styles.forgotRow}>
+            <Touchable style={styles.forgotRow}>
               <Text style={styles.forgotText}>Forgot password?</Text>
-            </TouchableOpacity>
+            </Touchable>
 
             {/* Sign In CTA */}
-            <TouchableOpacity
+            <Touchable tone="accent"
               style={[styles.primaryBtn, loading && styles.primaryBtnDisabled]}
               onPress={handleLogin}
-              activeOpacity={0.85}
               disabled={loading}>
               {loading ? (
                 <ActivityIndicator color="#060A09" size="small" />
@@ -204,7 +206,7 @@ export default function LoginScreen() {
                   </View>
                 </View>
               )}
-            </TouchableOpacity>
+            </Touchable>
 
             {/* Divider */}
             <View style={styles.dividerRow}>
@@ -214,13 +216,12 @@ export default function LoginScreen() {
             </View>
 
             {/* Create Account */}
-            <TouchableOpacity
+            <Touchable
               style={styles.secondaryBtn}
               onPress={() => router.push('/auth/register')}
-              activeOpacity={0.75}
               disabled={loading}>
               <Text style={styles.secondaryBtnText}>Create Account</Text>
-            </TouchableOpacity>
+            </Touchable>
           </Animated.View>
           </View>
 
@@ -349,7 +350,7 @@ const styles = StyleSheet.create({
     borderColor: PC.border,
     borderRadius: 12,
     paddingHorizontal: 14,
-    height: 52,
+    minHeight: 52,
   },
   inputBoxFocused: {
     borderColor: PC.accent,
@@ -367,7 +368,7 @@ const styles = StyleSheet.create({
   primaryBtn: {
     backgroundColor: PC.accent,
     borderRadius: 14,
-    height: 54,
+    minHeight: 54,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 20,
@@ -402,7 +403,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: PC.borderLight,
     borderRadius: 14,
-    height: 52,
+    minHeight: 52,
     alignItems: 'center',
     justifyContent: 'center',
   },
