@@ -13,6 +13,11 @@ expo-env.d.ts
 .kotlin/
 *.orig.*
 *.jks
+*.keystore
+# eas credentials writes keystore passwords into this file in plain text, and
+# this repo is public. The .jks itself is ignored above; the passwords that
+# unlock it must be too, or ignoring the key achieves nothing.
+credentials.json
 *.p8
 *.p12
 *.key
