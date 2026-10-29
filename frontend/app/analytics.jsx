@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
-  Text,
   ScrollView,
   StyleSheet,
   ActivityIndicator,
@@ -9,6 +8,7 @@ import {
   Animated,
   Platform,
 } from 'react-native';
+import { Text } from '@/components/text';
 import Touchable from '@/components/Touchable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';

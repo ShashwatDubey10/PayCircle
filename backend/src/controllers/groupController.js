@@ -44,15 +44,22 @@ const getUserGroups = asyncHandler(async (req, res) => {
   logger.debug('GROUP', `Fetched ${groups.length} groups for user`, { userId: req.user._id });
 
   if (req.query.includeBalances === 'true') {
-    const userId = req.user._id.toString();
+    const userId    = req.user._id.toString();
+    // calculateGroupBalances already produces each group's simplified debt list,
+    // so returning it on request saves the client one follow-up call per group.
+    const withDebts = req.query.includeDebts === 'true';
     const enriched = await Promise.all(
       groups.map(async (g) => {
         try {
-          const { members } = await calculateGroupBalances(g._id);
+          const { members, debts } = await calculateGroupBalances(g._id);
           const mine = members.find(m => m.user.id === userId);
-          return { ...g.toObject(), myBalance: mine?.netBalance ?? 0 };
+          return {
+            ...g.toObject(),
+            myBalance: mine?.netBalance ?? 0,
+            ...(withDebts ? { debts } : {}),
+          };
         } catch {
-          return { ...g.toObject(), myBalance: 0 };
+          return { ...g.toObject(), myBalance: 0, ...(withDebts ? { debts: [] } : {}) };
         }
       })
     );

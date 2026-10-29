@@ -1,18 +1,17 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
-  Text,
   ScrollView,
   StyleSheet,
   ActivityIndicator,
   Pressable,
   Modal,
-  TextInput,
   RefreshControl,
   KeyboardAvoidingView,
   Platform,
   Alert,
 } from 'react-native';
+import { Text, TextInput } from '@/components/text';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import Touchable from '@/components/Touchable';
 
@@ -118,11 +117,12 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
     setLoading(true);
     setError('');
     try {
-      const today = new Date().toISOString().split('T')[0];
       const { data } = await api.post(`/api/groups/${group._id}/expenses`, {
         amount: amt,
         payerId,
-        date: today,
+        // Full instant, not a bare date. A date-only string is parsed as UTC
+        // midnight, which every Indian user then reads back as 5:30 am.
+        date: new Date().toISOString(),
         category,
         notes: notes.trim(),
         splitType,
@@ -969,6 +969,8 @@ export default function GroupDetailScreen() {
   const [group,      setGroup]      = useState(null);
   const [members,    setMembers]    = useState([]);
   const [expenses,   setExpenses]   = useState([]);
+  const listRef = useRef(null);
+  const openedAtBottom = useRef(false);
   const [balances,   setBalances]   = useState({ members: [], debts: [] });
   const [tab,        setTab]        = useState('expenses');
   const [loading,    setLoading]    = useState(true);
@@ -1046,6 +1048,19 @@ export default function GroupDetailScreen() {
     setRefreshing(false);
   }, [fetchAll]);
 
+  // The API returns newest-first and `handleExpenseAdded` prepends, so the
+  // state stays in that order; this is a display-order view that reads the way
+  // a chat does — oldest at the top, the latest expense at the bottom.
+  const expensesChrono = useMemo(() => [...expenses].reverse(), [expenses]);
+
+  // Open on the most recent expense rather than the oldest one.
+  useEffect(() => {
+    if (openedAtBottom.current || tab !== 'expenses' || expenses.length === 0) return;
+    openedAtBottom.current = true;
+    const t = setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 80);
+    return () => clearTimeout(t);
+  }, [tab, expenses.length]);
+
   // Guard: auth still restoring — RootGuard will redirect if truly unauthenticated
   if (!user) return null;
 
@@ -1056,6 +1071,9 @@ export default function GroupDetailScreen() {
   // ── Handlers ──────────────────────────────────────────────────────────────
   function handleExpenseAdded(expense) {
     setExpenses(prev => [expense, ...prev]);
+    // The newest expense now renders at the bottom, so bring it into view the
+    // way a chat does. The delay lets the new row lay out before we scroll.
+    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 60);
   }
 
   function handleMemberAdded(member) {
@@ -1202,6 +1220,7 @@ export default function GroupDetailScreen() {
       </View>
 
       <ScrollView
+        ref={listRef}
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -1218,14 +1237,14 @@ export default function GroupDetailScreen() {
               <Text style={styles.emptyText}>Add the first expense to get started</Text>
             </View>
           ) : (
-            expenses.map((exp, idx) => {
+            expensesChrono.map((exp, idx) => {
               const meId = user._id?.toString();
               const paidByMe = exp.payerId?._id?.toString() === meId || exp.payerId?.id?.toString() === meId;
               const myShare = exp.splits?.find(s =>
                 s.userId?._id?.toString() === meId || s.userId?.id?.toString() === meId
               );
               const isExpanded = expandedExpId === exp._id;
-              const prevExp = idx > 0 ? expenses[idx - 1] : null;
+              const prevExp = idx > 0 ? expensesChrono[idx - 1] : null;
               const showDate = !prevExp || formatExpDateLabel(exp.date) !== formatExpDateLabel(prevExp.date);
               const payerFirstName = (exp.payerId?.name ?? 'Unknown').split(' ')[0];
 
@@ -1470,7 +1489,7 @@ export default function GroupDetailScreen() {
 
       {/* ── Add Expense FAB ── */}
       {tab === 'expenses' && (
-        <Touchable borderless tone="accent" style={[styles.fab, { bottom: insets.bottom + 24 }]} onPress={() => setShowAddExpense(true)}>
+        <Touchable tone="accent" style={[styles.fab, { bottom: insets.bottom + 24 }]} onPress={() => setShowAddExpense(true)}>
           <Ionicons name="add" size={24} color="#060A09" />
           <Text style={styles.fabText}>Add Expense</Text>
         </Touchable>

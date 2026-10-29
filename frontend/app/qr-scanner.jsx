@@ -1,13 +1,13 @@
 import React, { useState, useCallback } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   Linking,
   Animated,
   Dimensions,
   Platform,
 } from 'react-native';
+import { Text } from '@/components/text';
 import Touchable from '@/components/Touchable';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';

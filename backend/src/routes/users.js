@@ -14,6 +14,7 @@ const {
 const { addDirectSplit, getDirectSplits, getAllDirectSplits, requestSettle, confirmSettle, getAllDirectSettlements, getAllDirectBalances, cancelOrRejectSettle, getGroupDebtsWithFriend, updateDirectSplit } = require('../controllers/directSplitController');
 const { createContact, getContacts, updateContact, deleteContact } = require('../controllers/contactController');
 const { upsertSplitTag, getSplitTags } = require('../controllers/splitTagController');
+const { getAllGroupSettlements } = require('../controllers/settlementController');
 
 router.use(protect);
 
@@ -55,6 +56,8 @@ router.put   ('/me/direct/:friendId/settle/:requestId/confirm',      confirmSett
 router.delete('/me/direct/:friendId/settle/:requestId',              cancelOrRejectSettle);
 
 // Split tags (per-user private category tagging)
+router.get ('/me/group-settlements', getAllGroupSettlements);
+
 router.post('/me/split-tags', upsertSplitTag);
 router.get ('/me/split-tags', getSplitTags);
 

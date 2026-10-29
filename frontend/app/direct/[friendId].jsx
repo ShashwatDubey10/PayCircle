@@ -1,11 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
-  Text,
   FlatList,
   ScrollView,
   StyleSheet,
-  TextInput,
   ActivityIndicator,
   Keyboard,
   KeyboardAvoidingView,
@@ -14,6 +12,7 @@ import {
   Platform,
   RefreshControl,
 } from 'react-native';
+import { Text, TextInput } from '@/components/text';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import Touchable from '@/components/Touchable';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';

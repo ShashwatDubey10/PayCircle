@@ -1,16 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
-  Text,
   Modal,
   Platform,
-  KeyboardAvoidingView,
+  Keyboard,
   ScrollView,
   StyleSheet,
   ActivityIndicator,
-  TextInput,
   RefreshControl,
 } from 'react-native';
+import { Text, TextInput } from '@/components/text';
 import Touchable from '@/components/Touchable';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -298,6 +297,17 @@ const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
+
+  // Measured rather than inferred: KeyboardAvoidingView left the sheets lifted
+  // after dismissal under edge-to-edge. This is zero whenever the keyboard is
+  // down, with no reset to go wrong.
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', e =>
+      setKeyboardHeight(e.endCoordinates?.height ?? 0));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
   const { user, logout, updateUser } = useAuth();
   const router = useRouter();
 
@@ -650,8 +660,8 @@ export default function ProfileScreen() {
 
       {/* ── Set Username Modal ── */}
       <Modal statusBarTranslucent visible={showUsernameModal} transparent animationType="slide" onRequestClose={() => { setShowUsernameModal(false); setUsernameError(''); }}>
-        <KeyboardAvoidingView style={modalStyles.overlay} behavior="padding">
-          <View style={[modalStyles.sheet, { paddingBottom: insets.bottom + 28 }]}>
+        <View style={[modalStyles.overlay, { paddingBottom: keyboardHeight }]}>
+          <View style={[modalStyles.sheet, { paddingBottom: keyboardHeight > 0 ? 24 : insets.bottom + 28 }]}>
             <View style={modalStyles.handle} />
             <Text style={modalStyles.title}>{user?.username ? 'Change Username' : 'Set Username'}</Text>
             <Text style={[modalStyles.itemBody, { marginBottom: 16 }]}>
@@ -688,12 +698,12 @@ export default function ProfileScreen() {
               <Text style={styles.cancelText}>Cancel</Text>
             </Touchable>
           </View>
-        </KeyboardAvoidingView>
+        </View>
       </Modal>
       {/* ── Set UPI ID Modal ── */}
       <Modal statusBarTranslucent visible={showUpiModal} transparent animationType="slide" onRequestClose={() => { setShowUpiModal(false); setUpiError(''); }}>
-        <KeyboardAvoidingView style={modalStyles.overlay} behavior="padding">
-          <View style={[modalStyles.sheet, { paddingBottom: insets.bottom + 28 }]}>
+        <View style={[modalStyles.overlay, { paddingBottom: keyboardHeight }]}>
+          <View style={[modalStyles.sheet, { paddingBottom: keyboardHeight > 0 ? 24 : insets.bottom + 28 }]}>
             <View style={modalStyles.handle} />
             <Text style={modalStyles.title}>{user?.upiId ? 'Change UPI ID' : 'Add UPI ID'}</Text>
             <Text style={[modalStyles.itemBody, { marginBottom: 16 }]}>
@@ -730,12 +740,12 @@ export default function ProfileScreen() {
               <Text style={styles.cancelText}>Cancel</Text>
             </Touchable>
           </View>
-        </KeyboardAvoidingView>
+        </View>
       </Modal>
       {/* ── Delete Account Modal ── */}
       <Modal statusBarTranslucent visible={showDeleteModal} transparent animationType="slide" onRequestClose={closeDeleteModal}>
-        <KeyboardAvoidingView style={modalStyles.overlay} behavior="padding">
-          <View style={[modalStyles.sheet, { paddingBottom: insets.bottom + 28 }]}>
+        <View style={[modalStyles.overlay, { paddingBottom: keyboardHeight }]}>
+          <View style={[modalStyles.sheet, { paddingBottom: keyboardHeight > 0 ? 24 : insets.bottom + 28 }]}>
             <View style={modalStyles.handle} />
             <Text style={modalStyles.title}>Delete Account</Text>
             <Text style={[modalStyles.itemBody, { marginBottom: 10 }]}>
@@ -775,7 +785,7 @@ export default function ProfileScreen() {
               <Text style={styles.cancelText}>Cancel</Text>
             </Touchable>
           </View>
-        </KeyboardAvoidingView>
+        </View>
       </Modal>
     </SafeAreaView>
   );

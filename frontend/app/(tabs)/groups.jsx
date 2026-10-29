@@ -1,16 +1,15 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
-  Text,
   ScrollView,
   StyleSheet,
   ActivityIndicator,
   Pressable,
   Modal,
-  TextInput,
   RefreshControl,
   KeyboardAvoidingView,
 } from 'react-native';
+import { Text, TextInput } from '@/components/text';
 import Touchable from '@/components/Touchable';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -419,7 +418,7 @@ export default function GroupsScreen() {
   // ── Fetch groups enriched with each group's balance in one request ──────────
   const fetchGroups = useCallback(async () => {
     try {
-      const { data } = await api.get('/api/groups?includeBalances=true');
+      const { data } = await api.get('/api/groups?includeBalances=true&includeDebts=true');
       const enriched = (data.groups || []).map(g => ({
         ...g,
         myBalance:      g.myBalance ?? 0,
@@ -437,19 +436,18 @@ export default function GroupsScreen() {
     if (!groupList.length) return;
     setLoadingSettlements(true);
     try {
-      const [settleResults, balanceResults] = await Promise.all([
-        Promise.all(groupList.map(async (g) => {
-          const { data } = await api.get(`/api/groups/${g._id}/settlements`);
-          return (data.settlements || []).map(s => ({ ...s, groupName: g.name }));
-        })),
-        Promise.all(groupList.map(async (g) => {
-          const { data } = await api.get(`/api/groups/${g._id}/balances`);
-          return { groupId: g._id, groupName: g.name, debts: data.debts || [] };
-        })),
-      ]);
-      const flat = settleResults.flat().sort((a, b) => new Date(b.date) - new Date(a.date));
+      // Settlements come back for every group in one request, and each group's
+      // simplified debts already arrived with the group list, so this no longer
+      // costs two requests per group.
+      const { data } = await api.get('/api/users/me/group-settlements');
+      const flat = (data.settlements || [])
+        .map(s => ({ ...s, groupName: s.groupName ?? '' }))
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
+
       setSettlements(flat);
-      setGroupBalanceMaps(balanceResults);
+      setGroupBalanceMaps(
+        groupList.map(g => ({ groupId: g._id, groupName: g.name, debts: g.debts || [] })),
+      );
     } catch {
       // non-critical — keep empty
     } finally {
@@ -711,7 +709,7 @@ export default function GroupsScreen() {
       )}
 
       {/* ── Filter FAB ── */}
-      <Touchable borderless tone="accent"
+      <Touchable tone="accent"
         style={[styles.fab, splitFilter !== 'all' && styles.fabActive]}
         onPress={() => setShowFilterSheet(true)}
         accessibilityRole="button"

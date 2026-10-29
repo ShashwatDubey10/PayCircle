@@ -1,12 +1,12 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
-  Text,
   ScrollView,
   StyleSheet,
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
+import { Text } from '@/components/text';
 import Touchable from '@/components/Touchable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';

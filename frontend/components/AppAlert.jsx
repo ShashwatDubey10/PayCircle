@@ -1,10 +1,10 @@
 import React from 'react';
 import {
   View,
-  Text,
   Modal,
   StyleSheet,
 } from 'react-native';
+import { Text } from '@/components/text';
 import Touchable from '@/components/Touchable';
 import { Ionicons } from '@expo/vector-icons';
 import { PC } from '@/constants/theme';

@@ -1,18 +1,18 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
-  Text,
+  FlatList,
   ScrollView,
   StyleSheet,
   ActivityIndicator,
   Pressable,
   Modal,
-  TextInput,
   RefreshControl,
   KeyboardAvoidingView,
   Platform,
   Alert,
 } from 'react-native';
+import { Text, TextInput } from '@/components/text';
 import Touchable from '@/components/Touchable';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -260,7 +260,7 @@ function AddTransactionModal({ visible, onClose, onAdded }) {
               <Ionicons
                 name="arrow-up-outline"
                 size={15}
-                color={type === 'expense' ? PC.negative : PC.textMuted}
+                color={type === 'expense' ? PC.negative : PC.textSecondary}
                 style={{ marginRight: 5 }}
               />
               <Text style={[styles.typeBtnText, type === 'expense' && { color: PC.negative }]}>
@@ -274,7 +274,7 @@ function AddTransactionModal({ visible, onClose, onAdded }) {
               <Ionicons
                 name="arrow-down-outline"
                 size={15}
-                color={type === 'income' ? PC.positive : PC.textMuted}
+                color={type === 'income' ? PC.positive : PC.textSecondary}
                 style={{ marginRight: 5 }}
               />
               <Text style={[styles.typeBtnText, type === 'income' && { color: PC.positive }]}>
@@ -388,19 +388,16 @@ export default function TransactionsScreen() {
   }, [user?._id]);
 
   // ── Fetch group settlements + group balances ──────────────────────────────
+  // One request for every group's settlements. This used to fetch the group list
+  // and then one settlements request per group, on every mount and refresh.
   const fetchSettlements = useCallback(async () => {
     try {
-      const { data: gData } = await api.get('/api/groups');
-      const groups = gData.groups || [];
-      const settleResults = groups.length
-        ? await Promise.all(
-            groups.map(async (g) => {
-              const { data } = await api.get(`/api/groups/${g._id}/settlements`);
-              return (data.settlements || []).map(s => ({ ...s, groupName: g.name, groupId: g._id }));
-            })
-          )
-        : [];
-      setSettlements(settleResults.flat().map(s => normalizeSettlement(s, user?._id)));
+      const { data } = await api.get('/api/users/me/group-settlements');
+      setSettlements(
+        (data.settlements || []).map(s =>
+          normalizeSettlement({ ...s, groupId: s.groupId?._id ?? s.groupId }, user?._id),
+        ),
+      );
     } catch { /* non-critical */ }
   }, [user?._id]);
 
@@ -451,8 +448,11 @@ export default function TransactionsScreen() {
   }
 
   // ── Derived values ────────────────────────────────────────────────────────
-  const allItems = [...transactions, ...settlements, ...directSplits].sort(
-    (a, b) => (Date.parse(b.date) || 0) - (Date.parse(a.date) || 0)
+  const allItems = useMemo(
+    () => [...transactions, ...settlements, ...directSplits].sort(
+      (a, b) => (Date.parse(b.date) || 0) - (Date.parse(a.date) || 0)
+    ),
+    [transactions, settlements, directSplits],
   );
 
   const totalIncome  = allItems.filter(t => t.type === 'income').reduce((s, t) => s + (t.amount ?? 0), 0);
@@ -460,11 +460,14 @@ export default function TransactionsScreen() {
   const net          = totalIncome - totalExpense;
 
   // Confirmed direct settles (normalized for Settled tab)
-  const closedDirectSettles = allDirectSettles
-    .filter(s => s.status === 'confirmed')
-    .map(s => normalizeDirectSettle(s, user?._id));
+  const closedDirectSettles = useMemo(
+    () => allDirectSettles
+      .filter(s => s.status === 'confirmed')
+      .map(s => normalizeDirectSettle(s, user?._id)),
+    [allDirectSettles, user?._id],
+  );
 
-  const filtered = (() => {
+  const filtered = useMemo(() => {
     switch (activeTab) {
       case 'income':      return transactions.filter(t => t.type === 'income');
       case 'expense':     return [...transactions.filter(t => t.type === 'expense'), ...directSplits]
@@ -473,9 +476,10 @@ export default function TransactionsScreen() {
                             .sort((a, b) => (Date.parse(b.date) || 0) - (Date.parse(a.date) || 0));
       default:            return allItems;
     }
-  })();
+  }, [activeTab, transactions, directSplits, closedDirectSettles, settlements, allItems]);
 
-  const grouped = groupByMonth(filtered);
+  // One entry per month, which is what the list is virtualized by below.
+  const monthSections = useMemo(() => Object.entries(groupByMonth(filtered)), [filtered]);
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -571,60 +575,67 @@ export default function TransactionsScreen() {
           </Touchable>
         </View>
       ) : (
-        <ScrollView
+        /* Virtualized by month, not by row. A month is the chunk the data already
+           comes grouped into (~30-90 rows), so only the months near the viewport
+           stay mounted while each month's rows render exactly as before — the
+           screen is unchanged visually, it just stops mounting a year of history
+           to show the top of it. */
+        <FlatList
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={PC.textPrimary} />
-          }>
-
-          {/* Grouped-by-month renderer */}
-          {Object.keys(grouped).length === 0 ? (
-              <View style={styles.emptyState}>
-                <View style={styles.emptyIcon}>
-                  <Ionicons
-                    name={activeTab === 'settlements' ? 'swap-horizontal-outline' : 'receipt-outline'}
-                    size={28}
-                    color={PC.textMuted}
-                  />
-                </View>
-                <Text style={styles.emptyTitle}>
-                  {activeTab === 'all'         ? 'No transactions yet'
-                   : activeTab === 'settlements' ? 'No settlements yet'
-                   : `No ${activeTab} transactions`}
-                </Text>
-                <Text style={styles.emptyText}>
-                  {activeTab === 'all'
-                    ? 'Tap + to add your first transaction'
-                    : activeTab === 'settlements'
-                      ? 'Settle up in a group to see history here'
-                      : 'Switch to All to see everything'}
-                </Text>
-              </View>
-            ) : (
-              Object.entries(grouped).map(([month, txns]) => (
-                <View key={month}>
-                  <Text style={styles.dateHeader}>{month}</Text>
-                  <View style={styles.txCard}>
-                    {txns.map((tx, i) => (
-                      <TxRow
-                        key={tx._id}
-                        tx={tx}
-                        onLongPress={confirmDelete}
-                        last={i === txns.length - 1}
-                      />
-                    ))}
-                  </View>
-                </View>
-              ))
-            )
           }
-
-          {allItems.length > 0 && activeTab !== 'settlements' && (
-            <Text style={styles.hint}>Long-press a personal transaction to delete it</Text>
+          data={monthSections}
+          keyExtractor={([month]) => month}
+          initialNumToRender={2}
+          maxToRenderPerBatch={2}
+          windowSize={5}
+          renderItem={({ item: [month, txns] }) => (
+            <View>
+              <Text style={styles.dateHeader}>{month}</Text>
+              <View style={styles.txCard}>
+                {txns.map((tx, i) => (
+                  <TxRow
+                    key={tx._id}
+                    tx={tx}
+                    onLongPress={confirmDelete}
+                    last={i === txns.length - 1}
+                  />
+                ))}
+              </View>
+            </View>
           )}
-        </ScrollView>
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <View style={styles.emptyIcon}>
+                <Ionicons
+                  name={activeTab === 'settlements' ? 'swap-horizontal-outline' : 'receipt-outline'}
+                  size={28}
+                  color={PC.textMuted}
+                />
+              </View>
+              <Text style={styles.emptyTitle}>
+                {activeTab === 'all'         ? 'No transactions yet'
+                 : activeTab === 'settlements' ? 'No settlements yet'
+                 : `No ${activeTab} transactions`}
+              </Text>
+              <Text style={styles.emptyText}>
+                {activeTab === 'all'
+                  ? 'Tap + to add your first transaction'
+                  : activeTab === 'settlements'
+                    ? 'Settle up in a group to see history here'
+                    : 'Switch to All to see everything'}
+              </Text>
+            </View>
+          }
+          ListFooterComponent={
+            allItems.length > 0 && activeTab !== 'settlements'
+              ? <Text style={styles.hint}>Long-press a personal transaction to delete it</Text>
+              : null
+          }
+        />
       )}
 
       <AddTransactionModal
@@ -794,10 +805,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 10,
     borderRadius: 9,
+    // Held at the same border width as the active state so selecting an option
+    // never changes the control's size.
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
   typeBtnActive:       { backgroundColor: 'rgba(255,80,85,0.12)', borderWidth: 1, borderColor: 'rgba(255,80,85,0.30)' },
   typeBtnActiveIncome: { backgroundColor: 'rgba(0,229,190,0.12)', borderWidth: 1, borderColor: 'rgba(0,229,190,0.30)' },
-  typeBtnText:         { color: PC.textMuted, fontSize: 14, fontWeight: '600' },
+  typeBtnText:         { color: PC.textSecondary, fontSize: 14, fontWeight: '600' },
 
   modalInputBox: {
     flexDirection: 'row',

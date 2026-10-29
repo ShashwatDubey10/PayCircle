@@ -1,15 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
-  Text,
   Image,
-  TextInput,
   StyleSheet,
   KeyboardAvoidingView,
   ScrollView,
   ActivityIndicator,
   Animated,
 } from 'react-native';
+import { Text, TextInput } from '@/components/text';
 import Touchable from '@/components/Touchable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';

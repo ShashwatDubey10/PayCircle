@@ -3,11 +3,11 @@ import {
   Pressable,
   Modal,
   View,
-  Text,
   StyleSheet,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { Text } from '@/components/text';
 import Touchable from '@/components/Touchable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import QRCode from 'react-native-qrcode-svg';

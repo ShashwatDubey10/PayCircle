@@ -42,6 +42,7 @@ const RIPPLE = {
 export default function Touchable({
   tone = 'neutral',
   borderless = false,
+  rippleRadius,
   style,
   children,
   ...rest
@@ -54,7 +55,15 @@ export default function Touchable({
       // control here sets its own backgroundColor in style — which replaces it,
       // so the ripple is created and then immediately painted over. Drawing it
       // in the foreground puts it above the control's own fill, where it shows.
-      android_ripple={{ color: RIPPLE[tone] ?? RIPPLE.neutral, borderless, foreground: true }}
+      android_ripple={{
+        color: RIPPLE[tone] ?? RIPPLE.neutral,
+        borderless,
+        // A borderless ripple with no radius expands to a circle sized from the
+        // view's diagonal, which on a wide control reads as a halo far larger
+        // than the thing pressed. Shadowed controls pass their own radius.
+        ...(rippleRadius != null ? { radius: rippleRadius } : {}),
+        foreground: true,
+      }}
       style={state => [
         // Pressable allows style to be a function; forward that through so a
         // call site can still react to `pressed` itself.

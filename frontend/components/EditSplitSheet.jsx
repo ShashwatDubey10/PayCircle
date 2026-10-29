@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
   Pressable,
-  View, Text, TextInput, Modal, StyleSheet,
+  View, Modal, StyleSheet,
   KeyboardAvoidingView, ScrollView, ActivityIndicator,
 } from 'react-native';
+import { Text, TextInput } from '@/components/text';
 import Touchable from '@/components/Touchable';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

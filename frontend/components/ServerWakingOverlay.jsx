@@ -1,4 +1,5 @@
-import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { Text } from '@/components/text';
 import { PC } from '@/constants/theme';
 
 // Full-screen rather than a banner, on purpose: while the server is asleep every

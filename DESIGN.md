@@ -407,9 +407,11 @@ is neutral (`white05`-weight translucent white) by default; `tone="accent"` give
 ground-colour ripple to a control with a *solid* mint fill, because the Dark-On-Mint rule puts
 dark on mint and a light ripple there reads as a glow. A control whose mint fill is conditional —
 an active chip, a selected pill — keeps the neutral ripple, since a dark ripple on its inactive
-dark fill would be invisible. `borderless` is required for anything carrying a shadow: the
-overflow clip that contains a bounded ripple also flattens elevation, so the two FABs would
-otherwise lose their lift. Modal dismiss backdrops take a bare `Pressable` with no ripple at all.
+dark fill would be invisible. `borderless` exists for a control with no visible box, and is not
+needed to protect a shadow — the FABs keep their elevation under the bounded ripple's overflow
+clip, verified on device. Prefer bounded everywhere: a borderless ripple is not clipped to its
+control at all, so on anything wider than it is tall it reads as a halo rather than a press.
+Modal dismiss backdrops take a bare `Pressable` with no ripple at all.
 
 ### Chips
 

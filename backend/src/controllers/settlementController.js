@@ -1,4 +1,5 @@
 const Settlement   = require('../models/Settlement');
+const Group        = require('../models/Group');
 const asyncHandler = require('../utils/asyncHandler');
 const logger       = require('../utils/logger');
 const { calculateGroupBalances } = require('../services/balanceService');
@@ -93,4 +94,27 @@ const getSettlements = asyncHandler(async (req, res) => {
   res.json({ success: true, count: settlements.length, settlements });
 });
 
-module.exports = { recordSettlement, getSettlements };
+// GET /api/users/me/group-settlements
+// Every settlement across the user's groups in one query. Clients previously
+// fanned out one request per group to assemble this.
+const getAllGroupSettlements = asyncHandler(async (req, res) => {
+  const groups    = await Group.find({ members: req.user._id }).select('_id name');
+  const nameById  = new Map(groups.map(g => [g._id.toString(), g.name]));
+
+  const settlements = await Settlement.find({ groupId: { $in: groups.map(g => g._id) } })
+    .populate('fromUserId', 'name email')
+    .populate('toUserId',   'name email')
+    .sort({ date: -1 });
+
+  const enriched = settlements.map(s => ({
+    ...s.toObject(),
+    groupName: nameById.get(s.groupId.toString()) ?? null,
+  }));
+
+  logger.debug('SETTLE', `Fetched ${enriched.length} settlements across ${groups.length} groups`, {
+    userId: req.user._id,
+  });
+  res.json({ success: true, count: enriched.length, settlements: enriched });
+});
+
+module.exports = { recordSettlement, getSettlements, getAllGroupSettlements };

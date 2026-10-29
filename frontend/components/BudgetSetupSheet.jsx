@@ -1,15 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import {
   View,
-  Text,
   Pressable,
   Modal,
-  TextInput,
   ScrollView,
   StyleSheet,
   ActivityIndicator,
   KeyboardAvoidingView,
 } from 'react-native';
+import { Text, TextInput } from '@/components/text';
 import Touchable from '@/components/Touchable';
 import { Ionicons } from '@expo/vector-icons';
 
