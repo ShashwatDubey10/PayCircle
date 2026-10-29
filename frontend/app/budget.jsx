@@ -1,18 +1,18 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
-  Text,
   ScrollView,
   StyleSheet,
-  TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
+import { Text } from '@/components/text';
+import Touchable from '@/components/Touchable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
-import { PC } from '@/constants/theme';
+import { PC, touchSlop } from '@/constants/theme';
 import api from '@/services/api';
 import BudgetSetupSheet from '@/components/BudgetSetupSheet';
 
@@ -74,7 +74,7 @@ function CategoryRow({ item, onPress, last }) {
 
   return (
     <>
-      <TouchableOpacity style={s.catRow} onPress={onPress} activeOpacity={0.7}>
+      <Touchable style={s.catRow} onPress={onPress}>
         <View style={s.catIconBox}>
           <Ionicons name={icon} size={18} color={PC.textSecondary} />
         </View>
@@ -101,7 +101,7 @@ function CategoryRow({ item, onPress, last }) {
           </View>
         </View>
         <Ionicons name="chevron-forward" size={15} color={PC.textMuted} style={{ marginLeft: 8 }} />
-      </TouchableOpacity>
+      </Touchable>
       {!last && <View style={s.rowDivider} />}
     </>
   );
@@ -153,9 +153,14 @@ export default function BudgetScreen() {
     return (
       <SafeAreaView style={s.safe} edges={['top']}>
         <View style={s.headerRow}>
-          <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
+          <Touchable
+            style={s.backBtn}
+            onPress={() => router.back()}
+            hitSlop={touchSlop(38)}
+            accessibilityRole="button"
+            accessibilityLabel="Go back">
             <Ionicons name="arrow-back" size={20} color={PC.textPrimary} />
-          </TouchableOpacity>
+          </Touchable>
           <Text style={s.headerTitle}>Monthly Budget</Text>
           <View style={{ width: 38 }} />
         </View>
@@ -171,18 +176,23 @@ export default function BudgetScreen() {
     return (
       <SafeAreaView style={s.safe} edges={['top']}>
         <View style={s.headerRow}>
-          <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
+          <Touchable
+            style={s.backBtn}
+            onPress={() => router.back()}
+            hitSlop={touchSlop(38)}
+            accessibilityRole="button"
+            accessibilityLabel="Go back">
             <Ionicons name="arrow-back" size={20} color={PC.textPrimary} />
-          </TouchableOpacity>
+          </Touchable>
           <Text style={s.headerTitle}>Monthly Budget</Text>
           <View style={{ width: 38 }} />
         </View>
         <View style={s.centered}>
           <Ionicons name="cloud-offline-outline" size={36} color={PC.textMuted} />
           <Text style={s.errorMsg}>{error}</Text>
-          <TouchableOpacity style={s.retryBtn} onPress={() => { setLoading(true); fetchBudget(); }}>
+          <Touchable style={s.retryBtn} onPress={() => { setLoading(true); fetchBudget(); }}>
             <Text style={s.retryText}>Retry</Text>
-          </TouchableOpacity>
+          </Touchable>
         </View>
       </SafeAreaView>
     );
@@ -192,9 +202,14 @@ export default function BudgetScreen() {
     <SafeAreaView style={s.safe} edges={['top']}>
       {/* ── Header ── */}
       <View style={s.headerRow}>
-        <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
+        <Touchable
+          style={s.backBtn}
+          onPress={() => router.back()}
+          hitSlop={touchSlop(38)}
+          accessibilityRole="button"
+          accessibilityLabel="Go back">
           <Ionicons name="arrow-back" size={20} color={PC.textPrimary} />
-        </TouchableOpacity>
+        </Touchable>
         <Text style={s.headerTitle}>Monthly Budget</Text>
         {monthLabel ? (
           <View style={s.monthBadge}>
@@ -240,17 +255,17 @@ export default function BudgetScreen() {
                 <Text style={s.ringUsed}>used</Text>
               </View>
             </View>
-            <TouchableOpacity style={s.editOverallBtn} onPress={() => setSetupSheet(true)}>
+            <Touchable style={s.editOverallBtn} onPress={() => setSetupSheet(true)}>
               <Ionicons name="create-outline" size={15} color={PC.textSecondary} style={{ marginRight: 6 }} />
               <Text style={s.editOverallBtnText}>Edit Budget</Text>
-            </TouchableOpacity>
+            </Touchable>
           </View>
         ) : (
-          <TouchableOpacity style={s.emptyCard} onPress={() => setSetupSheet(true)}>
+          <Touchable style={s.emptyCard} onPress={() => setSetupSheet(true)}>
             <Ionicons name="add-circle-outline" size={22} color={PC.textSecondary} />
             <Text style={s.emptyCardText}>Set an overall monthly budget</Text>
             <Text style={s.emptyCardSub}>Track total spending across all categories</Text>
-          </TouchableOpacity>
+          </Touchable>
         )}
 
         {/* ── Category Budgets ── */}
@@ -282,10 +297,10 @@ export default function BudgetScreen() {
           </View>
         )}
 
-        <TouchableOpacity style={s.addCatBtn} onPress={() => setSetupSheet(true)}>
+        <Touchable style={s.addCatBtn} onPress={() => setSetupSheet(true)}>
           <Ionicons name="add" size={16} color={PC.textPrimary} style={{ marginRight: 6 }} />
           <Text style={s.addCatBtnText}>Add Category</Text>
-        </TouchableOpacity>
+        </Touchable>
 
         {/* ── Footer note ── */}
         <View style={s.footerNote}>
@@ -454,7 +469,7 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: PC.bgInput, borderRadius: 12,
     borderWidth: 1, borderColor: PC.border,
-    paddingHorizontal: 14, height: 52, marginBottom: 12,
+    paddingHorizontal: 14, minHeight: 52, marginBottom: 12,
   },
   rupee:      { color: PC.textSecondary, fontSize: 18, fontWeight: '600', marginRight: 8 },
   modalInput: { flex: 1, color: PC.textPrimary, fontSize: 18, fontWeight: '500' },

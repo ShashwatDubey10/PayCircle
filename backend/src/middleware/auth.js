@@ -27,6 +27,14 @@ const protect = async (req, res, next) => {
     return res.status(401).json({ success: false, message: 'User not found' });
   }
 
+  // Tokens live for 7 days, so a deleted account would otherwise keep working
+  // for a week after deletion. The row survives for other members' balances,
+  // but it must stop authenticating immediately.
+  if (req.user.deletedAt) {
+    logger.warn('AUTH', `Token for deleted account`, { userId: decoded.id });
+    return res.status(401).json({ success: false, message: 'This account has been deleted' });
+  }
+
   logger.debug('AUTH', `Authenticated: ${req.user.email}`, { userId: req.user._id, path: req.path });
   next();
 };

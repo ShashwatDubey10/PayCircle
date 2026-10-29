@@ -1,11 +1,11 @@
 import React from 'react';
 import {
   View,
-  Text,
   Modal,
-  TouchableOpacity,
   StyleSheet,
 } from 'react-native';
+import { Text } from '@/components/text';
+import Touchable from '@/components/Touchable';
 import { Ionicons } from '@expo/vector-icons';
 import { PC } from '@/constants/theme';
 
@@ -35,7 +35,7 @@ export default function AppAlert({
   const resolvedIconColor = iconColor || PC.accent;
 
   return (
-    <Modal
+    <Modal statusBarTranslucent
       visible={visible}
       transparent
       animationType="fade"
@@ -62,7 +62,7 @@ export default function AppAlert({
               const isPrimary     = btn.style === 'primary';
               const isCancel      = btn.style === 'cancel';
               return (
-                <TouchableOpacity
+                <Touchable
                   key={i}
                   style={[
                     styles.btn,
@@ -71,8 +71,7 @@ export default function AppAlert({
                     isPrimary     && styles.btnPrimary,
                     i > 0         && styles.btnGap,
                   ]}
-                  onPress={btn.onPress}
-                  activeOpacity={0.75}>
+                  onPress={btn.onPress}>
                   <Text
                     style={[
                       styles.btnText,
@@ -81,7 +80,7 @@ export default function AppAlert({
                     ]}>
                     {btn.text}
                   </Text>
-                </TouchableOpacity>
+                </Touchable>
               );
             })}
           </View>
@@ -142,7 +141,7 @@ const styles = StyleSheet.create({
   },
   btn: {
     flex: 1,
-    height: 46,
+    minHeight: 46,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',

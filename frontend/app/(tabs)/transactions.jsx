@@ -1,22 +1,24 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
-  Text,
+  FlatList,
   ScrollView,
   StyleSheet,
-  TouchableOpacity,
   ActivityIndicator,
+  Pressable,
   Modal,
-  TextInput,
   RefreshControl,
   KeyboardAvoidingView,
   Platform,
-  Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Text, TextInput } from '@/components/text';
+import Touchable from '@/components/Touchable';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { PC } from '@/constants/theme';
+import { PC, touchSlop } from '@/constants/theme';
+import { fmtINR } from '@/utils/format';
 import ErrorBox from '@/components/ErrorBox';
+import AppAlert from '@/components/AppAlert';
 import api from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
 import { getAllDirectSplits, getAllDirectSettlements } from '@/services/directSplit';
@@ -120,17 +122,65 @@ function normalizeSettlement(s, myId) {
   const counterpart = isPaid
     ? (s.toUserId?.name ?? 'Someone')
     : (s.fromUserId?.name ?? 'Someone');
+
+  // A reversal is stored as a row carrying the same pair and amount as the
+  // claim it undoes — that is what lets the ledger cancel the two out. Read
+  // literally it would render as an identical second tile and count towards
+  // the same total twice, so it is shown as the mirror of the original: the
+  // money moves back, the label says so, and the sign is flipped.
+  const isReversal = !!s.reversalOf;
+  const original   = isPaid ? `You paid ${counterpart}` : `${counterpart} paid you`;
+
   return {
     _id:           s._id,
     _isSettlement: true,
     _direction:    isPaid ? 'paid' : 'received',
     _groupName:    s.groupName,
-    type:          isPaid ? 'expense' : 'income',
+    _groupId:      s.groupId?._id ?? s.groupId,
+    _isReversal:   isReversal,
+    _isReversed:   !!s.isReversed,
+    _reversalOf:   s.reversalOf?.toString() ?? null,
+    // Only the person recorded as receiving the money is offered the reversal
+    // here — they are the one who knows whether it arrived. The API also allows
+    // the group admin, which has no entry point on this screen.
+    // A reversal row, and one already reversed, cannot be reversed again.
+    _canReverse:   !isPaid && !isReversal && !s.isReversed,
+    type:          (isReversal ? isPaid : !isPaid) ? 'income' : 'expense',
     amount:        s.amount,
     category:      'Settlement',
-    notes:         isPaid ? `You paid ${counterpart}` : `${counterpart} paid you`,
+    notes:         isReversal ? `Reversed · ${original}` : original,
     date:          s.date,
   };
+}
+
+// Keep a reversal next to the claim it withdraws.
+//
+// A settlement recorded through the group sheet is stored as a date with no
+// time, so it sits at midnight; a reversal is stored at the moment it was
+// made. Sorted newest-first that puts every reversal above all of the day's
+// settlements — including its own original — so it surfaces at the top of the
+// list as a row with nothing next to it to explain it, while the struck-out
+// original it refers to stays far below.
+//
+// Rather than flatten the real timestamps, the pair is reassembled for
+// display: the reversal is lifted out and re-inserted directly above its
+// original, so the two read together wherever that original happens to fall.
+function pairReversals(rows) {
+  const byOriginal = new Map();
+  for (const row of rows) if (row._reversalOf) byOriginal.set(row._reversalOf, row);
+  if (byOriginal.size === 0) return rows;
+
+  const present = new Set(rows.map(r => r._id?.toString()));
+  const out = [];
+  for (const row of rows) {
+    // Emitted below, alongside its original — unless that original is not in
+    // this list at all, in which case it keeps the place it sorted into.
+    if (row._reversalOf && present.has(row._reversalOf)) continue;
+    const reversal = byOriginal.get(row._id?.toString());
+    if (reversal) out.push(reversal);
+    out.push(row);
+  }
+  return out;
 }
 
 // ─── Transaction Row ──────────────────────────────────────────────────────────
@@ -140,7 +190,7 @@ function TxRow({ tx, onLongPress, last }) {
 
   let icon, metaLine;
   if (tx._isSettlement) {
-    icon     = 'swap-horizontal-outline';
+    icon     = tx._isReversal ? 'arrow-undo-outline' : 'swap-horizontal-outline';
     metaLine = tx._groupName
       ? `${tx._groupName} · ${shortDate(tx.date)}`
       : `Direct · ${shortDate(tx.date)}`;
@@ -154,29 +204,39 @@ function TxRow({ tx, onLongPress, last }) {
 
   return (
     <>
-      <TouchableOpacity
+      <Touchable
         style={styles.txRow}
-        onLongPress={() => !tx._isSettlement && !tx._isDirectSplit && onLongPress(tx)}
-        delayLongPress={400}
-        activeOpacity={0.7}>
+        onLongPress={() => (tx._canReverse || (!tx._isSettlement && !tx._isDirectSplit)) && onLongPress(tx)}
+        delayLongPress={400}>
         <View style={[styles.txIconBox, (tx._isSettlement || tx._isDirectSplit) && styles.txIconBoxSettlement]}>
           <Ionicons name={icon} size={18} color={PC.textSecondary} />
         </View>
         <View style={styles.txInfo}>
-          <Text style={styles.txLabel} numberOfLines={1}>
+          <Text
+            style={[styles.txLabel, tx._isReversed && styles.txVoided]}
+            numberOfLines={1}>
             {tx.notes || tx.category}
           </Text>
           <Text style={styles.txMeta}>{metaLine}</Text>
         </View>
         <View style={styles.txAmountCol}>
-          <Text style={[styles.txAmount, isIncome ? styles.amtPos : styles.amtNeg]}>
-            {isIncome ? '+' : '-'}₹{(tx.amount ?? 0).toLocaleString('en-IN')}
+          <Text
+            style={[
+              styles.txAmount,
+              isIncome ? styles.amtPos : styles.amtNeg,
+              // The claim that was withdrawn stays in the list for the record,
+              // struck through so it is clearly no longer counted.
+              tx._isReversed && styles.txAmountVoided,
+            ]}>
+            {isIncome ? '+' : '-'}₹{fmtINR(tx.amount)}
           </Text>
           {tx._isSettlement && (
-            <Text style={styles.settlementBadge}>settlement</Text>
+            <Text style={styles.settlementBadge}>
+              {tx._isReversal ? 'reversal' : tx._isReversed ? 'reversed' : 'settlement'}
+            </Text>
           )}
         </View>
-      </TouchableOpacity>
+      </Touchable>
       {!last && <View style={styles.txDivider} />}
     </>
   );
@@ -185,6 +245,7 @@ function TxRow({ tx, onLongPress, last }) {
 // ─── Add Transaction Modal ────────────────────────────────────────────────────
 
 function AddTransactionModal({ visible, onClose, onAdded }) {
+  const insets = useSafeAreaInsets();
   const [type,     setType]     = useState('expense');
   const [amount,   setAmount]   = useState('');
   const [category, setCategory] = useState('Food');
@@ -207,9 +268,13 @@ function AddTransactionModal({ visible, onClose, onAdded }) {
     setLoading(true);
     setError('');
     try {
-      const today = new Date().toISOString().split('T')[0];
+      // A full timestamp, not a YYYY-MM-DD date. A date-only string is parsed
+      // as UTC midnight, which in IST is 05:30 the same morning — so every row
+      // displayed that time, same-day rows had no real order between them, and
+      // anything near a month boundary landed in the wrong month.
       const { data } = await api.post('/api/users/me/transactions', {
-        type, amount: amt, category, notes: notes.trim(), date: today,
+        type, amount: amt, category, notes: notes.trim(),
+        date: new Date().toISOString(),
       });
       onAdded(data.transaction);
       resetAndClose();
@@ -235,12 +300,16 @@ function AddTransactionModal({ visible, onClose, onAdded }) {
   }
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+    <Modal statusBarTranslucent visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <KeyboardAvoidingView
         style={styles.modalOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
-        <ScrollView style={styles.modalSheet} bounces={false} keyboardShouldPersistTaps="handled">
+        behavior="padding">
+        <Pressable style={{ flex: 1 }} onPress={handleClose} />
+        <ScrollView
+          style={styles.modalSheet}
+          contentContainerStyle={{ padding: 24, paddingBottom: insets.bottom + 40 }}
+          bounces={false}
+          keyboardShouldPersistTaps="handled">
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Add Transaction</Text>
 
@@ -248,34 +317,34 @@ function AddTransactionModal({ visible, onClose, onAdded }) {
 
           {/* Type toggle */}
           <View style={styles.typeToggle}>
-            <TouchableOpacity
+            <Touchable
               style={[styles.typeBtn, type === 'expense' && styles.typeBtnActive]}
               onPress={() => setType('expense')}
               disabled={loading}>
               <Ionicons
                 name="arrow-up-outline"
                 size={15}
-                color={type === 'expense' ? PC.negative : PC.textMuted}
+                color={type === 'expense' ? PC.negative : PC.textSecondary}
                 style={{ marginRight: 5 }}
               />
               <Text style={[styles.typeBtnText, type === 'expense' && { color: PC.negative }]}>
                 Expense
               </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
+            </Touchable>
+            <Touchable
               style={[styles.typeBtn, type === 'income' && styles.typeBtnActiveIncome]}
               onPress={() => setType('income')}
               disabled={loading}>
               <Ionicons
                 name="arrow-down-outline"
                 size={15}
-                color={type === 'income' ? PC.positive : PC.textMuted}
+                color={type === 'income' ? PC.positive : PC.textSecondary}
                 style={{ marginRight: 5 }}
               />
               <Text style={[styles.typeBtnText, type === 'income' && { color: PC.positive }]}>
                 Income
               </Text>
-            </TouchableOpacity>
+            </Touchable>
           </View>
 
           {/* Amount */}
@@ -297,11 +366,14 @@ function AddTransactionModal({ visible, onClose, onAdded }) {
           <Text style={styles.modalLabel}>Category</Text>
           <View style={styles.chipGrid}>
             {cats.map((c) => (
-              <TouchableOpacity
+              <Touchable
                 key={c}
                 style={[styles.chip, category === c && styles.chipActive]}
                 onPress={() => setCategory(c)}
-                disabled={loading}>
+                disabled={loading}
+                hitSlop={touchSlop(0, 30)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: category === c }}>
                 <Ionicons
                   name={CATEGORY_ICONS[c] || 'grid-outline'}
                   size={13}
@@ -309,7 +381,7 @@ function AddTransactionModal({ visible, onClose, onAdded }) {
                   style={{ marginRight: 4 }}
                 />
                 <Text style={[styles.chipText, category === c && styles.chipTextActive]}>{c}</Text>
-              </TouchableOpacity>
+              </Touchable>
             ))}
           </View>
 
@@ -323,20 +395,22 @@ function AddTransactionModal({ visible, onClose, onAdded }) {
               value={notes}
               onChangeText={setNotes}
               multiline
+              // The models cap notes at 200. Without this the field accepted
+              // more and the save failed on the server.
+              maxLength={200}
               editable={!loading}
             />
           </View>
 
-          <TouchableOpacity
+          <Touchable tone="accent"
             style={[styles.submitBtn, loading && styles.submitBtnDisabled]}
             onPress={handleSubmit}
-            disabled={loading}
-            activeOpacity={0.85}>
+            disabled={loading}>
             {loading
               ? <ActivityIndicator color="#060A09" size="small" />
               : <Text style={styles.submitBtnText}>Add Transaction</Text>
             }
-          </TouchableOpacity>
+          </Touchable>
           <View style={{ height: 20 }} />
         </ScrollView>
       </KeyboardAvoidingView>
@@ -359,6 +433,8 @@ export default function TransactionsScreen() {
   const [refreshing,    setRefreshing]    = useState(false);
   const [error,         setError]         = useState('');
   const [showModal,     setShowModal]     = useState(false);
+  // Null, or the confirmation currently on screen.
+  const [alertCfg,      setAlertCfg]      = useState(null);
 
   // ── Fetch personal transactions ──────────────────────────────────────────
   const fetchTransactions = useCallback(async () => {
@@ -381,19 +457,16 @@ export default function TransactionsScreen() {
   }, [user?._id]);
 
   // ── Fetch group settlements + group balances ──────────────────────────────
+  // One request for every group's settlements. This used to fetch the group list
+  // and then one settlements request per group, on every mount and refresh.
   const fetchSettlements = useCallback(async () => {
     try {
-      const { data: gData } = await api.get('/api/groups');
-      const groups = gData.groups || [];
-      const settleResults = groups.length
-        ? await Promise.all(
-            groups.map(async (g) => {
-              const { data } = await api.get(`/api/groups/${g._id}/settlements`);
-              return (data.settlements || []).map(s => ({ ...s, groupName: g.name, groupId: g._id }));
-            })
-          )
-        : [];
-      setSettlements(settleResults.flat().map(s => normalizeSettlement(s, user?._id)));
+      const { data } = await api.get('/api/users/me/group-settlements');
+      setSettlements(
+        (data.settlements || []).map(s =>
+          normalizeSettlement({ ...s, groupId: s.groupId?._id ?? s.groupId }, user?._id),
+        ),
+      );
     } catch { /* non-critical */ }
   }, [user?._id]);
 
@@ -422,16 +495,74 @@ export default function TransactionsScreen() {
     finally { setRefreshing(false); }
   }, [fetchTransactions, fetchSettlements, fetchDirectData]);
 
-  // ── Delete personal transaction ───────────────────────────────────────────
+  // ── Confirmations ─────────────────────────────────────────────────────────
+  // AppAlert rather than Alert.alert: the native dialog ignores the app's
+  // theme entirely, landing a light-grey system box on a dark screen.
+  const dismissAlert = () => setAlertCfg(null);
+
+  function showFailure(title, message) {
+    setAlertCfg({
+      icon: 'alert-circle-outline',
+      iconColor: PC.negative,
+      title,
+      message,
+      buttons: [{ text: 'OK', style: 'primary', onPress: dismissAlert }],
+    });
+  }
+
+  function confirmRowAction(tx) {
+    if (tx._canReverse) return confirmReverse(tx);
+    return confirmDelete(tx);
+  }
+
+  // Reversing does not delete anything: it writes an offsetting entry, so the
+  // original claim and its withdrawal both stay in the history.
+  function confirmReverse(tx) {
+    setAlertCfg({
+      icon: 'arrow-undo-outline',
+      iconColor: PC.negative,
+      title: 'Reverse this settlement?',
+      message: `${tx.notes} — ₹${fmtINR(tx.amount)}.
+
+`
+        + 'Use this if the money never reached you. The balance goes back to '
+        + 'what it was, and both records stay in your history.',
+      buttons: [
+        { text: 'Cancel', style: 'cancel', onPress: dismissAlert },
+        {
+          text: 'Reverse',
+          style: 'destructive',
+          onPress: () => { dismissAlert(); handleReverse(tx); },
+        },
+      ],
+    });
+  }
+
+  async function handleReverse(tx) {
+    try {
+      await api.post(`/api/groups/${tx._groupId}/settlements/${tx._id}/reverse`);
+      await Promise.all([fetchSettlements(), fetchTransactions()]);
+    } catch (err) {
+      showFailure('Could not reverse', err?.message || 'Please try again.');
+    }
+  }
+
   function confirmDelete(tx) {
-    Alert.alert(
-      'Delete Transaction',
-      `Delete "${tx.notes || tx.category}" of ₹${(tx.amount ?? 0).toLocaleString('en-IN')}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => handleDelete(tx._id) },
-      ]
-    );
+    setAlertCfg({
+      icon: 'trash-outline',
+      iconColor: PC.negative,
+      title: 'Delete this transaction?',
+      message: `"${tx.notes || tx.category}" of ₹${fmtINR(tx.amount)} will be `
+        + 'removed for good. This cannot be undone.',
+      buttons: [
+        { text: 'Cancel', style: 'cancel', onPress: dismissAlert },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => { dismissAlert(); handleDelete(tx._id); },
+        },
+      ],
+    });
   }
 
   async function handleDelete(id) {
@@ -439,36 +570,53 @@ export default function TransactionsScreen() {
       await api.delete(`/api/users/me/transactions/${id}`);
       setTransactions(prev => prev.filter(t => t._id !== id));
     } catch (err) {
-      Alert.alert('Error', err?.message || 'Could not delete transaction.');
+      showFailure('Could not delete', err?.message || 'Please try again.');
     }
   }
 
   // ── Derived values ────────────────────────────────────────────────────────
-  const allItems = [...transactions, ...settlements, ...directSplits].sort(
-    (a, b) => (Date.parse(b.date) || 0) - (Date.parse(a.date) || 0)
+  const allItems = useMemo(
+    () => pairReversals(
+      [...transactions, ...settlements, ...directSplits].sort(
+        (a, b) => (Date.parse(b.date) || 0) - (Date.parse(a.date) || 0)
+      )
+    ),
+    [transactions, settlements, directSplits],
   );
 
-  const totalIncome  = allItems.filter(t => t.type === 'income').reduce((s, t) => s + (t.amount ?? 0), 0);
-  const totalExpense = allItems.filter(t => t.type === 'expense').reduce((s, t) => s + (t.amount ?? 0), 0);
+  // A withdrawn claim and the reversal that withdrew it both stay in the list
+  // as a record, but neither is money that moved, so the header counts neither.
+  // Letting the pair through would inflate Income and Expense by the same
+  // amount: the net would still be right while both headline figures lied.
+  const counted = allItems.filter(t => !t._isReversal && !t._isReversed);
+
+  const totalIncome  = counted.filter(t => t.type === 'income').reduce((s, t) => s + (t.amount ?? 0), 0);
+  const totalExpense = counted.filter(t => t.type === 'expense').reduce((s, t) => s + (t.amount ?? 0), 0);
   const net          = totalIncome - totalExpense;
 
   // Confirmed direct settles (normalized for Settled tab)
-  const closedDirectSettles = allDirectSettles
-    .filter(s => s.status === 'confirmed')
-    .map(s => normalizeDirectSettle(s, user?._id));
+  const closedDirectSettles = useMemo(
+    () => allDirectSettles
+      .filter(s => s.status === 'confirmed')
+      .map(s => normalizeDirectSettle(s, user?._id)),
+    [allDirectSettles, user?._id],
+  );
 
-  const filtered = (() => {
+  const filtered = useMemo(() => {
     switch (activeTab) {
       case 'income':      return transactions.filter(t => t.type === 'income');
       case 'expense':     return [...transactions.filter(t => t.type === 'expense'), ...directSplits]
                             .sort((a, b) => (Date.parse(b.date) || 0) - (Date.parse(a.date) || 0));
-      case 'settlements': return [...closedDirectSettles, ...settlements]
-                            .sort((a, b) => (Date.parse(b.date) || 0) - (Date.parse(a.date) || 0));
+      case 'settlements': return pairReversals(
+                            [...closedDirectSettles, ...settlements]
+                              .sort((a, b) => (Date.parse(b.date) || 0) - (Date.parse(a.date) || 0))
+                          );
       default:            return allItems;
     }
-  })();
+  }, [activeTab, transactions, directSplits, closedDirectSettles, settlements, allItems]);
 
-  const grouped = groupByMonth(filtered);
+  // One entry per month, which is what the list is virtualized by below.
+  const monthSections = useMemo(() => Object.entries(groupByMonth(filtered)), [filtered]);
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -476,9 +624,14 @@ export default function TransactionsScreen() {
       {/* ── Header ── */}
       <View style={styles.header}>
         <Text style={styles.title}>Transactions</Text>
-        <TouchableOpacity style={styles.addBtn} onPress={() => setShowModal(true)}>
+        <Touchable
+          style={styles.addBtn}
+          onPress={() => setShowModal(true)}
+          hitSlop={touchSlop(38)}
+          accessibilityRole="button"
+          accessibilityLabel="Add transaction">
           <Ionicons name="add" size={22} color={PC.accent} />
-        </TouchableOpacity>
+        </Touchable>
       </View>
 
       {/* ── Summary Card ── */}
@@ -522,14 +675,14 @@ export default function TransactionsScreen() {
           { key: 'expense',     label: 'Expense' },
           { key: 'settlements', label: 'Settled' },
         ].map(({ key, label }) => (
-          <TouchableOpacity
+          <Touchable
             key={key}
             style={[styles.toggleBtn, activeTab === key && styles.toggleActive]}
             onPress={() => setActiveTab(key)}>
             <Text style={[styles.toggleText, activeTab === key && styles.toggleTextActive]}>
               {label}
             </Text>
-          </TouchableOpacity>
+          </Touchable>
         ))}
       </View>
 
@@ -542,7 +695,7 @@ export default function TransactionsScreen() {
         <View style={styles.centered}>
           <Ionicons name="cloud-offline-outline" size={36} color={PC.textMuted} />
           <Text style={styles.errorMsg}>Something went wrong. Please try again.</Text>
-          <TouchableOpacity
+          <Touchable
             style={styles.retryBtn}
             onPress={async () => {
               setError('');
@@ -556,69 +709,88 @@ export default function TransactionsScreen() {
               }
             }}>
             <Text style={styles.retryText}>Retry</Text>
-          </TouchableOpacity>
+          </Touchable>
         </View>
       ) : (
-        <ScrollView
+        /* Virtualized by month, not by row. A month is the chunk the data already
+           comes grouped into (~30-90 rows), so only the months near the viewport
+           stay mounted while each month's rows render exactly as before — the
+           screen is unchanged visually, it just stops mounting a year of history
+           to show the top of it. */
+        <FlatList
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={PC.textPrimary} />
-          }>
-
-          {/* Grouped-by-month renderer */}
-          {Object.keys(grouped).length === 0 ? (
-              <View style={styles.emptyState}>
-                <View style={styles.emptyIcon}>
-                  <Ionicons
-                    name={activeTab === 'settlements' ? 'swap-horizontal-outline' : 'receipt-outline'}
-                    size={28}
-                    color={PC.textMuted}
-                  />
-                </View>
-                <Text style={styles.emptyTitle}>
-                  {activeTab === 'all'         ? 'No transactions yet'
-                   : activeTab === 'settlements' ? 'No settlements yet'
-                   : `No ${activeTab} transactions`}
-                </Text>
-                <Text style={styles.emptyText}>
-                  {activeTab === 'all'
-                    ? 'Tap + to add your first transaction'
-                    : activeTab === 'settlements'
-                      ? 'Settle up in a group to see history here'
-                      : 'Switch to All to see everything'}
-                </Text>
-              </View>
-            ) : (
-              Object.entries(grouped).map(([month, txns]) => (
-                <View key={month}>
-                  <Text style={styles.dateHeader}>{month}</Text>
-                  <View style={styles.txCard}>
-                    {txns.map((tx, i) => (
-                      <TxRow
-                        key={tx._id}
-                        tx={tx}
-                        onLongPress={confirmDelete}
-                        last={i === txns.length - 1}
-                      />
-                    ))}
-                  </View>
-                </View>
-              ))
-            )
           }
-
-          {allItems.length > 0 && activeTab !== 'settlements' && (
-            <Text style={styles.hint}>Long-press a personal transaction to delete it</Text>
+          data={monthSections}
+          keyExtractor={([month]) => month}
+          initialNumToRender={2}
+          maxToRenderPerBatch={2}
+          windowSize={5}
+          renderItem={({ item: [month, txns] }) => (
+            <View>
+              <Text style={styles.dateHeader}>{month}</Text>
+              <View style={styles.txCard}>
+                {txns.map((tx, i) => (
+                  <TxRow
+                    key={tx._id}
+                    tx={tx}
+                    onLongPress={confirmRowAction}
+                    last={i === txns.length - 1}
+                  />
+                ))}
+              </View>
+            </View>
           )}
-        </ScrollView>
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <View style={styles.emptyIcon}>
+                <Ionicons
+                  name={activeTab === 'settlements' ? 'swap-horizontal-outline' : 'receipt-outline'}
+                  size={28}
+                  color={PC.textMuted}
+                />
+              </View>
+              <Text style={styles.emptyTitle}>
+                {activeTab === 'all'         ? 'No transactions yet'
+                 : activeTab === 'settlements' ? 'No settlements yet'
+                 : `No ${activeTab} transactions`}
+              </Text>
+              <Text style={styles.emptyText}>
+                {activeTab === 'all'
+                  ? 'Tap + to add your first transaction'
+                  : activeTab === 'settlements'
+                    ? 'Settle up in a group to see history here'
+                    : 'Switch to All to see everything'}
+              </Text>
+            </View>
+          }
+          ListFooterComponent={
+            allItems.length > 0 && activeTab !== 'settlements'
+              ? <Text style={styles.hint}>
+                  Long-press a personal transaction to delete it, or a settlement you received to reverse it
+                </Text>
+              : null
+          }
+        />
       )}
 
       <AddTransactionModal
         visible={showModal}
         onClose={() => setShowModal(false)}
         onAdded={(tx) => setTransactions(prev => [tx, ...prev])}
+      />
+
+      <AppAlert
+        visible={!!alertCfg}
+        icon={alertCfg?.icon}
+        iconColor={alertCfg?.iconColor}
+        title={alertCfg?.title}
+        message={alertCfg?.message}
+        buttons={alertCfg?.buttons ?? []}
+        onRequestClose={dismissAlert}
       />
     </SafeAreaView>
   );
@@ -741,6 +913,13 @@ const styles = StyleSheet.create({
   amtNeg:      { color: PC.negative },
   txDivider:   { height: 1, backgroundColor: PC.border, marginHorizontal: 16 },
 
+  txVoided: {
+    color: PC.textMuted,
+  },
+  txAmountVoided: {
+    color: PC.textMuted,
+    textDecorationLine: 'line-through',
+  },
   settlementBadge: {
     color: PC.textMuted,
     fontSize: 10,
@@ -758,8 +937,8 @@ const styles = StyleSheet.create({
     backgroundColor: PC.bgCard,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    padding: 24,
     maxHeight: '92%',
+    // padding lives on contentContainerStyle — on style it clips scroll content
   },
   modalHandle: { width: 36, height: 4, backgroundColor: PC.border, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
   modalTitle:  { color: PC.textPrimary, fontSize: 18, fontWeight: '700', marginBottom: 20 },
@@ -782,10 +961,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 10,
     borderRadius: 9,
+    // Held at the same border width as the active state so selecting an option
+    // never changes the control's size.
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
   typeBtnActive:       { backgroundColor: 'rgba(255,80,85,0.12)', borderWidth: 1, borderColor: 'rgba(255,80,85,0.30)' },
   typeBtnActiveIncome: { backgroundColor: 'rgba(0,229,190,0.12)', borderWidth: 1, borderColor: 'rgba(0,229,190,0.30)' },
-  typeBtnText:         { color: PC.textMuted, fontSize: 14, fontWeight: '600' },
+  typeBtnText:         { color: PC.textSecondary, fontSize: 14, fontWeight: '600' },
 
   modalInputBox: {
     flexDirection: 'row',
@@ -795,7 +978,7 @@ const styles = StyleSheet.create({
     borderColor: PC.border,
     borderRadius: 12,
     paddingHorizontal: 14,
-    height: 50,
+    minHeight: 50,
     marginBottom: 20,
   },
   modalInput:  { color: PC.textPrimary, fontSize: 15 },
@@ -816,7 +999,7 @@ const styles = StyleSheet.create({
   chipText:       { color: PC.textMuted, fontSize: 12 },
   chipTextActive: { color: PC.accent },
 
-  submitBtn:         { backgroundColor: PC.accent, borderRadius: 14, height: 52, alignItems: 'center', justifyContent: 'center' },
+  submitBtn:         { backgroundColor: PC.accent, borderRadius: 14, minHeight: 52, alignItems: 'center', justifyContent: 'center' },
   submitBtnDisabled: { opacity: 0.6 },
   submitBtnText:     { color: '#060A09', fontSize: 15, fontWeight: '700' },
 

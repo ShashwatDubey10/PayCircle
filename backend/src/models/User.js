@@ -60,6 +60,13 @@ const userSchema = new mongoose.Schema(
       ref: 'User',
       default: null,
     },
+    // Soft-delete marker for personal contacts. Hard-deleting them orphaned every
+    // Group.members / Expense / DirectSplit reference, which broke populate() and
+    // lost the payer name on historical splits.
+    deletedAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true }
 );

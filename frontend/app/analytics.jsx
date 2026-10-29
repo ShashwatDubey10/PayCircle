@@ -1,20 +1,22 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
-  Text,
   ScrollView,
   StyleSheet,
-  TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
   Animated,
   Platform,
 } from 'react-native';
+import { Text } from '@/components/text';
+import Touchable from '@/components/Touchable';
+import Svg, { Circle, G } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
-import { PC } from '@/constants/theme';
+import { PC, touchSlop } from '@/constants/theme';
+import { fmtINR } from '@/utils/format';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
 
@@ -52,12 +54,6 @@ function getLast6Months() {
   });
 }
 
-function isoMonthKey(dateStr) {
-  if (!dateStr) return '';
-  try { return new Date(dateStr).toISOString().slice(0, 7); }
-  catch { return ''; }
-}
-
 function fmt(n) {
   if (n >= 100000) return `${(n / 100000).toFixed(1)}L`;
   if (n >= 1000)   return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`;
@@ -86,64 +82,62 @@ function AnimBar({ pct, color, height = 7, delay = 0 }) {
   );
 }
 
-// ─── Donut chart (half-disc rotation technique, no SVG) ───────────────────────
-
-function PieHalf({ sD, swD, color, size }) {
-  const r = size / 2;
-  return (
-    <View style={{
-      position: 'absolute', width: size, height: size,
-      borderRadius: r, overflow: 'hidden',
-      transform: [{ rotate: `${sD}deg` }],
-    }}>
-      <View style={{
-        position: 'absolute', left: r, top: 0,
-        width: r, height: size, backgroundColor: color,
-        transformOrigin: 'left center',
-        transform: [{ rotate: `${swD - 180}deg` }],
-      }} />
-    </View>
-  );
-}
-
-function PieSlice({ startDeg, sweepDeg, color, size }) {
-  if (sweepDeg <= 0.5) return null;
-  if (sweepDeg <= 180) {
-    return <PieHalf sD={startDeg} swD={sweepDeg} color={color} size={size} />;
-  }
-  return (
-    <>
-      <PieHalf sD={startDeg}       swD={180}            color={color} size={size} />
-      <PieHalf sD={startDeg + 180} swD={sweepDeg - 180} color={color} size={size} />
-    </>
-  );
-}
+// ─── Donut chart ───────────────────────────────────────────────────
+// One stroked circle per segment, positioned with strokeDasharray. The dash is
+// the segment's arc length and the gap is the rest of the circumference, so the
+// slice's size is its value — nothing depends on rotation to be the right size.
+//
+// This replaces a "half-disc rotation" trick that drew every slice as a 180°
+// semicircle: it rotated a half-disc about the circle's centre, which turns the
+// half-disc but never makes it smaller. Two categories therefore always read as
+// a 50/50 split regardless of their amounts.
 
 function DonutChart({ segments, size = 178, thickness = 34, centerLabel, centerSub }) {
-  const r     = size / 2;
-  const total = segments.reduce((s, d) => s + d.value, 0);
-  if (total === 0) return null;
-  let offset = -90;
+  const total = segments.reduce((s, d) => s + (Number(d.value) || 0), 0);
+  if (total <= 0) return null;
+
+  const r = size / 2;
+  const radius = r - thickness / 2;   // the stroke straddles the path
+  const circumference = 2 * Math.PI * radius;
+
+  let consumed = 0;
+  const arcs = segments.map((seg, i) => {
+    const arc = ((Number(seg.value) || 0) / total) * circumference;
+    const el = (
+      <Circle
+        key={i}
+        cx={r}
+        cy={r}
+        r={radius}
+        fill="none"
+        stroke={seg.color}
+        strokeWidth={thickness}
+        strokeDasharray={`${arc} ${Math.max(circumference - arc, 0)}`}
+        strokeDashoffset={-consumed}
+      />
+    );
+    consumed += arc;
+    return el;
+  });
 
   return (
     <View style={{ width: size, height: size }}>
-      {/* Base disc */}
-      <View style={{ position: 'absolute', width: size, height: size, borderRadius: r, backgroundColor: PC.bgCardElevated }} />
-      {segments.map((seg, i) => {
-        const sweep = (seg.value / total) * 360;
-        const start = offset;
-        offset += sweep;
-        return <PieSlice key={i} startDeg={start} sweepDeg={sweep} color={seg.color} size={size} />;
-      })}
-      {/* Hole */}
-      <View style={{
-        position: 'absolute',
-        top: thickness, left: thickness,
-        width: size - thickness * 2, height: size - thickness * 2,
-        borderRadius: (size - thickness * 2) / 2,
-        backgroundColor: PC.bgCard,
-        alignItems: 'center', justifyContent: 'center',
-      }}>
+      <Svg width={size} height={size}>
+        {/* Rotated so the first segment starts at twelve o'clock. */}
+        <G rotation={-90} origin={`${r}, ${r}`}>
+          <Circle cx={r} cy={r} r={radius} fill="none"
+            stroke={PC.bgCardElevated} strokeWidth={thickness} />
+          {arcs}
+        </G>
+      </Svg>
+
+      <View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          width: size, height: size,
+          alignItems: 'center', justifyContent: 'center',
+        }}>
         {centerLabel ? (
           <>
             <Text style={ss.donutCenterLabel}>{centerLabel}</Text>
@@ -258,7 +252,11 @@ export default function AnalyticsScreen() {
   for (const tx of transactions) {
     if (tx.type !== 'expense') continue;
     const dow = new Date(tx.date).getDay();
-    if (!isNaN(dow)) dowSpend[dow] += tx.amount;
+    // `?? 0` is not optional here: one transaction with a missing amount makes
+    // the running total NaN, then maxDow NaN, then every bar's height NaN — and
+    // under the New Architecture a NaN layout prop is a hard error, not a
+    // silently ignored one. The same loop in index.jsx already guards it.
+    if (!isNaN(dow)) dowSpend[dow] += tx.amount ?? 0;
   }
   const maxDow = Math.max(...dowSpend, 1);
 
@@ -289,9 +287,14 @@ export default function AnalyticsScreen() {
 
   const Header = () => (
     <View style={ss.header}>
-      <TouchableOpacity style={ss.backBtn} onPress={() => router.back()}>
+      <Touchable
+        style={ss.backBtn}
+        onPress={() => router.back()}
+        hitSlop={touchSlop(38)}
+        accessibilityRole="button"
+        accessibilityLabel="Go back">
         <Ionicons name="arrow-back" size={20} color={PC.textPrimary} />
-      </TouchableOpacity>
+      </Touchable>
       <Text style={ss.headerTitle}>Analytics</Text>
       <View style={{ width: 38 }} />
     </View>
@@ -303,14 +306,14 @@ export default function AnalyticsScreen() {
         { key: 'thisMonth', label: 'This Month' },
         { key: 'history',   label: 'History' },
       ].map(tab => (
-        <TouchableOpacity
+        <Touchable
           key={tab.key}
           style={[ss.tabPill, activeTab === tab.key && ss.tabPillActive]}
           onPress={() => setActiveTab(tab.key)}>
           <Text style={[ss.tabPillText, activeTab === tab.key && ss.tabPillTextActive]}>
             {tab.label}
           </Text>
-        </TouchableOpacity>
+        </Touchable>
       ))}
     </View>
   );
@@ -333,9 +336,9 @@ export default function AnalyticsScreen() {
         <View style={ss.centered}>
           <Ionicons name="cloud-offline-outline" size={40} color={PC.textMuted} />
           <Text style={ss.errTxt}>Failed to load analytics</Text>
-          <TouchableOpacity style={ss.retryBtn} onPress={fetchAll}>
+          <Touchable style={ss.retryBtn} onPress={fetchAll}>
             <Text style={ss.retryTxt}>Retry</Text>
-          </TouchableOpacity>
+          </Touchable>
         </View>
       </SafeAreaView>
     );
@@ -359,8 +362,8 @@ export default function AnalyticsScreen() {
                 <View style={ss.donutRow}>
                   <DonutChart
                     segments={catSegments}
-                    size={170}
-                    thickness={33}
+                    size={148}
+                    thickness={30}
                     centerLabel={`₹${fmt(dash?.totalSpent?.combined || 0)}`}
                     centerSub="total spent"
                   />
@@ -369,7 +372,9 @@ export default function AnalyticsScreen() {
                       <View key={i} style={ss.legendRow}>
                         <View style={[ss.legendDot, { backgroundColor: seg.color }]} />
                         <Text style={ss.legendLabel} numberOfLines={1}>{seg.label}</Text>
-                        <Text style={[ss.legendPct, { color: seg.color }]}>{seg.pct}%</Text>
+                        <Text style={[ss.legendPct, { color: seg.color }]} numberOfLines={1}>
+                          {seg.pct}%
+                        </Text>
                       </View>
                     ))}
                   </View>
@@ -417,7 +422,7 @@ export default function AnalyticsScreen() {
                     ].map((item, i) => (
                       <View key={i} style={ss.mSummaryItem}>
                         <Text style={ss.mSummaryLabel}>{item.label}</Text>
-                        <Text style={[ss.mSummaryAmt, { color: item.color }]}>₹{item.value.toLocaleString('en-IN')}</Text>
+                        <Text style={[ss.mSummaryAmt, { color: item.color }]}>₹{fmtINR(item.value)}</Text>
                       </View>
                     ))}
                   </View>
@@ -454,7 +459,7 @@ export default function AnalyticsScreen() {
                         </View>
                         <View style={ss.srcRight}>
                           <AnimBar pct={pct} color={src.color} height={5} delay={i * 100} />
-                          <Text style={[ss.srcAmt, { color: src.color }]}>₹{src.value.toLocaleString('en-IN')}</Text>
+                          <Text style={[ss.srcAmt, { color: src.color }]}>₹{fmtINR(src.value)}</Text>
                           <Text style={ss.srcPct}>{pct}%</Text>
                         </View>
                       </View>
@@ -477,7 +482,7 @@ export default function AnalyticsScreen() {
                       {i > 0 && <View style={ss.triDivider} />}
                       <View style={ss.triItem}>
                         <Text style={ss.triLabel}>{item.label}</Text>
-                        <Text style={[ss.triAmt, { color: item.color }]}>₹{item.value.toLocaleString('en-IN')}</Text>
+                        <Text style={[ss.triAmt, { color: item.color }]}>₹{fmtINR(item.value)}</Text>
                       </View>
                     </React.Fragment>
                   ))}
@@ -633,11 +638,11 @@ export default function AnalyticsScreen() {
                         <View style={ss.histMonthRow}>
                           <View style={ss.histMonthStat}>
                             <Text style={ss.histStatLabel}>Spent</Text>
-                            <Text style={[ss.histStatVal, { color: PC.negative }]}>₹{h.expense.toLocaleString('en-IN')}</Text>
+                            <Text style={[ss.histStatVal, { color: PC.negative }]}>₹{fmtINR(h.expense)}</Text>
                           </View>
                           <View style={ss.histMonthStat}>
                             <Text style={ss.histStatLabel}>Income</Text>
-                            <Text style={[ss.histStatVal, { color: PC.positive }]}>₹{h.income.toLocaleString('en-IN')}</Text>
+                            <Text style={[ss.histStatVal, { color: PC.positive }]}>₹{fmtINR(h.income)}</Text>
                           </View>
                           <View style={ss.histMonthStat}>
                             <Text style={ss.histStatLabel}>Net</Text>
@@ -707,7 +712,7 @@ const ss = StyleSheet.create({
   legendRow:       { flexDirection: 'row', alignItems: 'center', gap: 7 },
   legendDot:       { width: 7, height: 7, borderRadius: 4, flexShrink: 0 },
   legendLabel:     { flex: 1, color: PC.textSecondary, fontSize: 11 },
-  legendPct:       { fontSize: 11, fontWeight: '600', width: 30, textAlign: 'right' },
+  legendPct:       { fontSize: 11, fontWeight: '600', textAlign: 'right', flexShrink: 0 },
 
   // Monthly bar chart
   monthChart:  { flexDirection: 'row', alignItems: 'flex-end', height: 110, paddingBottom: 2, gap: 0 },

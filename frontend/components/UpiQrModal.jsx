@@ -1,13 +1,15 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
+  Pressable,
   Modal,
   View,
-  Text,
-  TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { Text } from '@/components/text';
+import Touchable from '@/components/Touchable';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import QRCode from 'react-native-qrcode-svg';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -30,6 +32,7 @@ import { buildUpiQrPayload } from '@/utils/upiPayment';
  *   fromName  : string         — payer's name for subtitle (optional)
  */
 export default function UpiQrModal({ visible, onClose, onPaid, upiId, name, amount, note, txnId, fromName }) {
+  const insets = useSafeAreaInsets();
   const svgRef = useRef(null);
   const [sharing, setSharing] = useState(false);
 
@@ -81,10 +84,10 @@ export default function UpiQrModal({ visible, onClose, onPaid, upiId, name, amou
   }
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal statusBarTranslucent visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
-        <View style={styles.sheet}>
+        <Pressable style={styles.backdrop} onPress={onClose} />
+        <View style={[styles.sheet, { paddingBottom: insets.bottom + 24 }]}>
           <View style={styles.handle} />
 
           <Text style={styles.title}>Payment QR</Text>
@@ -113,30 +116,29 @@ export default function UpiQrModal({ visible, onClose, onPaid, upiId, name, amou
           <Text style={styles.upiId}>{upiId}</Text>
           <Text style={styles.instruction}>Scan with any UPI app to pay</Text>
 
-          <TouchableOpacity
+          <Touchable
             style={[styles.shareBtn, sharing && { opacity: 0.6 }]}
             onPress={handleShare}
-            disabled={sharing || !qrValue}
-            activeOpacity={0.75}>
+            disabled={sharing || !qrValue}>
             {sharing
               ? <ActivityIndicator size="small" color={PC.textSecondary} />
               : <Text style={styles.shareBtnText}>Share QR Image</Text>
             }
-          </TouchableOpacity>
+          </Touchable>
 
           {onPaid ? (
             <View style={styles.btnRow}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={onClose} activeOpacity={0.8}>
+              <Touchable style={styles.cancelBtn} onPress={onClose}>
                 <Text style={styles.cancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.doneBtn} onPress={onPaid} activeOpacity={0.85}>
+              </Touchable>
+              <Touchable tone="accent" style={styles.doneBtn} onPress={onPaid}>
                 <Text style={styles.doneBtnText}>Done, I've Paid</Text>
-              </TouchableOpacity>
+              </Touchable>
             </View>
           ) : (
-            <TouchableOpacity style={[styles.doneBtn, { marginHorizontal: 0 }]} onPress={onClose} activeOpacity={0.85}>
+            <Touchable tone="accent" style={[styles.doneBtn, { marginHorizontal: 0 }]} onPress={onClose}>
               <Text style={styles.doneBtnText}>Done</Text>
-            </TouchableOpacity>
+            </Touchable>
           )}
 
           <View style={{ height: 24 }} />

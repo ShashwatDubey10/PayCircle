@@ -3,15 +3,18 @@ const Group      = require('../models/Group');
 const User       = require('../models/User');
 const asyncHandler = require('../utils/asyncHandler');
 const logger       = require('../utils/logger');
-const { calculateGroupBalances } = require('../services/balanceService');
+const { calculateGroupBalances, calculateBalancesForGroups } = require('../services/balanceService');
 const { areFriends } = require('./friendController');
 
 const VALID_TYPES = ['Roommates', 'Trip', 'Mess', 'Miscellaneous'];
 
 // POST /api/groups
 const createGroup = asyncHandler(async (req, res) => {
-  const { name, type } = req.body;
-  if (!name || !type) return res.status(400).json({ success: false, message: 'Name and type are required' });
+  const { name } = req.body;
+  // `type` is optional — fall back to the schema default rather than rejecting.
+  const type = req.body.type ?? 'Miscellaneous';
+
+  if (!name) return res.status(400).json({ success: false, message: 'Name is required' });
   if (name.trim().length < 3 || name.trim().length > 50)
     return res.status(400).json({ success: false, message: 'Group name must be 3–50 characters' });
   if (!VALID_TYPES.includes(type))
@@ -41,18 +44,27 @@ const getUserGroups = asyncHandler(async (req, res) => {
   logger.debug('GROUP', `Fetched ${groups.length} groups for user`, { userId: req.user._id });
 
   if (req.query.includeBalances === 'true') {
-    const userId = req.user._id.toString();
-    const enriched = await Promise.all(
-      groups.map(async (g) => {
-        try {
-          const { members } = await calculateGroupBalances(g._id);
-          const mine = members.find(m => m.user.id === userId);
-          return { ...g.toObject(), myBalance: mine?.netBalance ?? 0 };
-        } catch {
-          return { ...g.toObject(), myBalance: 0 };
-        }
-      })
-    );
+    const userId    = req.user._id.toString();
+    // calculateGroupBalances already produces each group's simplified debt list,
+    // so returning it on request saves the client one follow-up call per group.
+    const withDebts = req.query.includeDebts === 'true';
+    // Every group's balances in one pass. The documents are already loaded, so
+    // this costs three queries for the whole list rather than four per group.
+    let balancesByGroup;
+    try {
+      balancesByGroup = await calculateBalancesForGroups(groups);
+    } catch {
+      balancesByGroup = new Map();
+    }
+    const enriched = groups.map((g) => {
+      const b = balancesByGroup.get(g._id.toString());
+      const mine = b?.members.find(m => m.user.id === userId);
+      return {
+        ...g.toObject(),
+        myBalance: mine?.netBalance ?? 0,
+        ...(withDebts ? { debts: b?.debts ?? [] } : {}),
+      };
+    });
     return res.json({ success: true, count: enriched.length, groups: enriched });
   }
 
@@ -66,7 +78,7 @@ const getGroup = asyncHandler(async (req, res) => {
     .populate('adminId', 'name email');
   if (!group) return res.status(404).json({ success: false, message: 'Group not found' });
 
-  const isMember = group.members.some(m => m._id.toString() === req.user._id.toString());
+  const isMember = group.members.some(m => m?._id?.toString() === req.user._id.toString());
   if (!isMember) {
     logger.warn('GROUP', `Access denied — user not a member`, { groupId: req.params.id, userId: req.user._id });
     return res.status(403).json({ success: false, message: 'Not a group member' });
@@ -81,7 +93,9 @@ const getMembers = asyncHandler(async (req, res) => {
   const group = await Group.findById(req.params.id).populate('members', 'name email isVirtual');
   if (!group) return res.status(404).json({ success: false, message: 'Group not found' });
 
-  const members = group.members.map(m => ({
+  // Filter nulls: populate() yields null for ids whose User was hard-deleted by
+  // the pre-soft-delete contact flow. Without this, m._id throws a 500.
+  const members = group.members.filter(Boolean).map(m => ({
     id:        m._id,
     name:      m.name,
     email:     m.email,
@@ -114,6 +128,7 @@ const addMember = asyncHandler(async (req, res) => {
 
   const friends = await areFriends(req.user._id, userToAdd._id);
   const isOwnContact = userToAdd.isVirtual &&
+    !userToAdd.deletedAt &&
     userToAdd.createdBy?.toString() === req.user._id.toString();
   if (!friends && !isOwnContact) {
     logger.warn('GROUP', `Add member denied — not friends or own contact`, { groupId: group._id, targetUserId: userToAdd._id });
@@ -149,6 +164,21 @@ const removeMember = asyncHandler(async (req, res) => {
 
   const idx = group.members.findIndex(m => m.toString() === userId);
   if (idx === -1) return res.status(404).json({ success: false, message: 'Member not found in group' });
+
+  // Their expenses and settlements stay in the ledger after they leave, so
+  // removing someone mid-balance strands money: recordSettlement refuses a
+  // non-member, which makes the amount unpayable. They have to be square first.
+  const { members: balances } = await calculateGroupBalances(group);
+  const leaving = balances.find(m => m.user.id === userId);
+  const net = leaving?.netBalance ?? 0;
+  if (Math.abs(net) > 0.01) {
+    return res.status(400).json({
+      success: false,
+      message: net < 0
+        ? `${leaving.user.name} still owes \u20b9${Math.abs(net).toFixed(2)} in this group. Settle up before removing them.`
+        : `${leaving.user.name} is still owed \u20b9${net.toFixed(2)} in this group. Settle up before removing them.`,
+    });
+  }
 
   group.members.splice(idx, 1);
   await group.save();

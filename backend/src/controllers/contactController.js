@@ -35,7 +35,7 @@ const createContact = asyncHandler(async (req, res) => {
 
 // GET /api/users/me/contacts
 const getContacts = asyncHandler(async (req, res) => {
-  const contacts = await User.find({ isVirtual: true, createdBy: req.user._id })
+  const contacts = await User.find({ isVirtual: true, createdBy: req.user._id, deletedAt: null })
     .select('name createdAt')
     .sort({ name: 1 });
 
@@ -52,6 +52,7 @@ const updateContact = asyncHandler(async (req, res) => {
     _id:       req.params.id,
     isVirtual: true,
     createdBy: req.user._id,
+    deletedAt: null,
   });
   if (!contact)
     return res.status(404).json({ success: false, message: 'Contact not found' });
@@ -69,13 +70,17 @@ const deleteContact = asyncHandler(async (req, res) => {
     _id:       req.params.id,
     isVirtual: true,
     createdBy: req.user._id,
+    deletedAt: null,
   });
   if (!contact)
     return res.status(404).json({ success: false, message: 'Contact not found' });
 
-  await contact.deleteOne();
+  // Soft delete: the document must survive so that groups, expenses and splits
+  // that reference it keep resolving (the UI promises "split history is kept").
+  contact.deletedAt = new Date();
+  await contact.save();
 
-  logger.info('CONTACT', `Deleted contact: ${contact.name}`, { contactId: contact._id });
+  logger.info('CONTACT', `Archived contact: ${contact.name}`, { contactId: contact._id });
   res.json({ success: true });
 });
 

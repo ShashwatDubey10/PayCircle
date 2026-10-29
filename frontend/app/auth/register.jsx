@@ -1,22 +1,20 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
-  Text,
   Image,
-  TextInput,
-  TouchableOpacity,
   StyleSheet,
   KeyboardAvoidingView,
-  Platform,
   ScrollView,
   ActivityIndicator,
   Animated,
 } from 'react-native';
+import { Text, TextInput } from '@/components/text';
+import Touchable from '@/components/Touchable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
-import { PC } from '@/constants/theme';
+import { PC, touchSlop } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 
 const EMAIL_RE    = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -109,19 +107,22 @@ export default function RegisterScreen() {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        behavior="padding">
         <ScrollView
           contentContainerStyle={styles.container}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
 
           {/* ── Back button ── */}
-          <TouchableOpacity
+          <Touchable
             style={styles.backBtn}
             onPress={() => router.back()}
-            disabled={loading}>
+            disabled={loading}
+            hitSlop={touchSlop(40)}
+            accessibilityRole="button"
+            accessibilityLabel="Go back">
             <Ionicons name="arrow-back" size={18} color={PC.textPrimary} />
-          </TouchableOpacity>
+          </Touchable>
 
           {/* ── Centered logo block ── */}
           <Animated.View style={[styles.logoBlock, slideUp(headerAnim, 16)]}>
@@ -232,13 +233,18 @@ export default function RegisterScreen() {
                   onFocus={() => setFocusedField('password')}
                   onBlur={() => setFocusedField(null)}
                 />
-                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
+                <Touchable
+                  onPress={() => setShowPassword(!showPassword)}
+                  style={styles.eyeBtn}
+                  hitSlop={touchSlop(24)}
+                  accessibilityRole="button"
+                  accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}>
                   <Ionicons
                     name={showPassword ? 'eye-off-outline' : 'eye-outline'}
                     size={15}
                     color={PC.textMuted}
                   />
-                </TouchableOpacity>
+                </Touchable>
               </View>
             </View>
 
@@ -276,10 +282,9 @@ export default function RegisterScreen() {
             </View>
 
             {/* Create Account CTA */}
-            <TouchableOpacity
+            <Touchable tone="accent"
               style={[styles.primaryBtn, loading && styles.primaryBtnDisabled]}
               onPress={handleRegister}
-              activeOpacity={0.85}
               disabled={loading}>
               {loading ? (
                 <ActivityIndicator color="#060A09" size="small" />
@@ -291,16 +296,16 @@ export default function RegisterScreen() {
                   </View>
                 </View>
               )}
-            </TouchableOpacity>
+            </Touchable>
           </Animated.View>
           </View>
 
           {/* Sign in link */}
           <View style={styles.signinRow}>
             <Text style={styles.signinText}>Already have an account?</Text>
-            <TouchableOpacity onPress={() => router.back()} disabled={loading}>
+            <Touchable onPress={() => router.back()} disabled={loading}>
               <Text style={styles.signinLink}> Sign In</Text>
-            </TouchableOpacity>
+            </Touchable>
           </View>
 
         </ScrollView>
@@ -412,7 +417,7 @@ const styles = StyleSheet.create({
     borderColor: PC.border,
     borderRadius: 12,
     paddingHorizontal: 14,
-    height: 50,
+    minHeight: 50,
   },
   inputBoxFocused: {
     borderColor: PC.accent,
@@ -437,7 +442,7 @@ const styles = StyleSheet.create({
   primaryBtn: {
     backgroundColor: PC.accent,
     borderRadius: 14,
-    height: 54,
+    minHeight: 54,
     alignItems: 'center',
     justifyContent: 'center',
   },

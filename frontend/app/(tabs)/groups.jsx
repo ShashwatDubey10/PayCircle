@@ -1,23 +1,22 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
-  Text,
   ScrollView,
   StyleSheet,
-  TouchableOpacity,
   ActivityIndicator,
+  Pressable,
   Modal,
-  TextInput,
   RefreshControl,
   KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Text, TextInput } from '@/components/text';
+import Touchable from '@/components/Touchable';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { PC } from '@/constants/theme';
+import { PC, touchSlop } from '@/constants/theme';
 import ErrorBox from '@/components/ErrorBox';
 import { useAuth } from '@/context/AuthContext';
 import { useBadge } from '@/context/BadgeContext';
@@ -25,6 +24,7 @@ import api from '@/services/api';
 import { getFriends, getPendingRequests } from '@/services/friends';
 import { getAllDirectSettlements, getAllDirectBalances } from '@/services/directSplit';
 import { getContacts } from '@/services/contacts';
+import useModalHandoff from '@/utils/useModalHandoff';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -116,7 +116,7 @@ function SettleRow({ item, myId, onPress, last }) {
 
   return (
     <>
-      <TouchableOpacity style={styles.settleRow} onPress={onPress} activeOpacity={0.7}>
+      <Touchable style={styles.settleRow} onPress={onPress}>
         <View style={styles.settleRowIcon}>
           <Ionicons name={icon} size={18} color={PC.textSecondary} />
         </View>
@@ -128,7 +128,7 @@ function SettleRow({ item, myId, onPress, last }) {
           <Text style={[styles.settleRowAmtText, amountStyle]}>{amountText}</Text>
           <Ionicons name="chevron-forward" size={14} color={PC.textMuted} style={{ marginTop: 2 }} />
         </View>
-      </TouchableOpacity>
+      </Touchable>
       {!last && <View style={styles.settleRowDivider} />}
     </>
   );
@@ -142,21 +142,21 @@ function FriendCard({ friend, onPress, directBalance }) {
   const isPositive = db && (db.balance ?? 0) > 0;
 
   return (
-    <TouchableOpacity style={styles.friendCard} activeOpacity={0.75} onPress={onPress}>
+    <Touchable style={styles.friendCard} onPress={onPress}>
       <View style={[styles.friendAvatar, hasBalance && styles.friendAvatarActive]}>
         <Text style={styles.friendAvatarText}>{getInitials(friend.name)}</Text>
         {hasBalance && <View style={styles.avatarDot} />}
       </View>
       <View style={styles.friendInfo}>
-        <Text style={styles.friendName}>{friend.name}</Text>
-        <Text style={styles.friendUsername}>@{friend.username || '—'}</Text>
+        <Text style={styles.friendName} numberOfLines={1}>{friend.name}</Text>
+        <Text style={styles.friendUsername} numberOfLines={1}>@{friend.username || '—'}</Text>
       </View>
       {hasBalance && (
         <Text style={[styles.friendBalance, isPositive ? styles.balPos : styles.balNeg]}>
           {isPositive ? '+' : ''}₹{Math.abs(db.balance).toLocaleString('en-IN')}
         </Text>
       )}
-    </TouchableOpacity>
+    </Touchable>
   );
 }
 
@@ -168,7 +168,7 @@ function GroupCard({ group, onPress }) {
   const isSettled  = Math.abs(balance) < 0.01;
 
   return (
-    <TouchableOpacity style={styles.groupCard} activeOpacity={0.75} onPress={onPress}>
+    <Touchable style={styles.groupCard} onPress={onPress}>
       <View style={[styles.groupIconBox, { position: 'relative' }]}>
         <Ionicons name="people-outline" size={20} color={PC.textSecondary} />
         {Math.abs(group.myBalance ?? 0) > 0.01 && <View style={styles.groupBadgeDot} />}
@@ -201,7 +201,7 @@ function GroupCard({ group, onPress }) {
         )}
         <Ionicons name="chevron-forward" size={14} color={PC.textMuted} style={{ marginTop: 4 }} />
       </View>
-    </TouchableOpacity>
+    </Touchable>
   );
 }
 
@@ -216,7 +216,7 @@ function ChatRow({ item, onPress, last }) {
 
   return (
     <>
-      <TouchableOpacity style={styles.chatRow} onPress={onPress} activeOpacity={0.7}>
+      <Touchable style={styles.chatRow} onPress={onPress}>
         {/* Avatar */}
         <View style={[styles.chatAvatar, isGroup && styles.chatAvatarGroup, isContact && styles.chatAvatarContact]}>
           {isGroup
@@ -249,7 +249,7 @@ function ChatRow({ item, onPress, last }) {
             )}
           </View>
         </View>
-      </TouchableOpacity>
+      </Touchable>
       {!last && <View style={styles.chatDivider} />}
     </>
   );
@@ -258,7 +258,9 @@ function ChatRow({ item, onPress, last }) {
 // ─── Add Group Modal ──────────────────────────────────────────────────────────
 
 function AddGroupModal({ visible, onClose, onCreated }) {
+  const insets = useSafeAreaInsets();
   const [name,    setName]    = useState('');
+  const [type,    setType]    = useState('Miscellaneous');
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState('');
 
@@ -270,9 +272,11 @@ function AddGroupModal({ visible, onClose, onCreated }) {
     setLoading(true);
     setError('');
     try {
-      const { data } = await api.post('/api/groups', { name: name.trim() });
+      // `type` is required by the API — omitting it rejected every create.
+      const { data } = await api.post('/api/groups', { name: name.trim(), type });
       onCreated(data.group);
       setName('');
+      setType('Miscellaneous');
       onClose();
     } catch (err) {
       setError(err.message);
@@ -284,17 +288,18 @@ function AddGroupModal({ visible, onClose, onCreated }) {
   function handleClose() {
     if (loading) return;
     setName('');
+    setType('Miscellaneous');
     setError('');
     onClose();
   }
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+    <Modal statusBarTranslucent visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <KeyboardAvoidingView
         style={styles.modalOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
-        <View style={styles.modalSheet}>
+        behavior="padding">
+        <Pressable style={{ flex: 1 }} onPress={handleClose} />
+        <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 40 }]}>
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Create Group</Text>
 
@@ -313,16 +318,37 @@ function AddGroupModal({ visible, onClose, onCreated }) {
             />
           </View>
 
-          <TouchableOpacity
+          <Text style={styles.modalLabel}>Group Type</Text>
+          <View style={styles.typeGrid}>
+            {GROUP_TYPES.map((t) => {
+              const active = type === t;
+              return (
+                <Touchable
+                  key={t}
+                  style={[styles.typeChip, active && styles.typeChipActive]}
+                  onPress={() => setType(t)}
+                  disabled={loading}>
+                  <Ionicons
+                    name={groupIcon(t)}
+                    size={14}
+                    color={active ? PC.accent : PC.textMuted}
+                    style={{ marginRight: 5 }}
+                  />
+                  <Text style={[styles.typeChipText, active && styles.typeChipTextActive]}>{t}</Text>
+                </Touchable>
+              );
+            })}
+          </View>
+
+          <Touchable tone="accent"
             style={[styles.createBtn, loading && styles.createBtnDisabled]}
             onPress={handleCreate}
-            disabled={loading}
-            activeOpacity={0.85}>
+            disabled={loading}>
             {loading
               ? <ActivityIndicator color="#060A09" size="small" />
               : <Text style={styles.createBtnText}>Create Group</Text>
             }
-          </TouchableOpacity>
+          </Touchable>
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -332,6 +358,7 @@ function AddGroupModal({ visible, onClose, onCreated }) {
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function GroupsScreen() {
+  const insets = useSafeAreaInsets();
   const router     = useRouter();
   const { user }   = useAuth();
 
@@ -357,6 +384,8 @@ export default function GroupsScreen() {
   const [error,              setError]              = useState('');
   const [showGroupModal,     setShowGroupModal]     = useState(false);
   const [showActionSheet,    setShowActionSheet]    = useState(false);
+  // Android needs one modal window gone before the next will appear.
+  const handoff = useModalHandoff();
   const [showContactPicker,  setShowContactPicker]  = useState(false);
   const [pickerContacts,     setPickerContacts]     = useState([]);
   const [pickerLoading,      setPickerLoading]      = useState(false);
@@ -392,7 +421,7 @@ export default function GroupsScreen() {
   // ── Fetch groups enriched with each group's balance in one request ──────────
   const fetchGroups = useCallback(async () => {
     try {
-      const { data } = await api.get('/api/groups?includeBalances=true');
+      const { data } = await api.get('/api/groups?includeBalances=true&includeDebts=true');
       const enriched = (data.groups || []).map(g => ({
         ...g,
         myBalance:      g.myBalance ?? 0,
@@ -410,19 +439,18 @@ export default function GroupsScreen() {
     if (!groupList.length) return;
     setLoadingSettlements(true);
     try {
-      const [settleResults, balanceResults] = await Promise.all([
-        Promise.all(groupList.map(async (g) => {
-          const { data } = await api.get(`/api/groups/${g._id}/settlements`);
-          return (data.settlements || []).map(s => ({ ...s, groupName: g.name }));
-        })),
-        Promise.all(groupList.map(async (g) => {
-          const { data } = await api.get(`/api/groups/${g._id}/balances`);
-          return { groupId: g._id, groupName: g.name, debts: data.debts || [] };
-        })),
-      ]);
-      const flat = settleResults.flat().sort((a, b) => new Date(b.date) - new Date(a.date));
+      // Settlements come back for every group in one request, and each group's
+      // simplified debts already arrived with the group list, so this no longer
+      // costs two requests per group.
+      const { data } = await api.get('/api/users/me/group-settlements');
+      const flat = (data.settlements || [])
+        .map(s => ({ ...s, groupName: s.groupName ?? '' }))
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
+
       setSettlements(flat);
-      setGroupBalanceMaps(balanceResults);
+      setGroupBalanceMaps(
+        groupList.map(g => ({ groupId: g._id, groupName: g.name, debts: g.debts || [] })),
+      );
     } catch {
       // non-critical — keep empty
     } finally {
@@ -512,7 +540,9 @@ export default function GroupsScreen() {
   async function openContactPicker() {
     setShowActionSheet(false);
     setPickerLoading(true);
-    setShowContactPicker(true);
+    handoff(() => setShowContactPicker(true));
+    // The fetch runs while the action sheet is still sliding away, so the
+    // picker often has its list ready by the time it appears.
     try {
       const list = await getContacts();
       setPickerContacts(list);
@@ -611,16 +641,20 @@ export default function GroupsScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>Splits</Text>
         <View style={styles.headerActions}>
-          <TouchableOpacity
+          <Touchable
             style={[styles.headerBtn, { position: 'relative' }]}
-            onPress={() => setShowSettlements(true)}
-            activeOpacity={0.75}>
+            onPress={() => setShowSettlements(true)}>
             <Text style={styles.headerBtnText}>Settlements</Text>
             {openSettles.length > 0 && <View style={styles.headerBtnDot} />}
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.addBtn} onPress={() => setShowActionSheet(true)}>
+          </Touchable>
+          <Touchable
+            style={styles.addBtn}
+            onPress={() => setShowActionSheet(true)}
+            hitSlop={touchSlop(38)}
+            accessibilityRole="button"
+            accessibilityLabel="New group or split">
             <Ionicons name="add" size={22} color={PC.accent} />
-          </TouchableOpacity>
+          </Touchable>
         </View>
       </View>
 
@@ -649,10 +683,10 @@ export default function GroupsScreen() {
         <View style={styles.centered}>
           <Ionicons name="cloud-offline-outline" size={36} color={PC.textMuted} />
           <Text style={styles.errorMsg}>{error}</Text>
-          <TouchableOpacity style={styles.retryBtn}
+          <Touchable style={styles.retryBtn}
             onPress={() => { setLoading(true); fetchGroups().finally(() => setLoading(false)); }}>
             <Text style={styles.retryText}>Retry</Text>
-          </TouchableOpacity>
+          </Touchable>
         </View>
       ) : filteredList.length === 0 ? (
         <View style={styles.centered}>
@@ -672,7 +706,11 @@ export default function GroupsScreen() {
                 key={`${item._type}-${item._id}`}
                 item={item}
                 last={i === filteredList.length - 1}
-                onPress={() => router.push(item._type === 'friend' || item._type === 'contact' ? `/direct/${item._id}` : `/groups/${item._id}`)}
+                onPress={() => router.push(
+                  item._type === 'friend' || item._type === 'contact'
+                    ? { pathname: '/direct/[friendId]', params: { friendId: item._id, name: item.name ?? '' } }
+                    : { pathname: '/groups/[id]',       params: { id: item._id,      name: item.name ?? '' } }
+                )}
               />
             ))}
           </View>
@@ -680,21 +718,28 @@ export default function GroupsScreen() {
       )}
 
       {/* ── Filter FAB ── */}
-      <TouchableOpacity
+      <Touchable tone="accent"
         style={[styles.fab, splitFilter !== 'all' && styles.fabActive]}
         onPress={() => setShowFilterSheet(true)}
-        activeOpacity={0.85}
+        accessibilityRole="button"
+        accessibilityLabel="Filter splits"
+        accessibilityState={{ selected: splitFilter !== 'all' }}
       >
-        <Ionicons name="options-outline" size={22} color="#fff" />
-      </TouchableOpacity>
+        <Ionicons name="options-outline" size={22} color={PC.bg} />
+      </Touchable>
 
       {/* ── Settlements Modal ── */}
-      <Modal visible={showSettlements} animationType="slide" onRequestClose={() => setShowSettlements(false)}>
+      <Modal statusBarTranslucent visible={showSettlements} animationType="slide" onRequestClose={() => setShowSettlements(false)}>
         <SafeAreaView style={styles.safe} edges={['top']}>
           <View style={styles.settleModalHeader}>
-            <TouchableOpacity onPress={() => setShowSettlements(false)} style={styles.settleBackBtn}>
+            <Touchable
+              onPress={() => setShowSettlements(false)}
+              style={styles.settleBackBtn}
+              hitSlop={touchSlop(38)}
+              accessibilityRole="button"
+              accessibilityLabel="Close settlements">
               <Ionicons name="chevron-back" size={22} color={PC.textPrimary} />
-            </TouchableOpacity>
+            </Touchable>
             <Text style={styles.settleModalTitle}>Settlements</Text>
             <View style={{ width: 38 }} />
           </View>
@@ -702,11 +747,11 @@ export default function GroupsScreen() {
           <View style={styles.settleFilterRow}>
             {[{ key: 'not_opened', label: 'Settle' }, { key: 'open', label: 'Open' }, { key: 'closed', label: 'Closed' }]
               .map(({ key, label }) => (
-                <TouchableOpacity key={key}
+                <Touchable key={key}
                   style={[styles.settleFilterBtn, settleFilter === key && styles.settleFilterActive]}
                   onPress={() => setSettleFilter(key)}>
                   <Text style={[styles.settleFilterText, settleFilter === key && styles.settleFilterTextActive]}>{label}</Text>
-                </TouchableOpacity>
+                </Touchable>
               ))}
           </View>
 
@@ -782,23 +827,24 @@ export default function GroupsScreen() {
       </Modal>
 
       {/* ── Action Sheet Modal ── */}
-      <Modal
+      <Modal statusBarTranslucent
         visible={showActionSheet}
         transparent
         animationType="slide"
         onRequestClose={() => setShowActionSheet(false)}>
-        <TouchableOpacity
+        <Touchable
           style={styles.actionOverlay}
-          activeOpacity={1}
           onPress={() => setShowActionSheet(false)}>
-          <TouchableOpacity activeOpacity={1} onPress={() => {}}>
-            <View style={styles.actionSheet}>
+          <Touchable onPress={() => {}}>
+            <View style={[styles.actionSheet, { paddingBottom: insets.bottom + 40 }]}>
               <View style={styles.actionHandle} />
 
-              <TouchableOpacity
+              <Touchable
                 style={styles.actionRow}
-                activeOpacity={0.75}
-                onPress={() => { setShowActionSheet(false); setShowGroupModal(true); }}>
+                onPress={() => {
+                  setShowActionSheet(false);
+                  handoff(() => setShowGroupModal(true));
+                }}>
                 <View style={styles.actionIconBox}>
                   <Ionicons name="people-outline" size={22} color={PC.textSecondary} />
                 </View>
@@ -807,13 +853,12 @@ export default function GroupsScreen() {
                   <Text style={styles.actionSub}>Track shared group expenses</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={PC.textMuted} />
-              </TouchableOpacity>
+              </Touchable>
 
               <View style={styles.actionDivider} />
 
-              <TouchableOpacity
+              <Touchable
                 style={styles.actionRow}
-                activeOpacity={0.75}
                 onPress={() => { setShowActionSheet(false); router.push('/friends'); }}>
                 <View style={styles.actionIconBox}>
                   <Ionicons name="git-branch-outline" size={22} color={PC.textSecondary} />
@@ -823,13 +868,12 @@ export default function GroupsScreen() {
                   <Text style={styles.actionSub}>Track 1-on-1 expenses</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={PC.textMuted} />
-              </TouchableOpacity>
+              </Touchable>
 
               <View style={styles.actionDivider} />
 
-              <TouchableOpacity
+              <Touchable
                 style={styles.actionRow}
-                activeOpacity={0.75}
                 onPress={openContactPicker}>
                 <View style={[styles.actionIconBox, { borderColor: PC.accent20, backgroundColor: PC.accent10 }]}>
                   <Ionicons name="person-add-outline" size={22} color={PC.accent} />
@@ -839,30 +883,30 @@ export default function GroupsScreen() {
                   <Text style={styles.actionSub}>Someone not on PayCircle</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={PC.textMuted} />
-              </TouchableOpacity>
+              </Touchable>
             </View>
-          </TouchableOpacity>
-        </TouchableOpacity>
+          </Touchable>
+        </Touchable>
       </Modal>
 
       {/* ── Contact Picker Modal ── */}
-      <Modal
+      <Modal statusBarTranslucent
         visible={showContactPicker}
         transparent
         animationType="slide"
         onRequestClose={() => setShowContactPicker(false)}>
         <View style={styles.actionOverlay}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setShowContactPicker(false)} />
-          <View style={[styles.actionSheet, { paddingBottom: 36 }]}>
+          <Pressable style={{ flex: 1 }} onPress={() => setShowContactPicker(false)} />
+          <View style={[styles.actionSheet, { paddingBottom: insets.bottom + 36 }]}>
             <View style={styles.actionHandle} />
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
               <Text style={[styles.modalTitle, { marginBottom: 0, flex: 1 }]}>Personal Contacts</Text>
-              <TouchableOpacity
+              <Touchable
                 onPress={() => { setShowContactPicker(false); router.push('/contacts'); }}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                 <Ionicons name="settings-outline" size={15} color={PC.accent} />
                 <Text style={{ color: PC.accent, fontSize: 13 }}>Manage</Text>
-              </TouchableOpacity>
+              </Touchable>
             </View>
 
             {pickerLoading ? (
@@ -874,20 +918,18 @@ export default function GroupsScreen() {
                 <Text style={[styles.emptyText, { textAlign: 'center', marginBottom: 20 }]}>
                   Add someone by name to split expenses without a PayCircle account.
                 </Text>
-                <TouchableOpacity
+                <Touchable tone="accent"
                   style={[styles.createBtn, { paddingHorizontal: 20, width: 'auto', height: 44 }]}
-                  onPress={() => { setShowContactPicker(false); router.push('/contacts'); }}
-                  activeOpacity={0.85}>
+                  onPress={() => { setShowContactPicker(false); router.push('/contacts'); }}>
                   <Text style={styles.createBtnText}>Add New Contact</Text>
-                </TouchableOpacity>
+                </Touchable>
               </View>
             ) : (
               <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
                 {pickerContacts.map((c, i) => (
                   <View key={c._id}>
-                    <TouchableOpacity
+                    <Touchable
                       style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 12 }}
-                      activeOpacity={0.75}
                       onPress={() => { setShowContactPicker(false); router.push(`/direct/${c._id}`); }}>
                       <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: PC.accent10, borderWidth: 1.5, borderColor: PC.accent20, alignItems: 'center', justifyContent: 'center' }}>
                         <Text style={{ color: PC.accent, fontSize: 14, fontWeight: '700' }}>
@@ -899,7 +941,7 @@ export default function GroupsScreen() {
                         <Text style={{ color: PC.textMuted, fontSize: 11, marginTop: 1 }}>Personal Contact</Text>
                       </View>
                       <Ionicons name="chevron-forward" size={16} color={PC.textMuted} />
-                    </TouchableOpacity>
+                    </Touchable>
                     {i < pickerContacts.length - 1 && <View style={{ height: 1, backgroundColor: PC.border }} />}
                   </View>
                 ))}
@@ -917,9 +959,9 @@ export default function GroupsScreen() {
       />
 
       {/* ── Filter Sheet Modal ── */}
-      <Modal visible={showFilterSheet} transparent animationType="slide" onRequestClose={() => setShowFilterSheet(false)}>
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowFilterSheet(false)} />
-        <View style={styles.pickerSheet}>
+      <Modal statusBarTranslucent visible={showFilterSheet} transparent animationType="slide" onRequestClose={() => setShowFilterSheet(false)}>
+        <Pressable style={styles.filterOverlay} onPress={() => setShowFilterSheet(false)} />
+        <View style={[styles.pickerSheet, { paddingBottom: insets.bottom + 36 }]}>
           <Text style={styles.pickerTitle}>Show</Text>
           {[
             { key: 'all',     label: 'All',              icon: 'apps-outline' },
@@ -927,7 +969,7 @@ export default function GroupsScreen() {
             { key: 'friend',  label: 'Direct Splits',     icon: 'person-outline' },
             { key: 'contact', label: 'Personal Contacts', icon: 'person-add-outline' },
           ].map(opt => (
-            <TouchableOpacity
+            <Touchable
               key={opt.key}
               style={[styles.pickerRow, splitFilter === opt.key && styles.pickerRowActive]}
               onPress={() => { setSplitFilter(opt.key); setShowFilterSheet(false); }}
@@ -937,7 +979,7 @@ export default function GroupsScreen() {
               {splitFilter === opt.key && (
                 <Ionicons name="checkmark" size={18} color={PC.accent} style={{ marginLeft: 'auto' }} />
               )}
-            </TouchableOpacity>
+            </Touchable>
           ))}
         </View>
       </Modal>
@@ -1117,7 +1159,7 @@ const styles = StyleSheet.create({
   settleRowLabel:     { color: PC.textPrimary, fontSize: 14, fontWeight: '500', marginBottom: 3 },
   settleRowMeta:      { color: PC.textSecondary, fontSize: 12 },
   settleRowAmt:       { alignItems: 'flex-end' },
-  settleRowAmtText:   { fontSize: 14, fontWeight: '600' },
+  settleRowAmtText:   { fontVariant: ['tabular-nums'], fontSize: 14, fontWeight: '600' },
   amtPos:             { color: PC.positive },
   amtNeg:             { color: PC.negative },
   settleRowDivider:   { height: 1, backgroundColor: PC.border, marginHorizontal: 16 },
@@ -1158,7 +1200,7 @@ const styles = StyleSheet.create({
     borderColor: PC.border,
     borderRadius: 12,
     paddingHorizontal: 14,
-    height: 50,
+    minHeight: 50,
     justifyContent: 'center',
     marginBottom: 20,
   },
@@ -1179,7 +1221,7 @@ const styles = StyleSheet.create({
   typeChipText:       { color: PC.textMuted, fontSize: 13, fontWeight: '500' },
   typeChipTextActive: { color: PC.accent },
 
-  createBtn:         { backgroundColor: PC.accent, borderRadius: 14, height: 52, alignItems: 'center', justifyContent: 'center' },
+  createBtn:         { backgroundColor: PC.accent, borderRadius: 14, minHeight: 52, alignItems: 'center', justifyContent: 'center' },
   createBtnDisabled: { opacity: 0.6 },
   createBtnText:     { color: '#060A09', fontSize: 15, fontWeight: '700' },
 
@@ -1262,7 +1304,7 @@ const styles = StyleSheet.create({
   chatTime:      { color: PC.textMuted, fontSize: 11, flexShrink: 0 },
   chatBottomRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   chatSub:       { color: PC.textSecondary, fontSize: 13, flex: 1, marginRight: 8 },
-  chatBal:       { fontSize: 13, fontWeight: '600', flexShrink: 0 },
+  chatBal:       { fontVariant: ['tabular-nums'], fontSize: 13, fontWeight: '600', flexShrink: 0 },
   chatBalSettled:{ color: PC.textMuted, fontSize: 12, flexShrink: 0 },
   chatDivider:   { height: 1, backgroundColor: PC.border, marginLeft: 82 },
 
@@ -1286,7 +1328,10 @@ const styles = StyleSheet.create({
   fabActive: { borderWidth: 2, borderColor: '#fff' },
 
   // Filter sheet
-  modalOverlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
+  // NOTE: must not be called `modalOverlay` — that key already exists above for
+  // the Add Group sheet, and the duplicate silently overrode it (dropping
+  // `justifyContent: 'flex-end'`, which rendered that sheet at the top).
+  filterOverlay:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
   pickerSheet:     { backgroundColor: PC.bgCard, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 36 },
   pickerTitle:     { color: PC.textPrimary, fontSize: 17, fontWeight: '700', marginBottom: 12 },
   pickerRow:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 14, borderRadius: 10, paddingHorizontal: 8, marginBottom: 2 },

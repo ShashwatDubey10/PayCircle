@@ -1,31 +1,27 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
-  Text,
   ScrollView,
   StyleSheet,
-  TouchableOpacity,
   ActivityIndicator,
+  Pressable,
   Modal,
-  TextInput,
   RefreshControl,
   KeyboardAvoidingView,
   Platform,
   Alert,
-  LayoutAnimation,
-  UIManager,
 } from 'react-native';
+import { Text, TextInput } from '@/components/text';
+import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
+import Touchable from '@/components/Touchable';
 
-// Enable LayoutAnimation on Android
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { PC } from '@/constants/theme';
+import { PC, touchSlop } from '@/constants/theme';
+import { fmtINR, fmtAmount } from '@/utils/format';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
 import { getFriends } from '@/services/friends';
@@ -96,6 +92,7 @@ function ExpDateSeparator({ label }) {
 // ─── Add Expense Modal ────────────────────────────────────────────────────────
 
 function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
 
   const [amount,    setAmount]    = useState('');
@@ -121,11 +118,12 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
     setLoading(true);
     setError('');
     try {
-      const today = new Date().toISOString().split('T')[0];
       const { data } = await api.post(`/api/groups/${group._id}/expenses`, {
         amount: amt,
         payerId,
-        date: today,
+        // Full instant, not a bare date. A date-only string is parsed as UTC
+        // midnight, which every Indian user then reads back as 5:30 am.
+        date: new Date().toISOString(),
         category,
         notes: notes.trim(),
         splitType,
@@ -159,12 +157,12 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
   }
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+    <Modal statusBarTranslucent visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <KeyboardAvoidingView
         style={styles.modalOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
-        <ScrollView style={styles.modalSheet} bounces={false} keyboardShouldPersistTaps="handled">
+        behavior="padding">
+        <Pressable style={{ flex: 1 }} onPress={handleClose} />
+        <ScrollView style={styles.modalSheet} contentContainerStyle={{ padding: 24, paddingBottom: insets.bottom + 40 }} bounces={false} keyboardShouldPersistTaps="handled">
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Add Expense</Text>
 
@@ -189,11 +187,14 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
           <Text style={styles.modalLabel}>Category</Text>
           <View style={styles.chipRow}>
             {EXPENSE_CATEGORIES.map((c) => (
-              <TouchableOpacity
+              <Touchable
                 key={c}
                 style={[styles.chip, category === c && styles.chipActive]}
                 onPress={() => setCategory(c)}
-                disabled={loading}>
+                disabled={loading}
+                hitSlop={touchSlop(0, 30)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: category === c }}>
                 <Ionicons
                   name={CAT_ICONS[c]}
                   size={14}
@@ -201,7 +202,7 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
                   style={{ marginRight: 4 }}
                 />
                 <Text style={[styles.chipText, category === c && styles.chipTextActive]}>{c}</Text>
-              </TouchableOpacity>
+              </Touchable>
             ))}
           </View>
 
@@ -211,7 +212,7 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
             {members.map((m) => {
               const selected = payerId === m.id;
               return (
-                <TouchableOpacity
+                <Touchable
                   key={m.id}
                   style={[styles.payerChip, selected && styles.payerChipActive]}
                   onPress={() => setPayerId(m.id)}
@@ -224,7 +225,7 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
                   <Text style={[styles.payerName, selected && styles.payerNameActive]}>
                     {m.id === user._id ? 'You' : m.name.split(' ')[0]}
                   </Text>
-                </TouchableOpacity>
+                </Touchable>
               );
             })}
           </ScrollView>
@@ -239,6 +240,9 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
               value={notes}
               onChangeText={setNotes}
               multiline
+              // The models cap notes at 200. Without this the field accepted
+              // more and the save failed on the server.
+              maxLength={200}
               editable={!loading}
             />
           </View>
@@ -246,14 +250,14 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
           {/* Split type toggle */}
           <Text style={styles.modalLabel}>Split</Text>
           <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
-            <TouchableOpacity
+            <Touchable
               style={[styles.chip, splitType === 'equal' && styles.chipActive]}
               onPress={() => { setSplitType('equal'); setCustomSplits([]); }}
               disabled={loading}>
               <Ionicons name="people-outline" size={14} color={splitType === 'equal' ? PC.textPrimary : PC.textMuted} style={{ marginRight: 4 }} />
               <Text style={[styles.chipText, splitType === 'equal' && styles.chipTextActive]}>Equal</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
+            </Touchable>
+            <Touchable
               style={[styles.chip, splitType === 'exact' && styles.chipActive]}
               onPress={() => {
                 if (!amount || isNaN(parseFloat(amount))) {
@@ -266,22 +270,22 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
               disabled={loading}>
               <Ionicons name="options-outline" size={14} color={splitType === 'exact' ? PC.textPrimary : PC.textMuted} style={{ marginRight: 4 }} />
               <Text style={[styles.chipText, splitType === 'exact' && styles.chipTextActive]}>Custom</Text>
-            </TouchableOpacity>
+            </Touchable>
           </View>
 
           {splitType === 'exact' && customSplits.length > 0 && (
-            <TouchableOpacity onPress={() => setShowCustom(true)} style={styles.splitPreviewBox}>
+            <Touchable onPress={() => setShowCustom(true)} style={styles.splitPreviewBox}>
               {customSplits.map(s => {
                 const member = members.find(m => m.id === s.userId);
                 return (
                   <View key={s.userId} style={styles.splitPreviewRow}>
                     <Text style={styles.splitPreviewName}>{member?.name?.split(' ')[0]}</Text>
-                    <Text style={styles.splitPreviewAmt}>₹{s.amount.toFixed(2)}</Text>
+                    <Text style={styles.splitPreviewAmt}>₹{fmtAmount(s.amount, 2)}</Text>
                   </View>
                 );
               })}
               <Text style={styles.splitPreviewEdit}>Tap to edit</Text>
-            </TouchableOpacity>
+            </Touchable>
           )}
 
           {splitType === 'equal' && (
@@ -291,16 +295,15 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
             </Text>
           )}
 
-          <TouchableOpacity
+          <Touchable tone="accent"
             style={[styles.createBtn, loading && styles.createBtnDisabled]}
             onPress={handleSubmit}
-            disabled={loading}
-            activeOpacity={0.85}>
+            disabled={loading}>
             {loading
               ? <ActivityIndicator color="#060A09" size="small" />
               : <Text style={styles.createBtnText}>Add Expense</Text>
             }
-          </TouchableOpacity>
+          </Touchable>
           <View style={{ height: 20 }} />
         </ScrollView>
 
@@ -323,6 +326,7 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
 // ─── Custom Split Modal ───────────────────────────────────────────────────────
 
 function CustomSplitModal({ visible, onClose, members, payerId, totalAmount, onConfirm }) {
+  const insets = useSafeAreaInsets();
   const [amounts,   setAmounts]   = useState({});
   const [lockedIds, setLockedIds] = useState(new Set());
 
@@ -387,20 +391,24 @@ function CustomSplitModal({ visible, onClose, members, payerId, totalAmount, onC
 
   function handleConfirm() {
     if (!isValid) return;
-    const splits = members.map(m => ({
-      userId: m.id,
-      amount: parseFloat(amounts[m.id]) || 0,
-    }));
+    // Anyone assigned nothing is left out of the split rather than sent as a
+    // zero. The server rejects any split below ₹0.01, so "Assign all to" —
+    // which sets every other member to 0 — failed every single time, as did any
+    // manual redistribution that drove someone to zero. The server does not
+    // require a split per member, only that the splits sum to the amount.
+    const splits = members
+      .map(m => ({ userId: m.id, amount: parseFloat(amounts[m.id]) || 0 }))
+      .filter(s => s.amount >= 0.01);
     onConfirm(splits);
   }
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal statusBarTranslucent visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView
         style={styles.modalOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-        <ScrollView style={styles.modalSheet} bounces={false} keyboardShouldPersistTaps="handled">
+        behavior="padding">
+        <Pressable style={{ flex: 1 }} onPress={onClose} />
+        <ScrollView style={styles.modalSheet} contentContainerStyle={{ padding: 24, paddingBottom: insets.bottom + 40 }} bounces={false} keyboardShouldPersistTaps="handled">
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Custom Split</Text>
           <Text style={[styles.modalLabel, { marginBottom: 10 }]}>Total: ₹{totalAmount.toFixed(2)}</Text>
@@ -409,12 +417,12 @@ function CustomSplitModal({ visible, onClose, members, payerId, totalAmount, onC
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
             <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 2 }}>
               {members.map(m => (
-                <TouchableOpacity
+                <Touchable
                   key={m.id}
                   style={styles.assignAllChip}
                   onPress={() => handleAssignAll(m.id)}>
                   <Text style={styles.assignAllChipText}>{m.name.split(' ')[0]}</Text>
-                </TouchableOpacity>
+                </Touchable>
               ))}
             </View>
           </ScrollView>
@@ -458,17 +466,16 @@ function CustomSplitModal({ visible, onClose, members, payerId, totalAmount, onC
             </Text>
           </View>
 
-          <TouchableOpacity onPress={resetEqual} style={{ alignItems: 'center', marginBottom: 16 }}>
+          <Touchable onPress={resetEqual} style={{ alignItems: 'center', marginBottom: 16 }}>
             <Text style={{ color: PC.accent, fontSize: 13 }}>Reset to equal</Text>
-          </TouchableOpacity>
+          </Touchable>
 
-          <TouchableOpacity
+          <Touchable tone="accent"
             style={[styles.createBtn, !isValid && styles.createBtnDisabled]}
             onPress={handleConfirm}
-            disabled={!isValid}
-            activeOpacity={0.85}>
+            disabled={!isValid}>
             <Text style={styles.createBtnText}>Confirm Split</Text>
-          </TouchableOpacity>
+          </Touchable>
           <View style={{ height: 20 }} />
         </ScrollView>
       </KeyboardAvoidingView>
@@ -479,12 +486,18 @@ function CustomSplitModal({ visible, onClose, members, payerId, totalAmount, onC
 // ─── Add Member Modal ─────────────────────────────────────────────────────────
 
 function AddMemberModal({ visible, onClose, groupId, existingMemberIds, onAdded }) {
+  const insets = useSafeAreaInsets();
   const [friends,     setFriends]     = useState([]);
   const [contacts,    setContacts]    = useState([]);
   const [loadingList, setLoadingList] = useState(false);
   const [addingId,    setAddingId]    = useState(null);
   const [error,       setError]       = useState('');
   const [tab,         setTab]         = useState('friends'); // 'friends' | 'contacts'
+
+  // The parent rebuilds `existingMemberIds` on every render, so depending on the
+  // array itself refetched (and reset the tab) on each parent re-render. Depend
+  // on a stable string key instead.
+  const memberKey = existingMemberIds.join(',');
 
   useEffect(() => {
     if (!visible) return;
@@ -502,7 +515,8 @@ function AddMemberModal({ visible, onClose, groupId, existingMemberIds, onAdded 
       .catch(() => { if (!cancelled) setError('Could not load member options.'); })
       .finally(() => { if (!cancelled) setLoadingList(false); });
     return () => { cancelled = true; };
-  }, [visible, existingMemberIds]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, memberKey]);
 
   async function handleAdd(userId, isContact) {
     setAddingId(userId);
@@ -527,10 +541,10 @@ function AddMemberModal({ visible, onClose, groupId, existingMemberIds, onAdded 
   const hasAny = friends.length > 0 || contacts.length > 0;
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+    <Modal statusBarTranslucent visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <View style={styles.modalOverlay}>
-        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
-        <View style={[styles.modalSheet, { maxHeight: '75%' }]}>
+        <Pressable style={{ flex: 1 }} onPress={handleClose} />
+        <View style={[styles.modalSheet, { maxHeight: "75%", padding: 24, paddingBottom: insets.bottom + 24 }]}>
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Add Member</Text>
 
@@ -543,14 +557,14 @@ function AddMemberModal({ visible, onClose, groupId, existingMemberIds, onAdded 
                 { key: 'friends',  label: 'Friends' },
                 { key: 'contacts', label: 'Personal Contacts' },
               ].map(t => (
-                <TouchableOpacity
+                <Touchable
                   key={t.key}
                   style={[{ flex: 1, paddingVertical: 7, borderRadius: 8, alignItems: 'center' }, tab === t.key && { backgroundColor: PC.bgCard, borderWidth: 1, borderColor: PC.border }]}
                   onPress={() => setTab(t.key)}>
                   <Text style={{ fontSize: 13, fontWeight: tab === t.key ? '600' : '400', color: tab === t.key ? PC.textPrimary : PC.textMuted }}>
                     {t.label}
                   </Text>
-                </TouchableOpacity>
+                </Touchable>
               ))}
             </View>
           )}
@@ -593,16 +607,15 @@ function AddMemberModal({ visible, onClose, groupId, existingMemberIds, onAdded 
                             : null
                         }
                       </View>
-                      <TouchableOpacity
+                      <Touchable tone="accent"
                         style={[styles.createBtn, { paddingHorizontal: 16, height: 36, borderRadius: 10, width: 'auto' }, addingId === uid && styles.createBtnDisabled]}
                         onPress={() => handleAdd(uid, isVirtual)}
-                        disabled={!!addingId}
-                        activeOpacity={0.85}>
+                        disabled={!!addingId}>
                         {addingId === uid
                           ? <ActivityIndicator color="#060A09" size="small" />
                           : <Text style={styles.createBtnText}>Add</Text>
                         }
-                      </TouchableOpacity>
+                      </Touchable>
                     </View>
                     {i < arr.length - 1 && <View style={{ height: 1, backgroundColor: PC.border }} />}
                   </View>
@@ -619,7 +632,8 @@ function AddMemberModal({ visible, onClose, groupId, existingMemberIds, onAdded 
 
 // ─── Record Settlement Modal ──────────────────────────────────────────────────
 
-function RecordSettlementModal({ visible, onClose, groupId, members, currentUserId, onRecorded }) {
+function RecordSettlementModal({ visible, onClose, groupId, members, currentUserId, memberBalances, onRecorded }) {
+  const insets = useSafeAreaInsets();
   const [fromId,        setFromId]        = useState(currentUserId ?? '');
   const [toId,          setToId]          = useState('');
   const [amount,        setAmount]        = useState('');
@@ -640,6 +654,38 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
     if (fromId === id) setFromId('');
   }
 
+  // Mirrors the rule in settlementController: a settlement is valid when the
+  // payer is a net debtor and the receiver a net creditor, capped at the
+  // smaller of the two positions. Deliberately driven by net balances rather
+  // than by the simplified `debts` plan — that plan is one minimal set of
+  // transfers, so a pair can be missing from it while still genuinely owing
+  // each other. Keeping the two in step means the figure shown here is exactly
+  // the ceiling the server will enforce.
+  const settleLimit = useMemo(() => {
+    if (!fromId || !toId || fromId === toId) return { max: 0, reason: '' };
+    const netOf = (id) => (memberBalances || []).find(m => m.user?.id === id)?.netBalance ?? 0;
+    const payerOwes      = -netOf(fromId);
+    const receiverIsOwed =  netOf(toId);
+    if (payerOwes < 0.01)
+      return { max: 0, reason: 'This member has nothing outstanding to settle' };
+    if (receiverIsOwed < 0.01)
+      return { max: 0, reason: 'The receiver is not owed anything in this group' };
+    return { max: Math.round(Math.min(payerOwes, receiverIsOwed) * 100) / 100, reason: '' };
+  }, [memberBalances, fromId, toId]);
+  const outstanding = settleLimit.max;
+
+  // Prefill the full amount once per payer/receiver pair. Keyed on the pair
+  // rather than on `outstanding`, so a balance refresh arriving while the sheet
+  // is open cannot overwrite a figure the user has already edited.
+  const prefilledFor = useRef('');
+  useEffect(() => {
+    if (!visible) { prefilledFor.current = ''; return; }
+    const key = fromId + '>' + toId;
+    if (prefilledFor.current === key) return;
+    prefilledFor.current = key;
+    setAmount(outstanding > 0 ? outstanding.toFixed(2) : '');
+  }, [visible, fromId, toId, outstanding]);
+
   async function handleSubmit() {
     if (!fromId)       { setError('Select who is paying.');    return; }
     if (!toId)         { setError('Select who is receiving.'); return; }
@@ -650,10 +696,13 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
     setLoading(true);
     setError('');
     try {
-      const today = new Date().toISOString().split('T')[0];
+      // A full timestamp, not a YYYY-MM-DD date. A date-only string is parsed
+      // as UTC midnight, which in IST is 05:30 the same morning — so every row
+      // displayed that time, same-day rows had no real order between them, and
+      // anything near a month boundary landed in the wrong month.
       const { data } = await api.post(`/api/groups/${groupId}/settlements`, {
         fromUserId: fromId, toUserId: toId, amount: amt,
-        date: today, notes: notes.trim(),
+        date: new Date().toISOString(), notes: notes.trim(),
       });
 
       const receiver = members.find(m => m.id === toId || m.id?.toString() === toId);
@@ -693,12 +742,12 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
   function handleClose() { if (!loading) resetAndClose(); }
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+    <Modal statusBarTranslucent visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <KeyboardAvoidingView
         style={styles.modalOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
-        <ScrollView style={styles.modalSheet} bounces={false} keyboardShouldPersistTaps="handled">
+        behavior="padding">
+        <Pressable style={{ flex: 1 }} onPress={handleClose} />
+        <ScrollView style={styles.modalSheet} contentContainerStyle={{ padding: 24, paddingBottom: insets.bottom + 40 }} bounces={false} keyboardShouldPersistTaps="handled">
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Record Settlement</Text>
 
@@ -710,7 +759,7 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
             {members.map((m) => {
               const selected = fromId === m.id;
               return (
-                <TouchableOpacity
+                <Touchable
                   key={m.id}
                   style={[styles.payerChip, selected && styles.payerChipActive]}
                   onPress={() => handleFromChange(m.id)}
@@ -723,7 +772,7 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
                   <Text style={[styles.payerName, selected && styles.payerNameActive]}>
                     {m.id === currentUserId ? 'You' : m.name.split(' ')[0]}
                   </Text>
-                </TouchableOpacity>
+                </Touchable>
               );
             })}
           </ScrollView>
@@ -734,7 +783,7 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
             {members.filter(m => m.id !== fromId).map((m) => {
               const selected = toId === m.id;
               return (
-                <TouchableOpacity
+                <Touchable
                   key={m.id}
                   style={[styles.payerChip, selected && styles.payerChipActive]}
                   onPress={() => handleToChange(m.id)}
@@ -747,43 +796,101 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
                   <Text style={[styles.payerName, selected && styles.payerNameActive]}>
                     {m.id === currentUserId ? 'You' : m.name.split(' ')[0]}
                   </Text>
-                </TouchableOpacity>
+                </Touchable>
               );
             })}
           </ScrollView>
 
           {/* Amount */}
-          <Text style={styles.modalLabel}>Amount (₹)</Text>
-          <View style={styles.modalInputBox}>
+          <View style={styles.settleAmtLabelRow}>
+            <Text style={[styles.modalLabel, { marginBottom: 0 }]}>Amount (₹)</Text>
+            {outstanding > 0 && (
+              <Text style={styles.settleOfLabel}>of ₹{outstanding.toLocaleString('en-IN')}</Text>
+            )}
+          </View>
+          <View style={[styles.modalInputBox, outstanding > 0 && { marginBottom: 10 }]}>
             <Text style={styles.rupeePrefix}>₹</Text>
             <TextInput
               style={[styles.modalInput, { flex: 1 }]}
-              placeholder="0.00"
+              placeholder={outstanding > 0 ? outstanding.toFixed(2) : '0.00'}
               placeholderTextColor={PC.textMuted}
               value={amount}
-              onChangeText={(v) => { setAmount(v); setError(''); }}
+              onChangeText={(v) => {
+                // Same clamp as the 1-on-1 sheet: keep digits and a single dot,
+                // then hold the value at the outstanding debt, which is the
+                // ceiling the server enforces anyway.
+                const cleaned = v.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1');
+                const n = parseFloat(cleaned);
+                setAmount(outstanding > 0 && !isNaN(n) && n > outstanding ? outstanding.toFixed(2) : cleaned);
+                setError('');
+              }}
               keyboardType="decimal-pad"
               editable={!loading}
             />
           </View>
 
+          {/* Partial-payment presets — only once a pair with a real debt is chosen */}
+          {outstanding > 0 && (
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+              {[25, 50, 75, 100].map((pct) => {
+                const presetVal = pct === 100
+                  ? outstanding
+                  : parseFloat((outstanding * pct / 100).toFixed(2));
+                const isActive = Math.abs((parseFloat(amount) || 0) - presetVal) < 0.01;
+                return (
+                  <Touchable
+                    key={pct}
+                    style={[styles.chip, isActive && styles.chipActive]}
+                    onPress={() => { setAmount(presetVal.toFixed(2)); setError(''); }}
+                    disabled={loading}>
+                    <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
+                      {pct === 100 ? 'Full' : pct + '%'}
+                    </Text>
+                  </Touchable>
+                );
+              })}
+            </View>
+          )}
+
+          {/* What is left after a partial settle */}
+          {outstanding > 0 && (() => {
+            const remaining = Math.round((outstanding - (parseFloat(amount) || 0)) * 100) / 100;
+            if (remaining <= 0.01) return null;
+            return (
+              <View style={styles.settleNoteRow}>
+                <Ionicons name="time-outline" size={12} color={PC.textMuted} />
+                <Text style={styles.settleRemainingText}>
+                  ₹{remaining.toLocaleString('en-IN')} still owed after this
+                </Text>
+              </View>
+            );
+          })()}
+
+          {/* Nothing settleable for this pair — the server would refuse it, so say why first */}
+          {!!settleLimit.reason && (
+            <View style={styles.settleNoteRow}>
+              <Ionicons name="information-circle-outline" size={12} color={PC.textMuted} />
+              <Text style={styles.settleNoteText}>{settleLimit.reason}</Text>
+            </View>
+          )}
+
           {/* Payment method */}
           <Text style={styles.modalLabel}>How was it paid?</Text>
           <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
-            <TouchableOpacity
+            <Touchable
               style={[styles.payerChip, paymentMethod === 'upi' && styles.payerChipActive, { flexDirection: 'row', gap: 6, paddingHorizontal: 14, paddingVertical: 10 }]}
               onPress={() => setPaymentMethod('upi')}
               disabled={loading}>
               <Ionicons name="qr-code-outline" size={15} color={paymentMethod === 'upi' ? '#060A09' : PC.textSecondary} />
               <Text style={[styles.payerName, paymentMethod === 'upi' && styles.payerNameActive]}>UPI</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
+            </Touchable>
+            <Touchable
               style={[styles.payerChip, paymentMethod === 'outside' && styles.payerChipActive, { flexDirection: 'row', gap: 6, paddingHorizontal: 14, paddingVertical: 10 }]}
               onPress={() => setPaymentMethod('outside')}
               disabled={loading}>
               <Ionicons name="swap-horizontal-outline" size={15} color={paymentMethod === 'outside' ? '#060A09' : PC.textSecondary} />
               <Text style={[styles.payerName, paymentMethod === 'outside' && styles.payerNameActive]}>Outside App</Text>
-            </TouchableOpacity>
+            </Touchable>
           </View>
 
           {/* UPI QR info — shown when UPI selected */}
@@ -822,6 +929,9 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
               value={notes}
               onChangeText={setNotes}
               multiline
+              // The models cap notes at 200. Without this the field accepted
+              // more and the save failed on the server.
+              maxLength={200}
               editable={!loading}
             />
           </View>
@@ -831,16 +941,15 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
               && !!members.find(m => m.id === toId || m.id?.toString() === toId)?.upiId
               && !isNaN(parseFloat(amount)) && parseFloat(amount) > 0;
             return (
-              <TouchableOpacity
+              <Touchable tone="accent"
                 style={[styles.createBtn, loading && styles.createBtnDisabled]}
                 onPress={handleSubmit}
-                disabled={loading}
-                activeOpacity={0.85}>
+                disabled={loading}>
                 {loading
                   ? <ActivityIndicator color="#060A09" size="small" />
                   : <Text style={styles.createBtnText}>{canUpiQr ? 'Generate QR & Record' : 'Record Settlement'}</Text>
                 }
-              </TouchableOpacity>
+              </Touchable>
             );
           })()}
           <View style={{ height: 20 }} />
@@ -866,13 +975,20 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function GroupDetailScreen() {
-  const { id }     = useLocalSearchParams();
+  const insets = useSafeAreaInsets();
+  // `name` is passed by the list that linked here, so the header can be drawn
+  // on the first frame instead of after the fetch. Without it the screen slid
+  // in showing an empty header and a spinner, then swapped the whole layout in
+  // at once — the slide was fine, the content arriving late was the jolt.
+  const { id, name: nameFromList } = useLocalSearchParams();
   const router     = useRouter();
   const { user }   = useAuth();
 
   const [group,      setGroup]      = useState(null);
   const [members,    setMembers]    = useState([]);
   const [expenses,   setExpenses]   = useState([]);
+  const listRef = useRef(null);
+  const openedAtBottom = useRef(false);
   const [balances,   setBalances]   = useState({ members: [], debts: [] });
   const [tab,        setTab]        = useState('expenses');
   const [loading,    setLoading]    = useState(true);
@@ -901,7 +1017,7 @@ export default function GroupDetailScreen() {
       const g = groupRes.data.group;
       setGroup(g);
       setMembers(
-        (g.members || []).map(m => ({
+        (g.members || []).filter(Boolean).map(m => ({
           id:        m._id,
           name:      m.name,
           email:     m.email,
@@ -950,6 +1066,19 @@ export default function GroupDetailScreen() {
     setRefreshing(false);
   }, [fetchAll]);
 
+  // The API returns newest-first and `handleExpenseAdded` prepends, so the
+  // state stays in that order; this is a display-order view that reads the way
+  // a chat does — oldest at the top, the latest expense at the bottom.
+  const expensesChrono = useMemo(() => [...expenses].reverse(), [expenses]);
+
+  // Open on the most recent expense rather than the oldest one.
+  useEffect(() => {
+    if (openedAtBottom.current || tab !== 'expenses' || expenses.length === 0) return;
+    openedAtBottom.current = true;
+    const t = setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 80);
+    return () => clearTimeout(t);
+  }, [tab, expenses.length]);
+
   // Guard: auth still restoring — RootGuard will redirect if truly unauthenticated
   if (!user) return null;
 
@@ -960,6 +1089,9 @@ export default function GroupDetailScreen() {
   // ── Handlers ──────────────────────────────────────────────────────────────
   function handleExpenseAdded(expense) {
     setExpenses(prev => [expense, ...prev]);
+    // The newest expense now renders at the bottom, so bring it into view the
+    // way a chat does. The delay lets the new row lay out before we scroll.
+    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 60);
   }
 
   function handleMemberAdded(member) {
@@ -971,6 +1103,26 @@ export default function GroupDetailScreen() {
   function handleSettlementRecorded() {
     // Refresh balances after a settlement
     api.get(`/api/groups/${id}/balances`).then(r => setBalances(r.data)).catch(() => {});
+  }
+
+  // Removing an expense is how somebody gets out from under a charge another
+  // member recorded against them — there is no other route, since the amount of
+  // an exact split cannot be edited at all.
+  async function handleExpenseDelete() {
+    const { exp } = editSheet;
+    try {
+      await api.delete(`/api/groups/${id}/expenses/${exp._id}`);
+      setExpenses(prev => prev.filter(e => e._id !== exp._id));
+      setEditSheet(null);
+      setError('');
+      // Everyone's position moves, so this cannot wait for the next focus.
+      api.get(`/api/groups/${id}/balances`).then(r => setBalances(r.data)).catch(() => {});
+    } catch (err) {
+      // Left open deliberately: the sheet is where the error belongs, and the
+      // expense is still there to try again on.
+      setError(err?.message || 'Could not remove the expense.');
+      setEditSheet(null);
+    }
   }
 
   async function handleEditSave({ amount, category }) {
@@ -999,9 +1151,20 @@ export default function GroupDetailScreen() {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.headerRow}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <Touchable
+            style={styles.backBtn}
+            onPress={() => router.back()}
+            hitSlop={touchSlop(38)}
+            accessibilityRole="button"
+            accessibilityLabel="Go back">
             <Ionicons name="arrow-back" size={20} color={PC.textPrimary} />
-          </TouchableOpacity>
+          </Touchable>
+          {/* Same three-part header as the loaded screen, so the title does not
+              move when the data lands. */}
+          <View style={styles.headerCenter}>
+            <Text style={styles.groupTitle} numberOfLines={1}>{nameFromList ?? ''}</Text>
+          </View>
+          <View style={{ width: 38 }} />
         </View>
         <View style={styles.centered}>
           <ActivityIndicator color={PC.textPrimary} />
@@ -1014,16 +1177,21 @@ export default function GroupDetailScreen() {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.headerRow}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <Touchable
+            style={styles.backBtn}
+            onPress={() => router.back()}
+            hitSlop={touchSlop(38)}
+            accessibilityRole="button"
+            accessibilityLabel="Go back">
             <Ionicons name="arrow-back" size={20} color={PC.textPrimary} />
-          </TouchableOpacity>
+          </Touchable>
         </View>
         <View style={styles.centered}>
           <Ionicons name="cloud-offline-outline" size={36} color={PC.textMuted} />
           <Text style={styles.errorMsg}>{error || 'Group not found'}</Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={() => { setLoading(true); fetchAll().then(() => setLoading(false)); }}>
+          <Touchable style={styles.retryBtn} onPress={() => { setLoading(true); fetchAll().then(() => setLoading(false)); }}>
             <Text style={styles.retryText}>Retry</Text>
-          </TouchableOpacity>
+          </Touchable>
         </View>
       </SafeAreaView>
     );
@@ -1033,16 +1201,26 @@ export default function GroupDetailScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* ── Header ── */}
       <View style={styles.headerRow}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <Touchable
+          style={styles.backBtn}
+          onPress={() => router.back()}
+          hitSlop={touchSlop(38)}
+          accessibilityRole="button"
+          accessibilityLabel="Go back">
           <Ionicons name="arrow-back" size={20} color={PC.textPrimary} />
-        </TouchableOpacity>
+        </Touchable>
         <View style={styles.headerCenter}>
           <Text style={styles.groupTitle} numberOfLines={1}>{group.name}</Text>
         </View>
         {isAdmin ? (
-          <TouchableOpacity style={styles.addMemberBtn} onPress={() => setShowAddMember(true)}>
+          <Touchable
+            style={styles.addMemberBtn}
+            onPress={() => setShowAddMember(true)}
+            hitSlop={touchSlop(38)}
+            accessibilityRole="button"
+            accessibilityLabel="Add member">
             <Ionicons name="person-add-outline" size={18} color={PC.textPrimary} />
-          </TouchableOpacity>
+          </Touchable>
         ) : <View style={{ width: 38 }} />}
       </View>
 
@@ -1051,12 +1229,12 @@ export default function GroupDetailScreen() {
         <View style={styles.balanceCard}>
           <View style={styles.balanceStat}>
             <Text style={styles.balanceStatLabel}>You paid</Text>
-            <Text style={styles.balanceStatVal}>₹{myBalance.totalPaid.toLocaleString('en-IN')}</Text>
+            <Text style={styles.balanceStatVal}>₹{fmtINR(myBalance.totalPaid)}</Text>
           </View>
           <View style={styles.balanceDivider} />
           <View style={styles.balanceStat}>
             <Text style={styles.balanceStatLabel}>Your share</Text>
-            <Text style={styles.balanceStatVal}>₹{myBalance.totalOwed.toLocaleString('en-IN')}</Text>
+            <Text style={styles.balanceStatVal}>₹{fmtINR(myBalance.totalOwed)}</Text>
           </View>
           <View style={styles.balanceDivider} />
           <View style={styles.balanceStat}>
@@ -1065,7 +1243,7 @@ export default function GroupDetailScreen() {
               styles.balanceStatVal,
               myBalance.netBalance > 0 ? { color: PC.positive } : myBalance.netBalance < 0 ? { color: PC.negative } : {},
             ]}>
-              {myBalance.netBalance > 0 ? '+' : ''}₹{myBalance.netBalance.toLocaleString('en-IN')}
+              {myBalance.netBalance > 0 ? '+' : ''}₹{fmtINR(myBalance.netBalance)}
             </Text>
           </View>
         </View>
@@ -1074,18 +1252,19 @@ export default function GroupDetailScreen() {
       {/* ── Tabs ── */}
       <View style={styles.tabRow}>
         {['expenses', 'balances', 'members'].map((t) => (
-          <TouchableOpacity
+          <Touchable
             key={t}
             style={[styles.tabBtn, tab === t && styles.tabActive]}
             onPress={() => setTab(t)}>
             <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
               {t.charAt(0).toUpperCase() + t.slice(1)}
             </Text>
-          </TouchableOpacity>
+          </Touchable>
         ))}
       </View>
 
       <ScrollView
+        ref={listRef}
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -1102,14 +1281,14 @@ export default function GroupDetailScreen() {
               <Text style={styles.emptyText}>Add the first expense to get started</Text>
             </View>
           ) : (
-            expenses.map((exp, idx) => {
+            expensesChrono.map((exp, idx) => {
               const meId = user._id?.toString();
               const paidByMe = exp.payerId?._id?.toString() === meId || exp.payerId?.id?.toString() === meId;
               const myShare = exp.splits?.find(s =>
                 s.userId?._id?.toString() === meId || s.userId?.id?.toString() === meId
               );
               const isExpanded = expandedExpId === exp._id;
-              const prevExp = idx > 0 ? expenses[idx - 1] : null;
+              const prevExp = idx > 0 ? expensesChrono[idx - 1] : null;
               const showDate = !prevExp || formatExpDateLabel(exp.date) !== formatExpDateLabel(prevExp.date);
               const payerFirstName = (exp.payerId?.name ?? 'Unknown').split(' ')[0];
 
@@ -1122,14 +1301,19 @@ export default function GroupDetailScreen() {
                         <Text style={styles.expBubbleAvatarText}>{initials(payerFirstName)}</Text>
                       </View>
                     )}
-                    <View style={{ maxWidth: '78%' }}>
-                      <TouchableOpacity
-                        activeOpacity={0.85}
-                        onPress={() => {
-                          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                          setExpandedExpId(isExpanded ? null : exp._id);
-                        }}
-                        onLongPress={() => setEditSheet({ exp, canEditAmount: paidByMe })}
+                    <Animated.View style={{ maxWidth: '78%' }} layout={LinearTransition.duration(200)}>
+                      <Touchable
+                        onPress={() => setExpandedExpId(isExpanded ? null : exp._id)}
+                        onLongPress={() => setEditSheet({
+                          exp,
+                          canEditAmount: paidByMe,
+                          // Mirrors the API: the payer, whoever recorded it, or
+                          // the group admin. Anyone else sees the sheet without
+                          // the remove action.
+                          canDelete: paidByMe
+                            || (exp.createdBy?._id ?? exp.createdBy)?.toString() === user._id?.toString()
+                            || isAdmin,
+                        })}
                         delayLongPress={350}
                         style={[styles.expBubble, paidByMe ? styles.expBubbleMine : styles.expBubbleFriend]}>
 
@@ -1139,7 +1323,7 @@ export default function GroupDetailScreen() {
                             {paidByMe ? 'You' : payerFirstName} paid
                           </Text>
                           <Text style={[styles.expBubbleAmt, paidByMe ? styles.expTMine : { color: PC.textPrimary }]}>
-                            {'  '}₹{exp.amount.toLocaleString('en-IN')}
+                            {'  '}₹{fmtINR(exp.amount)}
                           </Text>
                         </View>
 
@@ -1155,7 +1339,7 @@ export default function GroupDetailScreen() {
                           <Text style={[styles.expBubbleShareLine, paidByMe ? styles.expTMineSecondary : { color: PC.textSecondary }]}>
                             {'Your Share : '}
                             <Text style={[styles.expBubbleShareAmt, paidByMe ? styles.expTMine : { color: PC.textPrimary }]}>
-                              ₹{myShare.amount.toLocaleString('en-IN')}
+                              ₹{fmtINR(myShare.amount)}
                             </Text>
                           </Text>
                         ) : null}
@@ -1164,11 +1348,14 @@ export default function GroupDetailScreen() {
                         <Text style={[styles.expBubbleTime, paidByMe ? styles.expTMineMuted : { color: PC.textMuted }, { marginTop: 4 }]}>
                           {formatExpTime(exp.date)}
                         </Text>
-                      </TouchableOpacity>
+                      </Touchable>
 
                       {/* Expanded receipt-style split breakdown */}
                       {isExpanded && (
-                        <View style={[styles.splitCard, paidByMe ? styles.splitCardMine : styles.splitCardFriend]}>
+                        <Animated.View
+                          style={[styles.splitCard, paidByMe ? styles.splitCardMine : styles.splitCardFriend]}
+                          entering={FadeIn.duration(200)}
+                          exiting={FadeOut.duration(140)}>
 
                           {/* Header */}
                           <View style={[styles.splitCardHeader, paidByMe ? styles.splitCardHeaderMine : styles.splitCardHeaderFriend]}>
@@ -1205,7 +1392,7 @@ export default function GroupDetailScreen() {
                                     {[...Array(10)].map((_, di) => <View key={di} style={styles.splitLeaderDot} />)}
                                   </View>
                                   <Text style={[styles.splitAmt, isPayer ? styles.splitAmtPayer : isMe ? styles.splitAmtMe : styles.splitAmtOwer]}>
-                                    {isPayer ? '+' : '−'}₹{s.amount.toFixed(2)}
+                                    {isPayer ? '+' : '−'}₹{fmtAmount(s.amount, 2)}
                                   </Text>
                                 </View>
                               </React.Fragment>
@@ -1219,15 +1406,14 @@ export default function GroupDetailScreen() {
                               {[...Array(10)].map((_, di) => <View key={di} style={styles.splitLeaderDot} />)}
                             </View>
                             <Text style={[styles.splitTotalAmt, paidByMe ? { color: PC.positive } : { color: PC.textPrimary }]}>
-                              ₹{exp.amount.toLocaleString('en-IN')}
+                              ₹{fmtINR(exp.amount)}
                             </Text>
                           </View>
 
                           {/* Private category tag — always shown for current user */}
-                          <TouchableOpacity
+                          <Touchable
                             style={styles.tagChipRow}
-                            onPress={() => setEditSheet({ exp, canEditAmount: false })}
-                            activeOpacity={0.7}>
+                            onPress={() => setEditSheet({ exp, canEditAmount: false })}>
                             {myTags[exp._id] ? (
                               <View style={styles.tagChip}>
                                 <Ionicons name={CAT_ICON_MAP[myTags[exp._id]] || 'pricetag-outline'} size={11} color={PC.accent} style={{ marginRight: 4 }} />
@@ -1239,10 +1425,10 @@ export default function GroupDetailScreen() {
                                 <Text style={styles.tagChipEmpty}>Tag</Text>
                               </View>
                             )}
-                          </TouchableOpacity>
-                        </View>
+                          </Touchable>
+                        </Animated.View>
                       )}
-                    </View>
+                    </Animated.View>
                   </View>
                 </View>
               );
@@ -1253,13 +1439,12 @@ export default function GroupDetailScreen() {
         {/* ── Balances Tab ── */}
         {tab === 'balances' && (
           <>
-            <TouchableOpacity
+            <Touchable
               style={styles.settleBtn}
-              onPress={() => setShowSettlement(true)}
-              activeOpacity={0.85}>
+              onPress={() => setShowSettlement(true)}>
               <Ionicons name="checkmark-done-outline" size={17} color={PC.accent} style={{ marginRight: 7 }} />
               <Text style={styles.settleBtnText}>Record Settlement</Text>
-            </TouchableOpacity>
+            </Touchable>
 
             {balances.debts?.length > 0 ? (
               <>
@@ -1290,7 +1475,7 @@ export default function GroupDetailScreen() {
                         </Text>
                       </View>
                       <Text style={[styles.debtAmount, fromMe ? { color: PC.negative } : toMe ? { color: PC.positive } : {}]}>
-                        ₹{d.amount.toLocaleString('en-IN')}
+                        ₹{fmtINR(d.amount)}
                       </Text>
                     </View>
                   );
@@ -1322,7 +1507,7 @@ export default function GroupDetailScreen() {
                   styles.memberNetBal,
                   m.netBalance > 0 ? { color: PC.positive } : m.netBalance < 0 ? { color: PC.negative } : { color: PC.textMuted },
                 ]}>
-                  {m.netBalance > 0 ? '+' : ''}₹{m.netBalance.toLocaleString('en-IN')}
+                  {m.netBalance > 0 ? '+' : ''}₹{fmtINR(m.netBalance)}
                 </Text>
               </View>
             ))}
@@ -1357,10 +1542,10 @@ export default function GroupDetailScreen() {
 
       {/* ── Add Expense FAB ── */}
       {tab === 'expenses' && (
-        <TouchableOpacity style={styles.fab} onPress={() => setShowAddExpense(true)} activeOpacity={0.85}>
+        <Touchable tone="accent" style={[styles.fab, { bottom: insets.bottom + 24 }]} onPress={() => setShowAddExpense(true)}>
           <Ionicons name="add" size={24} color="#060A09" />
           <Text style={styles.fabText}>Add Expense</Text>
-        </TouchableOpacity>
+        </Touchable>
       )}
 
       <AddExpenseModal
@@ -1383,6 +1568,7 @@ export default function GroupDetailScreen() {
         groupId={id}
         members={members}
         currentUserId={user._id}
+        memberBalances={balances.members || []}
         onRecorded={handleSettlementRecorded}
       />
 
@@ -1390,9 +1576,11 @@ export default function GroupDetailScreen() {
         visible={editSheet !== null}
         onClose={() => setEditSheet(null)}
         canEditAmount={editSheet?.canEditAmount ?? false}
+        canDelete={editSheet?.canDelete ?? false}
         initialAmount={editSheet?.exp?.amount}
         initialCategory={editSheet ? (myTags[editSheet.exp._id] || '') : ''}
         onSave={handleEditSave}
+        onDelete={handleExpenseDelete}
       />
     </SafeAreaView>
   );
@@ -1572,8 +1760,11 @@ const styles = StyleSheet.create({
     backgroundColor: PC.bgCard,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    padding: 24,
     maxHeight: '90%',
+    // NOTE: no padding here. On a ScrollView, padding on `style` clips the
+    // content within it, so the last paddingBottom pixels can never be
+    // scrolled into view. Padding goes on contentContainerStyle instead.
+    // AddMemberModal uses a plain View for its sheet and adds padding inline.
   },
   modalHandle:  { width: 36, height: 4, backgroundColor: PC.border, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
   modalTitle:   { color: PC.textPrimary, fontSize: 18, fontWeight: '700', marginBottom: 20 },
@@ -1586,10 +1777,15 @@ const styles = StyleSheet.create({
     borderColor: PC.border,
     borderRadius: 12,
     paddingHorizontal: 14,
-    height: 50,
+    minHeight: 50,
     marginBottom: 20,
   },
   modalInput:   { color: PC.textPrimary, fontSize: 15 },
+  settleAmtLabelRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  settleOfLabel:       { color: PC.textMuted, fontSize: 12 },
+  settleNoteRow:       { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16 },
+  settleRemainingText: { color: PC.negative, fontSize: 12, fontWeight: '500' },
+  settleNoteText:      { color: PC.textMuted, fontSize: 12, fontWeight: '500' },
   rupeePrefix:  { color: PC.textPrimary, fontSize: 18, fontWeight: '700', marginRight: 8 },
 
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
@@ -1608,7 +1804,7 @@ const styles = StyleSheet.create({
 
   splitNote: { color: PC.textMuted, fontSize: 12, marginBottom: 24, lineHeight: 18 },
 
-  createBtn:         { backgroundColor: PC.accent, borderRadius: 14, height: 52, alignItems: 'center', justifyContent: 'center' },
+  createBtn:         { backgroundColor: PC.accent, borderRadius: 14, minHeight: 52, alignItems: 'center', justifyContent: 'center' },
   createBtnDisabled: { opacity: 0.6 },
   createBtnText:     { color: '#060A09', fontSize: 15, fontWeight: '700' },
 

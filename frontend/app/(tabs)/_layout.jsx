@@ -2,6 +2,8 @@ import { Tabs } from 'expo-router';
 import React from 'react';
 import { Ionicons } from '@expo/vector-icons';
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 import { PC, FONTS } from '@/constants/theme';
 import { useBadge } from '@/context/BadgeContext';
 
@@ -11,19 +13,29 @@ function TabIcon({ name, color, size }) {
 
 export default function TabLayout() {
   const { splitBadge } = useBadge();
+  const insets = useSafeAreaInsets();
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
+        // Bottom tabs default to 'none' — no transition whatsoever between
+        // tabs, which is what made tapping between them feel abrupt.
+        animation: 'shift',
         tabBarActiveTintColor: PC.accent,
         tabBarInactiveTintColor: PC.textMuted,
         tabBarStyle: {
           backgroundColor: PC.bgCard,
           borderTopColor: PC.border,
           borderTopWidth: 1,
-          height: 64,
-          paddingBottom: 10,
+          // 64 is the bar itself. React Navigation would normally add the
+          // bottom inset on top of that, but naming an explicit height
+          // replaces what it would have worked out — so under edge-to-edge the
+          // gesture bar sat on top of the labels and swallowed the lower part
+          // of every tab's hit area. Adding it back keeps the bar the same
+          // size and lifts it clear.
+          height: 64 + insets.bottom,
+          paddingBottom: 10 + insets.bottom,
           paddingTop: 8,
         },
         tabBarLabelStyle: {

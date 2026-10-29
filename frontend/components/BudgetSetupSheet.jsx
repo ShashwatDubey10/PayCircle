@@ -1,19 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import {
   View,
-  Text,
+  Pressable,
   Modal,
-  TextInput,
   ScrollView,
   StyleSheet,
-  TouchableOpacity,
   ActivityIndicator,
   KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
+import { Text, TextInput } from '@/components/text';
+import Touchable from '@/components/Touchable';
 import { Ionicons } from '@expo/vector-icons';
 
-import { PC } from '@/constants/theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { PC, touchSlop } from '@/constants/theme';
 import api from '@/services/api';
 import ErrorBox from '@/components/ErrorBox';
 
@@ -37,6 +37,7 @@ function getCatIcon(name = '') {
 //   budgetData   — { budget: number, categories: [{ category, limit?, amount? }] }
 //                  (also accepts currentBudget/currentCategories for backwards compat)
 export default function BudgetSetupSheet({ visible, onClose, onSaved, budgetData, currentBudget, currentCategories }) {
+  const insets = useSafeAreaInsets();
   const [overallInput, setOverallInput] = useState('');
   const [catRows,      setCatRows]      = useState([]);
   const [saving,       setSaving]       = useState(false);
@@ -129,12 +130,12 @@ export default function BudgetSetupSheet({ visible, onClose, onSaved, budgetData
   }
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal statusBarTranslucent visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView
         style={s.sheetOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-        <View style={s.setupSheet}>
+        behavior="padding">
+        <Pressable style={{ flex: 1 }} onPress={onClose} />
+        <View style={[s.setupSheet, { paddingBottom: insets.bottom + 32 }]}>
           <View style={s.sheetHandle} />
 
           {/* Header */}
@@ -143,9 +144,15 @@ export default function BudgetSetupSheet({ visible, onClose, onSaved, budgetData
               <Text style={s.setupSheetTitle}>Set Monthly Budget</Text>
               <Text style={s.setupSheetMonth}>{currentMonth}</Text>
             </View>
-            <TouchableOpacity style={s.setupSheetClose} onPress={onClose} disabled={saving}>
+            <Touchable
+              style={s.setupSheetClose}
+              onPress={onClose}
+              disabled={saving}
+              hitSlop={touchSlop(34)}
+              accessibilityRole="button"
+              accessibilityLabel="Close budget setup">
               <Ionicons name="close" size={20} color={PC.textPrimary} />
-            </TouchableOpacity>
+            </Touchable>
           </View>
 
           <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
@@ -192,19 +199,25 @@ export default function BudgetSetupSheet({ visible, onClose, onSaved, budgetData
                     keyboardType="numeric"
                     editable={!saving}
                   />
-                  <TouchableOpacity style={s.setupCatDelete} onPress={() => removeRow(row.id)} disabled={saving}>
+                  <Touchable
+                    style={s.setupCatDelete}
+                    onPress={() => removeRow(row.id)}
+                    disabled={saving}
+                    hitSlop={touchSlop(30)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Remove this category">
                     <Ionicons name="trash-outline" size={15} color={PC.negative} />
-                  </TouchableOpacity>
+                  </Touchable>
                 </View>
               ))}
-              <TouchableOpacity style={s.setupAddCatRow} onPress={addRow} disabled={saving}>
+              <Touchable style={s.setupAddCatRow} onPress={addRow} disabled={saving}>
                 <Ionicons name="add-circle-outline" size={18} color={PC.accent} />
                 <Text style={s.setupAddCatText}>Add Category</Text>
-              </TouchableOpacity>
+              </Touchable>
             </View>
 
             {/* Save */}
-            <TouchableOpacity
+            <Touchable tone="accent"
               style={[s.saveBtn, saving && { opacity: 0.6 }, { marginTop: 24, marginBottom: 8 }]}
               onPress={handleSave}
               disabled={saving}>
@@ -212,7 +225,7 @@ export default function BudgetSetupSheet({ visible, onClose, onSaved, budgetData
                 ? <ActivityIndicator size="small" color="#060A09" />
                 : <Text style={s.saveBtnText}>Save All</Text>
               }
-            </TouchableOpacity>
+            </Touchable>
             <View style={{ height: 8 }} />
           </ScrollView>
         </View>
@@ -250,7 +263,7 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: PC.bgInput, borderRadius: 12,
     borderWidth: 1, borderColor: PC.border,
-    paddingHorizontal: 14, height: 52, marginBottom: 12,
+    paddingHorizontal: 14, minHeight: 52, marginBottom: 12,
   },
   rupee:      { color: PC.textSecondary, fontSize: 18, fontWeight: '600', marginRight: 8 },
   modalInput: { flex: 1, color: PC.textPrimary, fontSize: 18, fontWeight: '500' },

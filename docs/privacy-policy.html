@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PayCircle Privacy Policy</title>
+<style>
+  :root { color-scheme: light; }
+  body {
+    margin: 0 auto; padding: 32px 20px 64px; max-width: 42rem;
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1a1a1a; background: #fff;
+  }
+  h1 { font-size: 1.6rem; margin: 0 0 .25em; }
+  h2 { font-size: 1.15rem; margin: 2em 0 .5em; }
+  h3 { font-size: 1rem; margin: 1.4em 0 .4em; }
+  .sub { color: #666; margin: 0 0 2em; }
+  ol, ul { padding-left: 1.3em; }
+  li { margin: .35em 0; }
+  code { background: #f3f3f3; padding: .1em .35em; border-radius: 4px; font-size: .9em; }
+  table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+  th, td { text-align: left; padding: .6em .7em; border-bottom: 1px solid #e5e5e5; vertical-align: top; }
+  th { background: #fafafa; font-weight: 600; }
+  .note { background: #fbf7e8; border-left: 3px solid #d9b441; padding: .9em 1em; margin: 1.5em 0; }
+  footer { margin-top: 3em; padding-top: 1.5em; border-top: 1px solid #e5e5e5; color: #666; font-size: .9rem; }
+</style>
+</head>
+<body>
+
+<h1>PayCircle Privacy Policy</h1>
+<p class="sub">PayCircle &middot; <code>com.paycircle.app</code> &middot; Last updated: 29 October 2026</p>
+
+<p>
+  PayCircle is an expense-splitting app for sharing costs within a group. This policy
+  explains what it collects, why, who it is shared with, and how to delete it. It covers
+  the PayCircle Android app and the service behind it.
+</p>
+
+<div class="note">
+  <strong>PayCircle does not move money.</strong> It records who paid what and works out who
+  owes whom. It never connects to a bank account, never processes a payment, and never asks
+  for card, bank or UPI PIN credentials. A UPI ID, if you choose to add one, is stored only
+  so the app can generate a QR code that <em>your own</em> UPI app can scan. The payment
+  happens entirely in that other app.
+</div>
+
+<h2>1. What we collect</h2>
+
+<h3>Information you give us</h3>
+<table>
+  <tr><th>Data</th><th>Why</th><th>Required?</th></tr>
+  <tr><td>Name</td><td>Shown to other members of your groups</td><td>Yes</td></tr>
+  <tr><td>Email address</td><td>Sign-in identifier and account recovery</td><td>Yes</td></tr>
+  <tr><td>Password</td><td>Authentication. Stored only as a bcrypt hash &mdash; we never store or see the original</td><td>Yes</td></tr>
+  <tr><td>Username</td><td>So friends can find and add you</td><td>Yes</td></tr>
+  <tr><td>UPI ID</td><td>Generating a payment QR code for people who owe you</td><td>No</td></tr>
+  <tr><td>Phone number, avatar</td><td>Profile display</td><td>No</td></tr>
+  <tr><td>Names of personal contacts you add</td><td>Tracking splits with people who do not use PayCircle</td><td>No</td></tr>
+</table>
+
+<h3>Information created by using the app</h3>
+<ul>
+  <li>Group expenses: amounts, descriptions, dates, categories, who paid, how it was split</li>
+  <li>Settlements and settle-up records</li>
+  <li>One-to-one splits between you and a friend or a personal contact</li>
+  <li>Your own personal transactions, budgets and private expense categories</li>
+  <li>Group membership and friend connections</li>
+</ul>
+
+<h3>Collected automatically</h3>
+<ul>
+  <li>
+    <strong>Notification token</strong> &mdash; only if you allow notifications. Used to
+    deliver alerts such as friend requests.
+  </li>
+  <li>
+    <strong>Server logs</strong> &mdash; our server records requests, which includes IP
+    address and the email address used on sign-in attempts, for security and debugging.
+  </li>
+</ul>
+
+<h2>2. What we do <em>not</em> collect</h2>
+<ul>
+  <li><strong>No advertising, analytics or tracking of any kind.</strong> The app contains no advertising, analytics or attribution SDKs, and we do not build advertising profiles.</li>
+  <li><strong>No access to your device's contact list.</strong> &ldquo;Personal contacts&rdquo; in PayCircle are names you type in yourself.</li>
+  <li><strong>No photos.</strong> The camera is used only to scan a UPI QR code. The image is decoded on your device, never captured, stored or transmitted.</li>
+  <li><strong>No location data.</strong></li>
+  <li><strong>No bank or card credentials.</strong></li>
+</ul>
+
+<h2>3. How your information is shared</h2>
+
+<h3>With other PayCircle users</h3>
+<p>
+  This is the point of the app, so it is worth being explicit. Members of a group you join
+  can see your name, the expenses you add, what you paid, your share of each expense and your
+  balance with them. Friends you connect with can see one-to-one splits between you. If you
+  add a UPI ID, people who owe you can see it in the payment QR code.
+</p>
+<p>
+  Your personal transactions, budgets and private expense categories are <strong>never</strong>
+  visible to anyone else.
+</p>
+
+<h3>With service providers</h3>
+<table>
+  <tr><th>Provider</th><th>Purpose</th><th>What it receives</th></tr>
+  <tr><td>MongoDB Atlas</td><td>Database hosting</td><td>All stored data</td></tr>
+  <tr><td>Render</td><td>Application hosting</td><td>All data in transit, server logs</td></tr>
+  <tr><td>Expo (Expo Application Services)</td><td>Delivering push notifications</td><td>Your notification token and the text of the notification, which may include another user's name</td></tr>
+  <tr><td>Google Play</td><td>App distribution</td><td>Governed by Google's own privacy policy</td></tr>
+</table>
+
+<p>
+  <strong>We do not sell your data, and we do not share it for advertising.</strong> We
+  disclose information outside the above only where legally required.
+</p>
+
+<h2>4. Security</h2>
+<ul>
+  <li>All traffic between the app and our server uses HTTPS.</li>
+  <li>Passwords are hashed with bcrypt and are never stored in readable form.</li>
+  <li>Sessions use signed tokens that expire after seven days.</li>
+  <li>Access to the database is restricted to the application.</li>
+</ul>
+<p>
+  No system is perfectly secure, and we cannot guarantee absolute security. Please use a
+  strong password that you do not reuse elsewhere.
+</p>
+
+<h2>5. Retention and deletion</h2>
+<p>
+  We keep your data while your account exists. You can delete your account at any time from
+  <strong>Profile &rarr; Delete Account</strong> in the app, or by emailing us.
+</p>
+<p>
+  Because PayCircle records shared expenses, deletion treats private and shared data
+  differently: everything that is yours alone is deleted permanently, while records that
+  other people's balances depend on are kept with your identity removed and shown as
+  &ldquo;Deleted user&rdquo;. The full breakdown is on our
+  <a href="https://pay-circle-minor-project.github.io/PayCircle/account-deletion.html">account deletion page</a>.
+</p>
+<p>
+  Encrypted database backups may retain copies for up to 30 days before expiring. Server logs
+  are retained by our hosting provider on their own schedule.
+</p>
+
+<h2>6. Your rights</h2>
+<p>You can, at any time:</p>
+<ul>
+  <li>View and edit your profile in the app</li>
+  <li>Delete individual transactions, contacts and splits</li>
+  <li>Delete your entire account</li>
+  <li>Turn off notifications in your device settings</li>
+  <li>Request a copy of the data we hold about you, by email</li>
+</ul>
+
+<h2>7. Children</h2>
+<p>
+  PayCircle is not directed at children and is not intended for anyone under 18. We do not
+  knowingly collect information from children. If you believe a child has created an account,
+  contact us and we will delete it.
+</p>
+
+<h2>8. Changes to this policy</h2>
+<p>
+  We may update this policy. The date at the top always reflects the current version, and
+  material changes will be announced in the app.
+</p>
+
+<h2>9. Contact</h2>
+<p>
+  Questions, data requests or privacy concerns: <strong><a href="mailto:iakshatdubey@gmail.com">iakshatdubey@gmail.com</a></strong>
+</p>
+
+<footer>
+  PayCircle &middot; <a href="https://pay-circle-minor-project.github.io/PayCircle/account-deletion.html">Delete your account</a>
+</footer>
+
+</body>
+</html>

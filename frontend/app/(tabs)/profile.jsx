@@ -1,17 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
-  Text,
   Modal,
   Platform,
+  Keyboard,
   ScrollView,
   StyleSheet,
-  TouchableOpacity,
   ActivityIndicator,
-  TextInput,
   RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Text, TextInput } from '@/components/text';
+import Touchable from '@/components/Touchable';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
@@ -145,11 +145,12 @@ const MODAL_CONTENT = {
 // ─── InfoModal ────────────────────────────────────────────────────────────────
 
 function InfoModal({ content, onClose }) {
+  const insets = useSafeAreaInsets();
   if (!content) return null;
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+    <Modal statusBarTranslucent visible transparent animationType="slide" onRequestClose={onClose}>
       <View style={modalStyles.overlay}>
-        <View style={modalStyles.sheet}>
+        <View style={[modalStyles.sheet, { paddingBottom: insets.bottom + 28 }]}>
           {/* Accent strip */}
           <View style={modalStyles.accentStrip} />
           <View style={modalStyles.handle} />
@@ -164,7 +165,10 @@ function InfoModal({ content, onClose }) {
             <Text style={modalStyles.title}>{content.title}</Text>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 0 }}>
+          {/* No `flex: 0` here — in RN that means flexShrink: 0, so the list kept
+              its full content height, overflowed the sheet's maxHeight and the
+              `overflow: hidden` clipped the Close button away. */}
+          <ScrollView showsVerticalScrollIndicator={false}>
             {content.items.map((item, i) => (
               <View key={i} style={modalStyles.item}>
                 {item.icon ? (
@@ -188,9 +192,9 @@ function InfoModal({ content, onClose }) {
             <View style={{ height: 24 }} />
           </ScrollView>
 
-          <TouchableOpacity style={modalStyles.closeBtn} onPress={onClose} activeOpacity={0.8}>
+          <Touchable tone="accent" style={modalStyles.closeBtn} onPress={onClose}>
             <Text style={modalStyles.closeBtnText}>Close</Text>
-          </TouchableOpacity>
+          </Touchable>
         </View>
       </View>
     </Modal>
@@ -280,7 +284,7 @@ const modalStyles = StyleSheet.create({
     marginTop: 16,
     backgroundColor: PC.accent,
     borderRadius: 14,
-    height: 50,
+    minHeight: 50,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -292,6 +296,18 @@ const modalStyles = StyleSheet.create({
 const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
 
 export default function ProfileScreen() {
+  const insets = useSafeAreaInsets();
+
+  // Measured rather than inferred: KeyboardAvoidingView left the sheets lifted
+  // after dismissal under edge-to-edge. This is zero whenever the keyboard is
+  // down, with no reset to go wrong.
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', e =>
+      setKeyboardHeight(e.endCoordinates?.height ?? 0));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
   const { user, logout, updateUser } = useAuth();
   const router = useRouter();
 
@@ -318,6 +334,12 @@ export default function ProfileScreen() {
   const [upiInput,     setUpiInput]     = useState('');
   const [upiLoading,   setUpiLoading]   = useState(false);
   const [upiError,     setUpiError]     = useState('');
+
+  // Delete account modal
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletePassword,  setDeletePassword]  = useState('');
+  const [deleteLoading,   setDeleteLoading]   = useState(false);
+  const [deleteError,     setDeleteError]     = useState('');
 
   // ── Fetch stats ───────────────────────────────────────────────────────────
   const fetchStats = useCallback(async () => {
@@ -430,6 +452,31 @@ export default function ProfileScreen() {
     setShowSignOutAlert(true);
   }
 
+  // Account deletion is irreversible, so the password is re-entered here rather
+  // than trusting an unlocked phone. The screen unmounts on success (RootGuard
+  // sees user -> null), so the loading flag is only cleared on failure.
+  async function handleDeleteAccount() {
+    if (!deletePassword) { setDeleteError('Enter your password to confirm.'); return; }
+    setDeleteLoading(true);
+    setDeleteError('');
+    try {
+      await api.delete('/api/auth/me', { data: { password: deletePassword } });
+      setShowDeleteModal(false);
+      setDeletePassword('');
+      await logout();
+    } catch (err) {
+      setDeleteError(err.message || 'Could not delete your account. Please try again.');
+      setDeleteLoading(false);
+    }
+  }
+
+  function closeDeleteModal() {
+    if (deleteLoading) return;
+    setShowDeleteModal(false);
+    setDeletePassword('');
+    setDeleteError('');
+  }
+
   async function confirmSignOut() {
     setShowSignOutAlert(false);
     setSigningOut(true);
@@ -470,28 +517,26 @@ export default function ProfileScreen() {
           <Text style={styles.userEmail}>{user?.email ?? '—'}</Text>
 
           {/* Username — always visible, always tappable */}
-          <TouchableOpacity
+          <Touchable
             style={styles.usernameRow}
-            onPress={() => { setUsernameInput(user?.username || ''); setShowUsernameModal(true); }}
-            activeOpacity={0.7}>
+            onPress={() => { setUsernameInput(user?.username || ''); setShowUsernameModal(true); }}>
             <Ionicons name="at" size={13} color={user?.username ? PC.accent : PC.warning} />
             <Text style={[styles.usernameDisplay, !user?.username && styles.usernameUnset]}>
               {user?.username ? user.username : 'Set username'}
             </Text>
             <Ionicons name="pencil-outline" size={12} color={PC.textMuted} />
-          </TouchableOpacity>
+          </Touchable>
 
           {/* UPI ID — always visible, tappable to set/change */}
-          <TouchableOpacity
+          <Touchable
             style={[styles.usernameRow, { marginTop: 6, borderColor: user?.upiId ? PC.positive : PC.border }]}
-            onPress={() => { setUpiInput(user?.upiId || ''); setShowUpiModal(true); }}
-            activeOpacity={0.7}>
+            onPress={() => { setUpiInput(user?.upiId || ''); setShowUpiModal(true); }}>
             <Ionicons name="qr-code-outline" size={13} color={user?.upiId ? PC.positive : PC.textMuted} />
             <Text style={[styles.usernameDisplay, { color: user?.upiId ? PC.positive : PC.textMuted }, !user?.upiId && styles.usernameUnset]}>
               {user?.upiId ? user.upiId : 'Add UPI ID'}
             </Text>
             <Ionicons name="pencil-outline" size={12} color={PC.textMuted} />
-          </TouchableOpacity>
+          </Touchable>
 
           {user?.phone ? (
             <Text style={styles.userPhone}>{user.phone}</Text>
@@ -538,16 +583,15 @@ export default function ProfileScreen() {
             <View style={styles.settingsCard}>
               {group.items.map((item, ii) => (
                 <View key={item.id}>
-                  <TouchableOpacity
+                  <Touchable
                     style={styles.settingsRow}
-                    activeOpacity={0.7}
                     onPress={() => handleSettingsPress(item.id)}>
                     <View style={styles.settingsIconBox}>
                       <Ionicons name={item.icon} size={18} color={PC.textSecondary} />
                     </View>
                     <Text style={styles.settingsLabel}>{item.label}</Text>
                     <Ionicons name="chevron-forward" size={15} color={PC.textMuted} />
-                  </TouchableOpacity>
+                  </Touchable>
                   {ii < group.items.length - 1 && <View style={styles.settingsDivider} />}
                 </View>
               ))}
@@ -558,9 +602,8 @@ export default function ProfileScreen() {
         {/* ── Sign Out ── */}
         <View style={styles.settingsGroup}>
           <View style={styles.settingsCard}>
-            <TouchableOpacity
+            <Touchable
               style={styles.settingsRow}
-              activeOpacity={0.7}
               onPress={handleSignOut}
               disabled={signingOut}>
               <View style={styles.settingsIconBox}>
@@ -570,7 +613,22 @@ export default function ProfileScreen() {
                 }
               </View>
               <Text style={[styles.settingsLabel, { color: PC.negative }]}>Sign Out</Text>
-            </TouchableOpacity>
+            </Touchable>
+          </View>
+        </View>
+
+        {/* ── Delete Account ── */}
+        <View style={styles.settingsGroup}>
+          <View style={styles.settingsCard}>
+            <Touchable
+              style={styles.settingsRow}
+              onPress={() => setShowDeleteModal(true)}
+              disabled={signingOut}>
+              <View style={styles.settingsIconBox}>
+                <Ionicons name="trash-outline" size={18} color={PC.negative} />
+              </View>
+              <Text style={[styles.settingsLabel, { color: PC.negative }]}>Delete Account</Text>
+            </Touchable>
           </View>
         </View>
 
@@ -601,9 +659,9 @@ export default function ProfileScreen() {
       <AppToast toast={toast} />
 
       {/* ── Set Username Modal ── */}
-      <Modal visible={showUsernameModal} transparent animationType="slide" onRequestClose={() => { setShowUsernameModal(false); setUsernameError(''); }}>
-        <View style={modalStyles.overlay}>
-          <View style={modalStyles.sheet}>
+      <Modal statusBarTranslucent visible={showUsernameModal} transparent animationType="slide" onRequestClose={() => { setShowUsernameModal(false); setUsernameError(''); }}>
+        <View style={[modalStyles.overlay, { paddingBottom: keyboardHeight }]}>
+          <View style={[modalStyles.sheet, { paddingBottom: keyboardHeight > 0 ? 24 : insets.bottom + 28 }]}>
             <View style={modalStyles.handle} />
             <Text style={modalStyles.title}>{user?.username ? 'Change Username' : 'Set Username'}</Text>
             <Text style={[modalStyles.itemBody, { marginBottom: 16 }]}>
@@ -624,28 +682,28 @@ export default function ProfileScreen() {
                 autoCapitalize="none"
                 autoCorrect={false}
                 editable={!usernameLoading}
+                maxLength={20}
               />
             </View>
-            <TouchableOpacity
+            <Touchable tone="accent"
               style={[modalStyles.closeBtn, usernameLoading && { opacity: 0.6 }]}
               onPress={handleSetUsername}
-              disabled={usernameLoading}
-              activeOpacity={0.85}>
+              disabled={usernameLoading}>
               {usernameLoading
                 ? <ActivityIndicator color="#060A09" size="small" />
                 : <Text style={modalStyles.closeBtnText}>Save Username</Text>
               }
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.cancelBtn} onPress={() => { setShowUsernameModal(false); setUsernameError(''); }} disabled={usernameLoading}>
+            </Touchable>
+            <Touchable style={styles.cancelBtn} onPress={() => { setShowUsernameModal(false); setUsernameError(''); }} disabled={usernameLoading}>
               <Text style={styles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
+            </Touchable>
           </View>
         </View>
       </Modal>
       {/* ── Set UPI ID Modal ── */}
-      <Modal visible={showUpiModal} transparent animationType="slide" onRequestClose={() => { setShowUpiModal(false); setUpiError(''); }}>
-        <View style={modalStyles.overlay}>
-          <View style={modalStyles.sheet}>
+      <Modal statusBarTranslucent visible={showUpiModal} transparent animationType="slide" onRequestClose={() => { setShowUpiModal(false); setUpiError(''); }}>
+        <View style={[modalStyles.overlay, { paddingBottom: keyboardHeight }]}>
+          <View style={[modalStyles.sheet, { paddingBottom: keyboardHeight > 0 ? 24 : insets.bottom + 28 }]}>
             <View style={modalStyles.handle} />
             <Text style={modalStyles.title}>{user?.upiId ? 'Change UPI ID' : 'Add UPI ID'}</Text>
             <Text style={[modalStyles.itemBody, { marginBottom: 16 }]}>
@@ -666,21 +724,66 @@ export default function ProfileScreen() {
                 autoCapitalize="none"
                 autoCorrect={false}
                 editable={!upiLoading}
+                maxLength={64}
               />
             </View>
-            <TouchableOpacity
+            <Touchable tone="accent"
               style={[modalStyles.closeBtn, upiLoading && { opacity: 0.6 }]}
               onPress={handleSetUpiId}
-              disabled={upiLoading}
-              activeOpacity={0.85}>
+              disabled={upiLoading}>
               {upiLoading
                 ? <ActivityIndicator color="#060A09" size="small" />
                 : <Text style={modalStyles.closeBtnText}>Save UPI ID</Text>
               }
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.cancelBtn} onPress={() => { setShowUpiModal(false); setUpiError(''); }} disabled={upiLoading}>
+            </Touchable>
+            <Touchable style={styles.cancelBtn} onPress={() => { setShowUpiModal(false); setUpiError(''); }} disabled={upiLoading}>
               <Text style={styles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
+            </Touchable>
+          </View>
+        </View>
+      </Modal>
+      {/* ── Delete Account Modal ── */}
+      <Modal statusBarTranslucent visible={showDeleteModal} transparent animationType="slide" onRequestClose={closeDeleteModal}>
+        <View style={[modalStyles.overlay, { paddingBottom: keyboardHeight }]}>
+          <View style={[modalStyles.sheet, { paddingBottom: keyboardHeight > 0 ? 24 : insets.bottom + 28 }]}>
+            <View style={modalStyles.handle} />
+            <Text style={modalStyles.title}>Delete Account</Text>
+            <Text style={[modalStyles.itemBody, { marginBottom: 10 }]}>
+              This cannot be undone. Your personal transactions, budgets, private
+              categories and friend connections are deleted permanently.
+            </Text>
+            <Text style={[modalStyles.itemBody, { marginBottom: 16 }]}>
+              Shared records stay: expenses, settlements and splits you took part in
+              remain in other people’ groups so their balances still add up, but your
+              name and details are removed from them.
+            </Text>
+            <ErrorBox message={deleteError} />
+            <View style={styles.usernameInputBox}>
+              <Ionicons name="lock-closed-outline" size={17} color={PC.textMuted} style={{ marginRight: 8 }} />
+              <TextInput
+                style={styles.usernameInput}
+                placeholder="Confirm your password"
+                placeholderTextColor={PC.textMuted}
+                value={deletePassword}
+                onChangeText={(v) => { setDeletePassword(v); setDeleteError(''); }}
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!deleteLoading}
+              />
+            </View>
+            <Touchable tone="accent"
+              style={[modalStyles.closeBtn, { backgroundColor: PC.negative }, deleteLoading && { opacity: 0.6 }]}
+              onPress={handleDeleteAccount}
+              disabled={deleteLoading}>
+              {deleteLoading
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Text style={[modalStyles.closeBtnText, { color: '#fff' }]}>Delete My Account</Text>
+              }
+            </Touchable>
+            <Touchable style={styles.cancelBtn} onPress={closeDeleteModal} disabled={deleteLoading}>
+              <Text style={styles.cancelText}>Cancel</Text>
+            </Touchable>
           </View>
         </View>
       </Modal>
@@ -835,7 +938,7 @@ const styles = StyleSheet.create({
     borderColor: PC.border,
     borderRadius: 12,
     paddingHorizontal: 14,
-    height: 50,
+    minHeight: 50,
     marginBottom: 16,
   },
   usernameInput: { flex: 1, color: PC.textPrimary, fontSize: 15 },

@@ -1,5 +1,7 @@
 import React from 'react';
-import { TouchableOpacity, Text, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
+import { Text } from '@/components/text';
+import Touchable from '@/components/Touchable';
 import { Ionicons } from '@expo/vector-icons';
 import { PC } from '@/constants/theme';
 import { openUPIPayment } from '@/utils/upiPayment';
@@ -13,10 +15,10 @@ export default function PayWithUPIButton({ upiId, name, amount, note }) {
   const handlePress = () => openUPIPayment({ upiId, name, amount, note });
 
   return (
-    <TouchableOpacity style={s.btn} onPress={handlePress} activeOpacity={0.8}>
+    <Touchable tone="accent" style={s.btn} onPress={handlePress}>
       <Ionicons name="logo-google" size={16} color="#060A09" />
       <Text style={s.label}>Pay ₹{amount} via UPI</Text>
-    </TouchableOpacity>
+    </Touchable>
   );
 }
 

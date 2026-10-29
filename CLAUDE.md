@@ -17,10 +17,24 @@ npm start        # production (node directly)
 
 **Frontend** (run from `frontend/`):
 ```bash
-npx expo start   # starts Metro bundler; scan QR code in Expo Go on device
+npx expo start            # Metro bundler — open in the installed dev build
+npx expo run:android      # build + install the dev build (first run, or after native changes)
+npx expo prebuild --clean # regenerate android/ after editing app.json
 ```
 
-> `expo run:android` / `expo run:ios` require the Android SDK / Xcode and are not used for development — use Expo Go instead.
+> **This project uses a development build, not Expo Go.** Expo Go is a prebuilt sandbox that
+> ignores the native configuration in `app.json` — `edgeToEdgeEnabled`,
+> `predictiveBackGestureEnabled`, `windowSoftInputMode`, and the splash/notification plugin
+> settings only take effect in a real build. Safe-area, keyboard and status-bar behaviour cannot
+> be tested accurately in Expo Go, and push notifications are disabled there entirely (see
+> `IS_EXPO_GO` in `app/_layout.jsx`).
+>
+> Rebuild (`expo run:android`) only when native config or a native dependency changes. Ordinary
+> JS/JSX edits hot-reload over Metro exactly as before.
+>
+> Requires **JDK 17** (not 20+ — Gradle fails) and the Android SDK via Android Studio, with
+> `ANDROID_HOME` set. `android/` is generated and gitignored; never edit it by hand — change
+> `app.json` and re-run prebuild.
 
 ## Architecture Overview
 

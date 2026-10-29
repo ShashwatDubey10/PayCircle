@@ -35,4 +35,7 @@ build/
 .planning/
 
 # ── Project docs ──────────────────────────────────────────────
-docs/
+# docs/ is tracked on purpose. It holds the PRD, the MVP spec, the bug list,
+# the Play Store release guide, and the privacy-policy and account-deletion
+# pages Play requires a public URL for — none of which exist anywhere else.
+# The whole directory is under 2 MB.

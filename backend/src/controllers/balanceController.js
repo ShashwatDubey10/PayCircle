@@ -1,12 +1,13 @@
 const Group                      = require('../models/Group');
-const { calculateGroupBalances } = require('../services/balanceService');
+const { calculateGroupBalances, calculateBalancesForGroups } = require('../services/balanceService');
 const asyncHandler               = require('../utils/asyncHandler');
 const logger                     = require('../utils/logger');
 
 // GET /api/groups/:id/balances
 const getGroupBalances = asyncHandler(async (req, res) => {
   logger.debug('BALANCE', `Computing balances for group`, { groupId: req.params.id, userId: req.user._id });
-  const result = await calculateGroupBalances(req.params.id);
+  // isMember already loaded and authorised the group; pass the document.
+  const result = await calculateGroupBalances(req.group ?? req.params.id);
   res.json({ success: true, ...result });
 });
 
@@ -18,8 +19,9 @@ const getUserSummary = asyncHandler(async (req, res) => {
   let totalOwed = 0, totalToReceive = 0;
   const breakdown = [];
 
+  const summaryBalances = await calculateBalancesForGroups(groups);
   for (const group of groups) {
-    const { members } = await calculateGroupBalances(group._id);
+    const members = summaryBalances.get(group._id.toString())?.members ?? [];
     const mine = members.find(m => m.user.id === userId);
     if (!mine) continue;
 
