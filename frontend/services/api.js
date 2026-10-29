@@ -16,7 +16,12 @@ export const setUnauthorizedHandler = (fn) => { onUnauthorized = fn; };
 // out is retried once with room for the boot, and anything listening is told, so
 // the UI can say what is happening instead of showing a generic failure.
 const REQUEST_TIMEOUT = 10000;
-const WAKE_TIMEOUT    = 60000;
+// Measured against the deployed Render free tier on 29 Oct 2026: a genuine
+// cold start took 62.5s, which the previous 60s budget would have missed by
+// two seconds — so the retry meant to survive a cold boot timed out as well,
+// and the first launch of the day failed anyway. 90s leaves real margin.
+// This makes the wait survivable, not short; an always-on tier is the fix.
+const WAKE_TIMEOUT    = 90000;
 
 let onServerWaking = null;
 let wakingCount    = 0;
