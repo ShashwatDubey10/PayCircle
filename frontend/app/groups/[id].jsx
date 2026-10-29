@@ -240,6 +240,9 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
               value={notes}
               onChangeText={setNotes}
               multiline
+              // The models cap notes at 200. Without this the field accepted
+              // more and the save failed on the server.
+              maxLength={200}
               editable={!loading}
             />
           </View>
@@ -693,10 +696,13 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
     setLoading(true);
     setError('');
     try {
-      const today = new Date().toISOString().split('T')[0];
+      // A full timestamp, not a YYYY-MM-DD date. A date-only string is parsed
+      // as UTC midnight, which in IST is 05:30 the same morning — so every row
+      // displayed that time, same-day rows had no real order between them, and
+      // anything near a month boundary landed in the wrong month.
       const { data } = await api.post(`/api/groups/${groupId}/settlements`, {
         fromUserId: fromId, toUserId: toId, amount: amt,
-        date: today, notes: notes.trim(),
+        date: new Date().toISOString(), notes: notes.trim(),
       });
 
       const receiver = members.find(m => m.id === toId || m.id?.toString() === toId);
@@ -923,6 +929,9 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
               value={notes}
               onChangeText={setNotes}
               multiline
+              // The models cap notes at 200. Without this the field accepted
+              // more and the save failed on the server.
+              maxLength={200}
               editable={!loading}
             />
           </View>
@@ -1094,6 +1103,26 @@ export default function GroupDetailScreen() {
   function handleSettlementRecorded() {
     // Refresh balances after a settlement
     api.get(`/api/groups/${id}/balances`).then(r => setBalances(r.data)).catch(() => {});
+  }
+
+  // Removing an expense is how somebody gets out from under a charge another
+  // member recorded against them — there is no other route, since the amount of
+  // an exact split cannot be edited at all.
+  async function handleExpenseDelete() {
+    const { exp } = editSheet;
+    try {
+      await api.delete(`/api/groups/${id}/expenses/${exp._id}`);
+      setExpenses(prev => prev.filter(e => e._id !== exp._id));
+      setEditSheet(null);
+      setError('');
+      // Everyone's position moves, so this cannot wait for the next focus.
+      api.get(`/api/groups/${id}/balances`).then(r => setBalances(r.data)).catch(() => {});
+    } catch (err) {
+      // Left open deliberately: the sheet is where the error belongs, and the
+      // expense is still there to try again on.
+      setError(err?.message || 'Could not remove the expense.');
+      setEditSheet(null);
+    }
   }
 
   async function handleEditSave({ amount, category }) {
@@ -1275,7 +1304,16 @@ export default function GroupDetailScreen() {
                     <Animated.View style={{ maxWidth: '78%' }} layout={LinearTransition.duration(200)}>
                       <Touchable
                         onPress={() => setExpandedExpId(isExpanded ? null : exp._id)}
-                        onLongPress={() => setEditSheet({ exp, canEditAmount: paidByMe })}
+                        onLongPress={() => setEditSheet({
+                          exp,
+                          canEditAmount: paidByMe,
+                          // Mirrors the API: the payer, whoever recorded it, or
+                          // the group admin. Anyone else sees the sheet without
+                          // the remove action.
+                          canDelete: paidByMe
+                            || (exp.createdBy?._id ?? exp.createdBy)?.toString() === user._id?.toString()
+                            || isAdmin,
+                        })}
                         delayLongPress={350}
                         style={[styles.expBubble, paidByMe ? styles.expBubbleMine : styles.expBubbleFriend]}>
 
@@ -1538,9 +1576,11 @@ export default function GroupDetailScreen() {
         visible={editSheet !== null}
         onClose={() => setEditSheet(null)}
         canEditAmount={editSheet?.canEditAmount ?? false}
+        canDelete={editSheet?.canDelete ?? false}
         initialAmount={editSheet?.exp?.amount}
         initialCategory={editSheet ? (myTags[editSheet.exp._id] || '') : ''}
         onSave={handleEditSave}
+        onDelete={handleExpenseDelete}
       />
     </SafeAreaView>
   );

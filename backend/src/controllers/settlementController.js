@@ -1,3 +1,4 @@
+const mongoose     = require('mongoose');
 const Settlement   = require('../models/Settlement');
 const Group        = require('../models/Group');
 const asyncHandler = require('../utils/asyncHandler');
@@ -18,7 +19,9 @@ const recordSettlement = asyncHandler(async (req, res) => {
   // balance permanently unpayable. calculateGroupBalances reports anyone who
   // appears in the ledger and is not square, so they can be settled with and
   // nobody outside the group can be.
-  const { members: ledger } = await calculateGroupBalances(group._id);
+  // `group` is already loaded by the isMember middleware — passing the document
+  // rather than its id saves a findById on every settlement.
+  const { members: ledger } = await calculateGroupBalances(group);
   const ledgerIds = new Set([
     ...group.members.map(m => m.toString()),
     ...ledger.map(m => m.user.id),
@@ -33,7 +36,14 @@ const recordSettlement = asyncHandler(async (req, res) => {
   const settleDate = new Date(date);
   if (isNaN(settleDate.getTime()))
     return res.status(400).json({ success: false, message: 'Invalid date' });
-  if (settleDate > new Date())
+  // A day of slack, not zero — the same allowance recordExpense makes, and for
+  // the same reason: the client sends its own clock, so a strict comparison
+  // refuses an honest "today" from any timezone ahead of the server, and
+  // refuses ordinary clock skew too. This mattered the moment the client began
+  // sending a real timestamp instead of a date-only string, which was always
+  // safely in the past.
+  const maxSettleDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  if (settleDate > maxSettleDate)
     return res.status(400).json({ success: false, message: 'Settlement date cannot be in the future' });
 
   const amt = parseFloat(amount);
@@ -115,9 +125,16 @@ const getAllGroupSettlements = asyncHandler(async (req, res) => {
     .populate('toUserId',   'name email')
     .sort({ date: -1 });
 
+  // Which originals already carry a reversal, so a client can tell what is
+  // still reversible without asking per row.
+  const reversedIds = new Set(
+    settlements.filter(s => s.reversalOf).map(s => s.reversalOf.toString())
+  );
+
   const enriched = settlements.map(s => ({
     ...s.toObject(),
-    groupName: nameById.get(s.groupId.toString()) ?? null,
+    groupName:  nameById.get(s.groupId.toString()) ?? null,
+    isReversed: reversedIds.has(s._id.toString()),
   }));
 
   logger.debug('SETTLE', `Fetched ${enriched.length} settlements across ${groups.length} groups`, {
@@ -126,4 +143,63 @@ const getAllGroupSettlements = asyncHandler(async (req, res) => {
   res.json({ success: true, count: enriched.length, settlements: enriched });
 });
 
-module.exports = { recordSettlement, getSettlements, getAllGroupSettlements };
+// POST /api/groups/:id/settlements/:settlementId/reverse
+// A settlement is self-attested: whoever records it simply claims the money
+// moved, and until now nothing could undo that claim. The person recorded as
+// *receiving* it is the one who knows whether it actually arrived, so they can
+// reverse it; the group admin can too, as the fallback when that person has
+// left or will not act. The payer deliberately cannot undo their own claim.
+const reverseSettlement = asyncHandler(async (req, res) => {
+  const group = req.group;
+  const { settlementId } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(settlementId))
+    return res.status(400).json({ success: false, message: 'Invalid settlementId' });
+
+  const original = await Settlement.findById(settlementId);
+  if (!original || original.groupId.toString() !== group._id.toString())
+    return res.status(404).json({ success: false, message: 'Settlement not found in this group' });
+
+  if (original.reversalOf)
+    return res.status(400).json({ success: false, message: 'A reversal cannot itself be reversed' });
+
+  const already = await Settlement.findOne({ reversalOf: original._id });
+  if (already)
+    return res.status(409).json({ success: false, message: 'This settlement has already been reversed' });
+
+  const me      = req.user._id.toString();
+  const isPayee = original.toUserId.toString() === me;
+  const isAdmin = group.adminId.toString() === me;
+  if (!isPayee && !isAdmin)
+    return res.status(403).json({
+      success: false,
+      message: 'Only the person who received the money, or the group admin, can reverse a settlement',
+    });
+
+  const reversal = await Settlement.create({
+    groupId:    group._id,
+    fromUserId: original.fromUserId,
+    toUserId:   original.toUserId,
+    amount:     original.amount,
+    date:       new Date(),
+    notes:      `Reversal of settlement on ${original.date.toISOString().slice(0, 10)}`,
+    reversalOf: original._id,
+    reversedBy: req.user._id,
+  });
+
+  await reversal.populate([
+    { path: 'fromUserId', select: 'name email' },
+    { path: 'toUserId',   select: 'name email' },
+  ]);
+
+  logger.info('SETTLE', `Settlement reversed: \u20b9${original.amount} in group "${group.name}"`, {
+    groupId: group._id,
+    settlementId: original._id,
+    reversalId: reversal._id,
+    by: req.user._id,
+  });
+
+  res.status(201).json({ success: true, reversal });
+});
+
+module.exports = { recordSettlement, getSettlements, getAllGroupSettlements, reverseSettlement };

@@ -24,6 +24,7 @@ import api from '@/services/api';
 import { getFriends, getPendingRequests } from '@/services/friends';
 import { getAllDirectSettlements, getAllDirectBalances } from '@/services/directSplit';
 import { getContacts } from '@/services/contacts';
+import useModalHandoff from '@/utils/useModalHandoff';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -383,6 +384,8 @@ export default function GroupsScreen() {
   const [error,              setError]              = useState('');
   const [showGroupModal,     setShowGroupModal]     = useState(false);
   const [showActionSheet,    setShowActionSheet]    = useState(false);
+  // Android needs one modal window gone before the next will appear.
+  const handoff = useModalHandoff();
   const [showContactPicker,  setShowContactPicker]  = useState(false);
   const [pickerContacts,     setPickerContacts]     = useState([]);
   const [pickerLoading,      setPickerLoading]      = useState(false);
@@ -537,7 +540,9 @@ export default function GroupsScreen() {
   async function openContactPicker() {
     setShowActionSheet(false);
     setPickerLoading(true);
-    setShowContactPicker(true);
+    handoff(() => setShowContactPicker(true));
+    // The fetch runs while the action sheet is still sliding away, so the
+    // picker often has its list ready by the time it appears.
     try {
       const list = await getContacts();
       setPickerContacts(list);
@@ -836,7 +841,10 @@ export default function GroupsScreen() {
 
               <Touchable
                 style={styles.actionRow}
-                onPress={() => { setShowActionSheet(false); setShowGroupModal(true); }}>
+                onPress={() => {
+                  setShowActionSheet(false);
+                  handoff(() => setShowGroupModal(true));
+                }}>
                 <View style={styles.actionIconBox}>
                   <Ionicons name="people-outline" size={22} color={PC.textSecondary} />
                 </View>

@@ -3,7 +3,7 @@ const Group      = require('../models/Group');
 const User       = require('../models/User');
 const asyncHandler = require('../utils/asyncHandler');
 const logger       = require('../utils/logger');
-const { calculateGroupBalances } = require('../services/balanceService');
+const { calculateGroupBalances, calculateBalancesForGroups } = require('../services/balanceService');
 const { areFriends } = require('./friendController');
 
 const VALID_TYPES = ['Roommates', 'Trip', 'Mess', 'Miscellaneous'];
@@ -48,21 +48,23 @@ const getUserGroups = asyncHandler(async (req, res) => {
     // calculateGroupBalances already produces each group's simplified debt list,
     // so returning it on request saves the client one follow-up call per group.
     const withDebts = req.query.includeDebts === 'true';
-    const enriched = await Promise.all(
-      groups.map(async (g) => {
-        try {
-          const { members, debts } = await calculateGroupBalances(g._id);
-          const mine = members.find(m => m.user.id === userId);
-          return {
-            ...g.toObject(),
-            myBalance: mine?.netBalance ?? 0,
-            ...(withDebts ? { debts } : {}),
-          };
-        } catch {
-          return { ...g.toObject(), myBalance: 0, ...(withDebts ? { debts: [] } : {}) };
-        }
-      })
-    );
+    // Every group's balances in one pass. The documents are already loaded, so
+    // this costs three queries for the whole list rather than four per group.
+    let balancesByGroup;
+    try {
+      balancesByGroup = await calculateBalancesForGroups(groups);
+    } catch {
+      balancesByGroup = new Map();
+    }
+    const enriched = groups.map((g) => {
+      const b = balancesByGroup.get(g._id.toString());
+      const mine = b?.members.find(m => m.user.id === userId);
+      return {
+        ...g.toObject(),
+        myBalance: mine?.netBalance ?? 0,
+        ...(withDebts ? { debts: b?.debts ?? [] } : {}),
+      };
+    });
     return res.json({ success: true, count: enriched.length, groups: enriched });
   }
 
@@ -166,7 +168,7 @@ const removeMember = asyncHandler(async (req, res) => {
   // Their expenses and settlements stay in the ledger after they leave, so
   // removing someone mid-balance strands money: recordSettlement refuses a
   // non-member, which makes the amount unpayable. They have to be square first.
-  const { members: balances } = await calculateGroupBalances(group._id);
+  const { members: balances } = await calculateGroupBalances(group);
   const leaving = balances.find(m => m.user.id === userId);
   const net = leaving?.netBalance ?? 0;
   if (Math.abs(net) > 0.01) {

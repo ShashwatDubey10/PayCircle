@@ -1,3 +1,4 @@
+const mongoose     = require('mongoose');
 const Expense      = require('../models/Expense');
 const Group        = require('../models/Group');
 const asyncHandler = require('../utils/asyncHandler');
@@ -73,6 +74,8 @@ const addExpense = asyncHandler(async (req, res) => {
     groupId: group._id, amount: amt, payerId,
     date: expDate, category, notes: notes || '',
     splitType, splits: finalSplits,
+    // Recorded separately from payerId, which is only a claim about who paid.
+    createdBy: req.user._id,
   });
 
   await expense.populate([
@@ -174,4 +177,49 @@ const updateExpense = asyncHandler(async (req, res) => {
   res.json({ success: true, expense });
 });
 
-module.exports = { addExpense, getExpenses, updateExpense };
+// DELETE /api/groups/:id/expenses/:expenseId
+// An expense is self-attested: whoever records it states that it happened and
+// who owes what for it. There was no way to take one back — no delete route at
+// all, and updateExpense refuses an amount change on an exact split — so a
+// member charged almost the entire amount by someone else was simply stuck
+// with it, unable to remove or edit the charge.
+//
+// The payer can withdraw their own claim, whoever recorded it can undo their
+// own entry, and the group admin can remove one as the fallback for everybody
+// else. The row is kept and flagged rather than destroyed, and drops out of the
+// balances with it.
+const deleteExpense = asyncHandler(async (req, res) => {
+  const group = req.group;
+  const { expenseId } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(expenseId))
+    return res.status(400).json({ success: false, message: 'Invalid expenseId' });
+
+  const expense = await Expense.findOne({ _id: expenseId, groupId: group._id });
+  if (!expense)
+    return res.status(404).json({ success: false, message: 'Expense not found in this group' });
+
+  const me       = req.user._id.toString();
+  const isPayer  = expense.payerId.toString() === me;
+  const isAuthor = expense.createdBy?.toString() === me;
+  const isAdmin  = group.adminId.toString() === me;
+  if (!isPayer && !isAuthor && !isAdmin)
+    return res.status(403).json({
+      success: false,
+      message: 'Only the payer, whoever recorded it, or the group admin can delete this expense',
+    });
+
+  expense.deletedAt = new Date();
+  expense.deletedBy = req.user._id;
+  await expense.save();
+
+  logger.info('EXPENSE', `Expense deleted: ₹${expense.amount}`, {
+    groupId: group._id,
+    expenseId: expense._id,
+    deletedBy: req.user._id,
+  });
+
+  res.json({ success: true, expenseId: expense._id });
+});
+
+module.exports = { addExpense, getExpenses, updateExpense, deleteExpense };

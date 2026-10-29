@@ -54,12 +54,6 @@ function getLast6Months() {
   });
 }
 
-function isoMonthKey(dateStr) {
-  if (!dateStr) return '';
-  try { return new Date(dateStr).toISOString().slice(0, 7); }
-  catch { return ''; }
-}
-
 function fmt(n) {
   if (n >= 100000) return `${(n / 100000).toFixed(1)}L`;
   if (n >= 1000)   return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`;

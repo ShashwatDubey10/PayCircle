@@ -7,10 +7,11 @@ const SplitTag            = require('../models/SplitTag');
 const asyncHandler        = require('../utils/asyncHandler');
 const logger              = require('../utils/logger');
 
-const getMonthStr = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-};
+const { appMonthKey, appMonthWindow } = require('../utils/appTime');
+
+// Month keys and windows follow the app's timezone, not the server's — see
+// utils/appTime.js for why that is not the same thing in production.
+const getMonthStr = () => appMonthKey();
 
 // POST /api/users/me/budget
 const setBudget = asyncHandler(async (req, res) => {
@@ -75,10 +76,7 @@ const setCategoryBudgets = asyncHandler(async (req, res) => {
 // GET /api/users/me/budget
 const getBudget = asyncHandler(async (req, res) => {
   const userId = req.user._id;
-  const month  = getMonthStr();
-  const now    = new Date();
-  const start  = new Date(now.getFullYear(), now.getMonth(), 1);
-  const end    = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+  const { key: month, start, end } = appMonthWindow();
 
   const budget = await Budget.findOne({ userId, month });
 

@@ -27,7 +27,9 @@ export default function EditSplitSheet({
   visible,
   onClose,
   onSave,
+  onDelete,
   canEditAmount,
+  canDelete,
   initialAmount,
   initialCategory,
 }) {
@@ -36,11 +38,14 @@ export default function EditSplitSheet({
   const [selected, setSelected] = useState('');
   const [custom,   setCustom]   = useState('');
   const [saving,   setSaving]   = useState(false);
+  // Null, or the confirmation asking whether to remove the expense.
+  const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
     setAmount(initialAmount != null ? String(initialAmount) : '');
     setSaving(false);
+    setConfirming(false);
     const isPredefined = CATEGORIES.some(c => c.label === initialCategory);
     if (isPredefined) {
       setSelected(initialCategory || '');
@@ -52,6 +57,19 @@ export default function EditSplitSheet({
   }, [visible]);
 
   const finalCategory = selected || custom.trim();
+
+  async function handleDelete() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await onDelete();
+    } finally {
+      // The screen closes the sheet on success; on failure it shows the error
+      // and leaves it open, so the button has to come back either way.
+      setSaving(false);
+      setConfirming(false);
+    }
+  }
 
   async function handleSave() {
     if (saving) return;
@@ -147,6 +165,43 @@ export default function EditSplitSheet({
               ? <ActivityIndicator size="small" color="#060A09" />
               : <Text style={sh.saveBtnText}>Save Changes</Text>}
           </Touchable>
+
+          {/* Removing an expense is the only way out of a charge somebody else
+              recorded against you, so it is offered here rather than buried —
+              but behind a second tap, since it changes what everyone owes. */}
+          {canDelete && (
+            confirming ? (
+              <View style={sh.confirmBox}>
+                <Text style={sh.confirmText}>
+                  Remove this expense? Everyone{'’'}s balance in this group changes.
+                </Text>
+                <View style={sh.confirmRow}>
+                  <Touchable
+                    style={[sh.confirmBtn, sh.confirmCancel]}
+                    onPress={() => setConfirming(false)}
+                    disabled={saving}>
+                    <Text style={sh.confirmCancelText}>Keep it</Text>
+                  </Touchable>
+                  <Touchable tone="danger"
+                    style={[sh.confirmBtn, sh.confirmGo, saving && { opacity: 0.6 }]}
+                    onPress={handleDelete}
+                    disabled={saving}>
+                    {saving
+                      ? <ActivityIndicator size="small" color={PC.negative} />
+                      : <Text style={sh.confirmGoText}>Remove</Text>}
+                  </Touchable>
+                </View>
+              </View>
+            ) : (
+              <Touchable tone="danger"
+                style={sh.deleteBtn}
+                onPress={() => setConfirming(true)}
+                disabled={saving}>
+                <Ionicons name="trash-outline" size={14} color={PC.negative} />
+                <Text style={sh.deleteBtnText}>Remove expense</Text>
+              </Touchable>
+            )
+          )}
           <View style={{ height: 20 }} />
         </ScrollView>
       </KeyboardAvoidingView>
@@ -166,6 +221,24 @@ const sh = StyleSheet.create({
     // flexShrink:1, so it would shrink for the keyboard and never grow back.
     maxHeight: '85%',
   },
+  deleteBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 7, marginTop: 10, minHeight: 46, borderRadius: 12,
+    borderWidth: 1, borderColor: 'rgba(255,80,85,0.28)',
+  },
+  deleteBtnText: { color: PC.negative, fontSize: 13, fontWeight: '600' },
+  confirmBox: {
+    marginTop: 10, padding: 14, borderRadius: 12,
+    backgroundColor: 'rgba(255,80,85,0.07)',
+    borderWidth: 1, borderColor: 'rgba(255,80,85,0.28)',
+  },
+  confirmText: { color: PC.textSecondary, fontSize: 13, lineHeight: 19, marginBottom: 12 },
+  confirmRow:  { flexDirection: 'row', gap: 10 },
+  confirmBtn:  { flex: 1, minHeight: 42, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  confirmCancel:   { backgroundColor: PC.bgCardElevated, borderWidth: 1, borderColor: PC.border },
+  confirmCancelText: { color: PC.textSecondary, fontSize: 13, fontWeight: '600' },
+  confirmGo:       { borderWidth: 1, borderColor: 'rgba(255,80,85,0.45)' },
+  confirmGoText:   { color: PC.negative, fontSize: 13, fontWeight: '700' },
   handle:     { width: 36, height: 4, borderRadius: 2, backgroundColor: PC.border, alignSelf: 'center', marginTop: 12, marginBottom: 20 },
   title:      { color: PC.textPrimary, fontSize: 17, fontWeight: '700', marginBottom: 20 },
   fieldLabel: { color: PC.textSecondary, fontSize: 12, fontWeight: '600', marginBottom: 6 },

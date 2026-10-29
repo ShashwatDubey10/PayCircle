@@ -30,6 +30,7 @@ import UpiQrModal from '@/components/UpiQrModal';
 import api from '@/services/api';
 import { upsertSplitTag, getSplitTags } from '@/services/splitTag';
 import EditSplitSheet, { CAT_ICON_MAP } from '@/components/EditSplitSheet';
+import useModalHandoff from '@/utils/useModalHandoff';
 
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -203,6 +204,8 @@ export default function DirectSplitScreen() {
   const [showSplit,     setShowSplit]     = useState(false);
   const [refreshing,    setRefreshing]    = useState(false);
   const [showUpiQr,     setShowUpiQr]     = useState(false);
+  // Android needs one modal window gone before the next will appear.
+  const handoff = useModalHandoff();
   const [upiQrData,     setUpiQrData]     = useState(null);
 
   // ── Split tags ─────────────────────────────────────────────────────────────
@@ -1007,7 +1010,7 @@ export default function DirectSplitScreen() {
                   amount: payAmt, note: 'Settlement via PayCircle',
                   txnId: directTxnId,
                 });
-                setShowUpiQr(true);
+                handoff(() => setShowUpiQr(true));
               }}>
               <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,229,190,0.12)', alignItems: 'center', justifyContent: 'center' }}>
                 <Ionicons name="qr-code-outline" size={20} color={PC.positive} />

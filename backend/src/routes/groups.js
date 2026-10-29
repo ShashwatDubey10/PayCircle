@@ -5,9 +5,9 @@ const { protect }  = require('../middleware/auth');
 const { isMember } = require('../middleware/groupAuth');
 
 const { createGroup, getUserGroups, getGroup, getMembers, addMember, removeMember } = require('../controllers/groupController');
-const { addExpense, getExpenses, updateExpense } = require('../controllers/expenseController');
+const { addExpense, getExpenses, updateExpense, deleteExpense } = require('../controllers/expenseController');
 const { getGroupBalances }            = require('../controllers/balanceController');
-const { recordSettlement, getSettlements } = require('../controllers/settlementController');
+const { recordSettlement, getSettlements, reverseSettlement } = require('../controllers/settlementController');
 
 router.use(protect);
 
@@ -25,6 +25,7 @@ router.delete('/:id/members/:userId',   isMember, removeMember);
 router.post ('/:id/expenses',              isMember, addExpense);
 router.get  ('/:id/expenses',              isMember, getExpenses);
 router.patch('/:id/expenses/:expenseId',   isMember, updateExpense);
+router.delete('/:id/expenses/:expenseId',  isMember, deleteExpense);
 
 // Balances
 router.get('/:id/balances', isMember, getGroupBalances);
@@ -32,5 +33,6 @@ router.get('/:id/balances', isMember, getGroupBalances);
 // Settlements
 router.post('/:id/settlements', isMember, recordSettlement);
 router.get ('/:id/settlements', isMember, getSettlements);
+router.post('/:id/settlements/:settlementId/reverse', isMember, reverseSettlement);
 
 module.exports = router;

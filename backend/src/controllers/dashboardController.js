@@ -3,18 +3,17 @@ const Expense             = require('../models/Expense');
 const PersonalTransaction = require('../models/PersonalTransaction');
 const DirectSplit         = require('../models/DirectSplit');
 const DirectSettle        = require('../models/DirectSettle');
-const { calculateGroupBalances } = require('../services/balanceService');
+const { calculateBalancesForGroups } = require('../services/balanceService');
 const asyncHandler        = require('../utils/asyncHandler');
+const { appMonthWindow } = require('../utils/appTime');
 const logger              = require('../utils/logger');
 
 // GET /api/users/me/dashboard
 const getDashboard = asyncHandler(async (req, res) => {
   const userId = req.user._id;
-  const now    = new Date();
-  const start  = new Date(now.getFullYear(), now.getMonth(), 1);
-  const end    = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+  const { key: month, start, end } = appMonthWindow();
 
-  logger.debug('DASH', `Building dashboard for user`, { userId, month: `${now.getFullYear()}-${now.getMonth() + 1}` });
+  logger.debug('DASH', `Building dashboard for user`, { userId, month });
 
   // User's groups
   const groups   = await Group.find({ members: userId });
@@ -85,13 +84,14 @@ const getDashboard = asyncHandler(async (req, res) => {
 
   // Group balance summary
   let totalOwed = 0, totalToReceive = 0;
-  await Promise.all(groups.map(async (g) => {
-    const { members } = await calculateGroupBalances(g._id);
-    const mine = members.find(m => m.user.id === userId.toString());
-    if (!mine) return;
-    if (mine.netBalance < 0) totalOwed        += Math.abs(mine.netBalance);
-    if (mine.netBalance > 0) totalToReceive   += mine.netBalance;
-  }));
+  const dashBalances = await calculateBalancesForGroups(groups);
+  for (const g of groups) {
+    const mine = dashBalances.get(g._id.toString())
+      ?.members.find(m => m.user.id === userId.toString());
+    if (!mine) continue;
+    if (mine.netBalance < 0) totalOwed      += Math.abs(mine.netBalance);
+    if (mine.netBalance > 0) totalToReceive += mine.netBalance;
+  }
 
   // Direct split balance summary — net per friend
   const [allDirectSplits, confirmedSettles] = await Promise.all([
@@ -191,16 +191,9 @@ const getDashboard = asyncHandler(async (req, res) => {
 // GET /api/users/me/spending-history — last 6 months combined spend + income
 const getSpendingHistory = asyncHandler(async (req, res) => {
   const userId = req.user._id;
-  const now    = new Date();
 
-  // Build month windows for last 6 months
-  const windows = Array.from({ length: 6 }, (_, i) => {
-    const d     = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
-    const start = new Date(d.getFullYear(), d.getMonth(), 1);
-    const end   = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59);
-    const key   = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    return { key, start, end };
-  });
+  // Build month windows for last 6 months, oldest first.
+  const windows = Array.from({ length: 6 }, (_, i) => appMonthWindow(i - 5));
 
   const groups   = await Group.find({ members: userId });
   const groupIds = groups.map(g => g._id);

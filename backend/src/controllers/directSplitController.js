@@ -6,7 +6,7 @@ const User         = require('../models/User');
 const asyncHandler = require('../utils/asyncHandler');
 const logger       = require('../utils/logger');
 const { areFriends }            = require('./friendController');
-const { calculateGroupBalances } = require('../services/balanceService');
+const { calculateBalancesForGroups } = require('../services/balanceService');
 
 // Returns true if otherId is a personal contact created by meId.
 // Archived contacts still pass so their history stays readable and settleable;
@@ -97,9 +97,18 @@ const addDirectSplit = asyncHandler(async (req, res) => {
   let payerShare = null;
   if (myShare !== undefined && myShare !== null) {
     const ps = parseFloat(myShare);
-    if (!isNaN(ps) && ps > 0 && ps < amt) {
-      payerShare = isPaidByMe ? ps : amt - ps;
-    }
+    // 0 and the full amount are the two most useful values here — "this one is
+    // entirely yours" and "entirely mine" — and both were excluded by `> 0` and
+    // `< amt`. They fell through to a null payerShare, which every reader below
+    // treats as 50/50, so the split silently came out half right and the client
+    // still got a 201. The edit path a few hundred lines down already accepted
+    // the full range; only creation disagreed.
+    if (isNaN(ps) || ps < 0 || ps > amt)
+      return res.status(400).json({
+        success: false,
+        message: `Your share must be between ₹0 and ₹${amt.toFixed(2)}`,
+      });
+    payerShare = isPaidByMe ? ps : amt - ps;
   }
 
   const split = await DirectSplit.create({
@@ -445,6 +454,8 @@ const getGroupDebtsWithFriend = asyncHandler(async (req, res) => {
   // Groups where both users are members
   const groups = await Group.find({ members: { $all: [meId, friendObjId] } });
 
+  const sharedBalances = await calculateBalancesForGroups(groups);
+
   const groupDebts = [];
   for (const group of groups) {
     // Driven by the two net positions, not by the simplified `debts` plan. That
@@ -452,7 +463,7 @@ const getGroupDebtsWithFriend = asyncHandler(async (req, res) => {
     // from it while still genuinely owing each other — which dropped real group
     // debts out of this list, and so out of the Settle All total. This is the
     // same rule recordSettlement validates against.
-    const { members } = await calculateGroupBalances(group._id);
+    const { members } = sharedBalances.get(group._id.toString()) ?? { members: [] };
     const netOf = (id) => members.find(m => m.user.id === id)?.netBalance ?? 0;
     const myNet     = netOf(meStr);
     const friendNet = netOf(friendId);
