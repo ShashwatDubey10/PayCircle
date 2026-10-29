@@ -48,7 +48,13 @@ export default function Touchable({
 }) {
   return (
     <Pressable
-      android_ripple={{ color: RIPPLE[tone] ?? RIPPLE.neutral, borderless }}
+      // `foreground: true` is load-bearing, not a preference. Without it React
+      // Native installs the ripple as the view's *background* drawable
+      // (useAndroidRippleForView returns nativeBackgroundAndroid), and every
+      // control here sets its own backgroundColor in style — which replaces it,
+      // so the ripple is created and then immediately painted over. Drawing it
+      // in the foreground puts it above the control's own fill, where it shows.
+      android_ripple={{ color: RIPPLE[tone] ?? RIPPLE.neutral, borderless, foreground: true }}
       style={state => [
         // Pressable allows style to be a function; forward that through so a
         // call site can still react to `pressed` itself.

@@ -718,7 +718,7 @@ export default function GroupsScreen() {
         accessibilityLabel="Filter splits"
         accessibilityState={{ selected: splitFilter !== 'all' }}
       >
-        <Ionicons name="options-outline" size={22} color="#fff" />
+        <Ionicons name="options-outline" size={22} color={PC.bg} />
       </Touchable>
 
       {/* ── Settlements Modal ── */}

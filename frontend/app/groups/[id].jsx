@@ -12,15 +12,10 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
-  LayoutAnimation,
-  UIManager,
 } from 'react-native';
+import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import Touchable from '@/components/Touchable';
 
-// Enable LayoutAnimation on Android
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
@@ -1243,12 +1238,9 @@ export default function GroupDetailScreen() {
                         <Text style={styles.expBubbleAvatarText}>{initials(payerFirstName)}</Text>
                       </View>
                     )}
-                    <View style={{ maxWidth: '78%' }}>
+                    <Animated.View style={{ maxWidth: '78%' }} layout={LinearTransition.duration(200)}>
                       <Touchable
-                        onPress={() => {
-                          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                          setExpandedExpId(isExpanded ? null : exp._id);
-                        }}
+                        onPress={() => setExpandedExpId(isExpanded ? null : exp._id)}
                         onLongPress={() => setEditSheet({ exp, canEditAmount: paidByMe })}
                         delayLongPress={350}
                         style={[styles.expBubble, paidByMe ? styles.expBubbleMine : styles.expBubbleFriend]}>
@@ -1288,7 +1280,10 @@ export default function GroupDetailScreen() {
 
                       {/* Expanded receipt-style split breakdown */}
                       {isExpanded && (
-                        <View style={[styles.splitCard, paidByMe ? styles.splitCardMine : styles.splitCardFriend]}>
+                        <Animated.View
+                          style={[styles.splitCard, paidByMe ? styles.splitCardMine : styles.splitCardFriend]}
+                          entering={FadeIn.duration(200)}
+                          exiting={FadeOut.duration(140)}>
 
                           {/* Header */}
                           <View style={[styles.splitCardHeader, paidByMe ? styles.splitCardHeaderMine : styles.splitCardHeaderFriend]}>
@@ -1359,9 +1354,9 @@ export default function GroupDetailScreen() {
                               </View>
                             )}
                           </Touchable>
-                        </View>
+                        </Animated.View>
                       )}
-                    </View>
+                    </Animated.View>
                   </View>
                 </View>
               );

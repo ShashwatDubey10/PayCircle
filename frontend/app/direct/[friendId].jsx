@@ -13,9 +13,8 @@ import {
   Modal,
   Platform,
   RefreshControl,
-  LayoutAnimation,
-  UIManager,
 } from 'react-native';
+import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import Touchable from '@/components/Touchable';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -32,9 +31,6 @@ import api from '@/services/api';
 import { upsertSplitTag, getSplitTags } from '@/services/splitTag';
 import EditSplitSheet, { CAT_ICON_MAP } from '@/components/EditSplitSheet';
 
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -611,14 +607,11 @@ export default function DirectSplitScreen() {
 
       {/* ── Group Debts accordion ── */}
       {groupDebts.length > 0 && (
-        <View style={s.gdPanel}>
+        <Animated.View style={s.gdPanel} layout={LinearTransition.duration(200)}>
           {/* Header — tap to expand / collapse */}
           <Touchable
             style={s.gdHeader}
-            onPress={() => {
-              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-              setGroupDebtsExpanded(v => !v);
-            }}>
+            onPress={() => setGroupDebtsExpanded(v => !v)}>
             <View style={s.gdHeaderLeft}>
               <Ionicons name="layers-outline" size={14} color={PC.accent} />
               <Text style={s.gdHeaderTitle}>Group Debts</Text>
@@ -644,7 +637,10 @@ export default function DirectSplitScreen() {
 
           {/* Expanded body */}
           {groupDebtsExpanded && (
-            <View style={s.gdBody}>
+            <Animated.View
+              style={s.gdBody}
+              entering={FadeIn.duration(200)}
+              exiting={FadeOut.duration(140)}>
               {groupDebts.map((item, idx) => (
                 <View key={item.groupId} style={[s.gdRow, idx > 0 && s.gdRowBorder]}>
                   <View style={[s.gdRowBar, { backgroundColor: item.iOwe ? PC.negative : PC.positive }]} />
@@ -686,9 +682,9 @@ export default function DirectSplitScreen() {
                   </Touchable>
                 );
               })()}
-            </View>
+            </Animated.View>
           )}
-        </View>
+        </Animated.View>
       )}
 
       {/* ── Chat + Input ── */}
