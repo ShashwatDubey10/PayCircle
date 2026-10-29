@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Text } from '@/components/text';
 import Touchable from '@/components/Touchable';
+import Svg, { Circle, G } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -87,64 +88,62 @@ function AnimBar({ pct, color, height = 7, delay = 0 }) {
   );
 }
 
-// ─── Donut chart (half-disc rotation technique, no SVG) ───────────────────────
-
-function PieHalf({ sD, swD, color, size }) {
-  const r = size / 2;
-  return (
-    <View style={{
-      position: 'absolute', width: size, height: size,
-      borderRadius: r, overflow: 'hidden',
-      transform: [{ rotate: `${sD}deg` }],
-    }}>
-      <View style={{
-        position: 'absolute', left: r, top: 0,
-        width: r, height: size, backgroundColor: color,
-        transformOrigin: 'left center',
-        transform: [{ rotate: `${swD - 180}deg` }],
-      }} />
-    </View>
-  );
-}
-
-function PieSlice({ startDeg, sweepDeg, color, size }) {
-  if (sweepDeg <= 0.5) return null;
-  if (sweepDeg <= 180) {
-    return <PieHalf sD={startDeg} swD={sweepDeg} color={color} size={size} />;
-  }
-  return (
-    <>
-      <PieHalf sD={startDeg}       swD={180}            color={color} size={size} />
-      <PieHalf sD={startDeg + 180} swD={sweepDeg - 180} color={color} size={size} />
-    </>
-  );
-}
+// ─── Donut chart ───────────────────────────────────────────────────
+// One stroked circle per segment, positioned with strokeDasharray. The dash is
+// the segment's arc length and the gap is the rest of the circumference, so the
+// slice's size is its value — nothing depends on rotation to be the right size.
+//
+// This replaces a "half-disc rotation" trick that drew every slice as a 180°
+// semicircle: it rotated a half-disc about the circle's centre, which turns the
+// half-disc but never makes it smaller. Two categories therefore always read as
+// a 50/50 split regardless of their amounts.
 
 function DonutChart({ segments, size = 178, thickness = 34, centerLabel, centerSub }) {
-  const r     = size / 2;
-  const total = segments.reduce((s, d) => s + d.value, 0);
-  if (total === 0) return null;
-  let offset = -90;
+  const total = segments.reduce((s, d) => s + (Number(d.value) || 0), 0);
+  if (total <= 0) return null;
+
+  const r = size / 2;
+  const radius = r - thickness / 2;   // the stroke straddles the path
+  const circumference = 2 * Math.PI * radius;
+
+  let consumed = 0;
+  const arcs = segments.map((seg, i) => {
+    const arc = ((Number(seg.value) || 0) / total) * circumference;
+    const el = (
+      <Circle
+        key={i}
+        cx={r}
+        cy={r}
+        r={radius}
+        fill="none"
+        stroke={seg.color}
+        strokeWidth={thickness}
+        strokeDasharray={`${arc} ${Math.max(circumference - arc, 0)}`}
+        strokeDashoffset={-consumed}
+      />
+    );
+    consumed += arc;
+    return el;
+  });
 
   return (
     <View style={{ width: size, height: size }}>
-      {/* Base disc */}
-      <View style={{ position: 'absolute', width: size, height: size, borderRadius: r, backgroundColor: PC.bgCardElevated }} />
-      {segments.map((seg, i) => {
-        const sweep = (seg.value / total) * 360;
-        const start = offset;
-        offset += sweep;
-        return <PieSlice key={i} startDeg={start} sweepDeg={sweep} color={seg.color} size={size} />;
-      })}
-      {/* Hole */}
-      <View style={{
-        position: 'absolute',
-        top: thickness, left: thickness,
-        width: size - thickness * 2, height: size - thickness * 2,
-        borderRadius: (size - thickness * 2) / 2,
-        backgroundColor: PC.bgCard,
-        alignItems: 'center', justifyContent: 'center',
-      }}>
+      <Svg width={size} height={size}>
+        {/* Rotated so the first segment starts at twelve o'clock. */}
+        <G rotation={-90} origin={`${r}, ${r}`}>
+          <Circle cx={r} cy={r} r={radius} fill="none"
+            stroke={PC.bgCardElevated} strokeWidth={thickness} />
+          {arcs}
+        </G>
+      </Svg>
+
+      <View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          width: size, height: size,
+          alignItems: 'center', justifyContent: 'center',
+        }}>
         {centerLabel ? (
           <>
             <Text style={ss.donutCenterLabel}>{centerLabel}</Text>
@@ -369,8 +368,8 @@ export default function AnalyticsScreen() {
                 <View style={ss.donutRow}>
                   <DonutChart
                     segments={catSegments}
-                    size={170}
-                    thickness={33}
+                    size={148}
+                    thickness={30}
                     centerLabel={`₹${fmt(dash?.totalSpent?.combined || 0)}`}
                     centerSub="total spent"
                   />
@@ -379,7 +378,9 @@ export default function AnalyticsScreen() {
                       <View key={i} style={ss.legendRow}>
                         <View style={[ss.legendDot, { backgroundColor: seg.color }]} />
                         <Text style={ss.legendLabel} numberOfLines={1}>{seg.label}</Text>
-                        <Text style={[ss.legendPct, { color: seg.color }]}>{seg.pct}%</Text>
+                        <Text style={[ss.legendPct, { color: seg.color }]} numberOfLines={1}>
+                          {seg.pct}%
+                        </Text>
                       </View>
                     ))}
                   </View>
@@ -717,7 +718,7 @@ const ss = StyleSheet.create({
   legendRow:       { flexDirection: 'row', alignItems: 'center', gap: 7 },
   legendDot:       { width: 7, height: 7, borderRadius: 4, flexShrink: 0 },
   legendLabel:     { flex: 1, color: PC.textSecondary, fontSize: 11 },
-  legendPct:       { fontSize: 11, fontWeight: '600', width: 30, textAlign: 'right' },
+  legendPct:       { fontSize: 11, fontWeight: '600', textAlign: 'right', flexShrink: 0 },
 
   // Monthly bar chart
   monthChart:  { flexDirection: 'row', alignItems: 'flex-end', height: 110, paddingBottom: 2, gap: 0 },

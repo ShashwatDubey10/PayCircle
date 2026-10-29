@@ -160,7 +160,9 @@ function Bubble({ split, isMine, friendFirstName, tag, onTagPress, onLongPress }
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function DirectSplitScreen() {
-  const { friendId } = useLocalSearchParams();
+  // Passed by the list that linked here, so the header has a name on the
+  // first frame rather than showing an ellipsis until the fetch returns.
+  const { friendId, name: nameFromList } = useLocalSearchParams();
   const router       = useRouter();
   const { user }     = useAuth();
   const listRef      = useRef(null);
@@ -520,7 +522,7 @@ export default function DirectSplitScreen() {
         </View>
 
         <View style={s.headerInfo}>
-          <Text style={s.headerName} numberOfLines={1}>{friend?.name || '…'}</Text>
+          <Text style={s.headerName} numberOfLines={1}>{friend?.name || nameFromList || '…'}</Text>
           {isVirtualContact ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 }}>
               <Ionicons name="person-add-outline" size={10} color={PC.accent} />

@@ -967,7 +967,11 @@ function RecordSettlementModal({ visible, onClose, groupId, members, currentUser
 
 export default function GroupDetailScreen() {
   const insets = useSafeAreaInsets();
-  const { id }     = useLocalSearchParams();
+  // `name` is passed by the list that linked here, so the header can be drawn
+  // on the first frame instead of after the fetch. Without it the screen slid
+  // in showing an empty header and a spinner, then swapped the whole layout in
+  // at once — the slide was fine, the content arriving late was the jolt.
+  const { id, name: nameFromList } = useLocalSearchParams();
   const router     = useRouter();
   const { user }   = useAuth();
 
@@ -1126,6 +1130,12 @@ export default function GroupDetailScreen() {
             accessibilityLabel="Go back">
             <Ionicons name="arrow-back" size={20} color={PC.textPrimary} />
           </Touchable>
+          {/* Same three-part header as the loaded screen, so the title does not
+              move when the data lands. */}
+          <View style={styles.headerCenter}>
+            <Text style={styles.groupTitle} numberOfLines={1}>{nameFromList ?? ''}</Text>
+          </View>
+          <View style={{ width: 38 }} />
         </View>
         <View style={styles.centered}>
           <ActivityIndicator color={PC.textPrimary} />

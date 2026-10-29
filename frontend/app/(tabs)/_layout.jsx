@@ -16,6 +16,9 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
+        // Bottom tabs default to 'none' — no transition whatsoever between
+        // tabs, which is what made tapping between them feel abrupt.
+        animation: 'shift',
         tabBarActiveTintColor: PC.accent,
         tabBarInactiveTintColor: PC.textMuted,
         tabBarStyle: {

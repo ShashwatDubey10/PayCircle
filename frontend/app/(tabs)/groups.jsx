@@ -701,7 +701,11 @@ export default function GroupsScreen() {
                 key={`${item._type}-${item._id}`}
                 item={item}
                 last={i === filteredList.length - 1}
-                onPress={() => router.push(item._type === 'friend' || item._type === 'contact' ? `/direct/${item._id}` : `/groups/${item._id}`)}
+                onPress={() => router.push(
+                  item._type === 'friend' || item._type === 'contact'
+                    ? { pathname: '/direct/[friendId]', params: { friendId: item._id, name: item.name ?? '' } }
+                    : { pathname: '/groups/[id]',       params: { id: item._id,      name: item.name ?? '' } }
+                )}
               />
             ))}
           </View>
