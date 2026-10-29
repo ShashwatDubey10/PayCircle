@@ -1,0 +1,392 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-29T00:00:00.000Z",
+  "title": "Design System: PayCircle",
+  "extensions": {
+    "colorMeta": {
+      "accent": {
+        "role": "primary",
+        "displayName": "Signal Mint",
+        "canonical": "#00E5BE",
+        "note": "Also the positive/credit colour. A mint figure always means money moving toward the user.",
+        "tonalRamp": [
+          "oklch(15% 0.04 174)",
+          "oklch(26% 0.07 174)",
+          "oklch(38% 0.10 174)",
+          "oklch(50% 0.13 174)",
+          "oklch(62% 0.15 174)",
+          "oklch(74% 0.16 174)",
+          "oklch(84% 0.15 174)",
+          "oklch(95% 0.04 174)"
+        ]
+      },
+      "bg": {
+        "role": "neutral",
+        "displayName": "Terminal Ground",
+        "canonical": "#060A09",
+        "note": "The page, and the on-accent text colour. The neutral ramp below is the project's own surface/text scale, not synthesised.",
+        "tonalRamp": [
+          "#060A09",
+          "#0C1210",
+          "#131A17",
+          "#1C2822",
+          "#243328",
+          "#4A6058",
+          "#637870",
+          "#EFF9F6"
+        ]
+      },
+      "bgCard": {
+        "role": "neutral",
+        "displayName": "Card Surface",
+        "canonical": "#0C1210",
+        "note": "First tonal step. Cards, dialogs, tab bar, inputs."
+      },
+      "bgCardElevated": {
+        "role": "neutral",
+        "displayName": "Elevated Surface",
+        "canonical": "#131A17",
+        "note": "Second tonal step. Controls sitting on a card: chips at rest, dialog secondary buttons, avatar wells."
+      },
+      "bgInput": {
+        "role": "neutral",
+        "displayName": "Field Surface",
+        "canonical": "#0C1210",
+        "note": "Same value as bgCard, kept separate to express intent."
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#1C2822",
+        "note": "The workhorse 1px rule: card borders, dividers, separators, progress-bar tracks, tab bar top edge."
+      },
+      "borderLight": {
+        "role": "neutral",
+        "displayName": "Hairline Bright",
+        "canonical": "#243328",
+        "note": "Lifted rule for dialog edges and secondary-button outlines."
+      },
+      "textPrimary": {
+        "role": "neutral",
+        "displayName": "Primary Text",
+        "canonical": "#EFF9F6",
+        "note": "Off-white with a green cast. Amounts, names, titles, input values."
+      },
+      "textSecondary": {
+        "role": "neutral",
+        "displayName": "Secondary Text",
+        "canonical": "#637870",
+        "note": "Labels, supporting copy, metadata."
+      },
+      "textMuted": {
+        "role": "neutral",
+        "displayName": "Muted Text",
+        "canonical": "#4A6058",
+        "note": "~3.2:1 on the ground. Below AA — hints and inactive states only, never body copy."
+      },
+      "positive": {
+        "role": "primary",
+        "displayName": "Signal Mint (positive alias)",
+        "canonical": "#00E5BE",
+        "note": "Identical to accent by design. Income, credit, owed-to-you, healthy budget."
+      },
+      "negative": {
+        "role": "tertiary",
+        "displayName": "Alert Red",
+        "canonical": "#FF5055",
+        "note": "Money owed, expenses, destructive actions, form errors, over-budget.",
+        "tonalRamp": [
+          "oklch(15% 0.05 22)",
+          "oklch(26% 0.09 22)",
+          "oklch(38% 0.13 22)",
+          "oklch(50% 0.17 22)",
+          "oklch(58% 0.20 22)",
+          "oklch(66% 0.21 22)",
+          "oklch(80% 0.13 22)",
+          "oklch(95% 0.04 22)"
+        ]
+      },
+      "warning": {
+        "role": "tertiary",
+        "displayName": "Caution Amber",
+        "canonical": "#FFB020",
+        "note": "The single middle state: budget between 70% and 90% of limit. Appears nowhere else.",
+        "tonalRamp": [
+          "oklch(15% 0.04 72)",
+          "oklch(26% 0.07 72)",
+          "oklch(38% 0.10 72)",
+          "oklch(50% 0.13 72)",
+          "oklch(62% 0.15 72)",
+          "oklch(71% 0.16 72)",
+          "oklch(80% 0.16 72)",
+          "oklch(95% 0.04 72)"
+        ]
+      },
+      "accent10": {
+        "role": "primary",
+        "displayName": "Signal Mint Wash",
+        "canonical": "rgba(0,229,190,0.10)",
+        "note": "The wash step of the Tinted Wash Rule. Active chips, icon wells."
+      },
+      "accent20": {
+        "role": "primary",
+        "displayName": "Signal Mint Edge",
+        "canonical": "rgba(0,229,190,0.20)",
+        "note": "The border step of the Tinted Wash Rule."
+      },
+      "white05": {
+        "role": "neutral",
+        "displayName": "Faint Scrim",
+        "canonical": "rgba(239,249,246,0.05)",
+        "note": "Micro badges inside list rows, e.g. the SETTLED pip."
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display Figure", "purpose": "The one figure a screen is about — the dashboard net balance. Never more than one per screen." },
+      "headline": { "displayName": "Headline Figure", "purpose": "The hero figure of a secondary card, e.g. budget spend-to-date." },
+      "figure": { "displayName": "Figure", "purpose": "Supporting amounts inside a card — balance halves, per-member totals." },
+      "figureSmall": { "displayName": "Stat Figure", "purpose": "Stat-card amounts in a multi-up row." },
+      "title": { "displayName": "Title", "purpose": "The user's own name in the dashboard header. The only body-face type this large." },
+      "heading": { "displayName": "Heading", "purpose": "Stack-screen page titles beside the back control." },
+      "subheading": { "displayName": "Subheading", "purpose": "Section titles, card titles, empty-state headlines." },
+      "body": { "displayName": "Body", "purpose": "Row labels, dialog messages, content copy." },
+      "caption": { "displayName": "Caption", "purpose": "Supporting copy, hints, toast text, secondary links." },
+      "button": { "displayName": "Button Label", "purpose": "Primary CTA labels." },
+      "label": { "displayName": "Label", "purpose": "Card eyebrows, legend text, metadata. Often uppercase." },
+      "overline": { "displayName": "Overline", "purpose": "Input field labels. The widest tracking in the system." },
+      "micro": { "displayName": "Micro", "purpose": "Status pips inside rows, e.g. a SETTLED badge." }
+    },
+    "shadows": [
+      {
+        "name": "floating",
+        "value": "0 6px 14px rgba(0,0,0,0.28)",
+        "native": "shadowOffset {0,6}, shadowOpacity 0.28, shadowRadius 14, elevation 12",
+        "purpose": "The toast. The only true overlay element in the app."
+      },
+      {
+        "name": "lifted",
+        "value": "0 3px 6px rgba(0,0,0,0.25)",
+        "native": "shadowOffset {0,3}, shadowOpacity 0.25, shadowRadius 6, elevation 6",
+        "purpose": "A floating action button over a scrolling list."
+      },
+      {
+        "name": "lifted-accent",
+        "value": "0 3px 8px rgba(0,229,190,0.40)",
+        "native": "shadowColor PC.accent, shadowOffset {0,3}, shadowOpacity 0.4, shadowRadius 8, elevation 6",
+        "purpose": "The group-detail FAB only — an accent-tinted variant of lifted."
+      }
+    ],
+    "motion": [
+      {
+        "name": "press-opacity",
+        "value": "0.8",
+        "purpose": "activeOpacity on touch. 0.8 for buttons, 0.85 for rows. The codebase currently spreads across 0.7/0.75/0.8/0.85 with no pattern; normalise toward these two."
+      },
+      {
+        "name": "micro",
+        "value": "180-230ms",
+        "purpose": "Appear/dismiss of small elements — toast entry, sheet backdrop."
+      },
+      {
+        "name": "transition",
+        "value": "360-480ms",
+        "purpose": "Sheet and overlay movement, value changes a user should notice."
+      },
+      {
+        "name": "ambient",
+        "value": "750-900ms",
+        "purpose": "Progress-bar and ring fills, skeleton shimmer — motion that reports rather than responds."
+      },
+      {
+        "name": "engine",
+        "value": "React Native core Animated.timing",
+        "purpose": "All animation uses core Animated with default easing. react-native-reanimated is installed but not used for app motion; no custom Easing curves are defined anywhere."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "compact",
+        "value": "Portrait phone only",
+        "purpose": "The sole target. Edge-to-edge with safe-area insets applied per screen. No tablet or landscape layout exists."
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one mint-filled action on a screen. Full width, ground-colour label.",
+      "html": "<button class=\"ds-btn-primary\">Sign In</button>",
+      "css": ".ds-btn-primary { background: #00E5BE; color: #060A09; height: 54px; padding: 0 24px; width: 100%; border: none; border-radius: 14px; font-size: 15px; font-weight: 700; letter-spacing: 0.3px; cursor: pointer; } .ds-btn-primary:hover, .ds-btn-primary:active { opacity: 0.8; } .ds-btn-primary:focus-visible { outline: 2px solid #00E5BE; outline-offset: 2px; } .ds-btn-primary:disabled { opacity: 0.55; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Outlined alternative action. No fill, brighter hairline.",
+      "html": "<button class=\"ds-btn-secondary\">Create an account</button>",
+      "css": ".ds-btn-secondary { background: transparent; color: #EFF9F6; height: 52px; padding: 0 24px; width: 100%; border: 1px solid #243328; border-radius: 14px; font-size: 14px; font-weight: 500; cursor: pointer; } .ds-btn-secondary:hover, .ds-btn-secondary:active { opacity: 0.8; } .ds-btn-secondary:focus-visible { outline: 2px solid #00E5BE; outline-offset: 2px; }"
+    },
+    {
+      "name": "Destructive Button",
+      "kind": "button",
+      "refersTo": "button-destructive",
+      "description": "The Tinted Wash Rule applied to a control: 10% fill, 35% border, full-strength label.",
+      "html": "<button class=\"ds-btn-destructive\">Delete</button>",
+      "css": ".ds-btn-destructive { background: rgba(255,80,85,0.10); color: #FF5055; height: 46px; padding: 0 20px; border: 1px solid rgba(255,80,85,0.35); border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer; } .ds-btn-destructive:hover, .ds-btn-destructive:active { opacity: 0.8; } .ds-btn-destructive:focus-visible { outline: 2px solid #FF5055; outline-offset: 2px; }"
+    },
+    {
+      "name": "Compact Accent Button",
+      "kind": "button",
+      "refersTo": "button-pill",
+      "description": "The inline UPI action. Pill, self-aligned left, never stretched to full width.",
+      "html": "<button class=\"ds-btn-pill\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#060A09\" stroke-width=\"2\" stroke-linecap=\"round\"><path d=\"M5 12h14M13 6l6 6-6 6\"/></svg>Pay ₹450 via UPI</button>",
+      "css": ".ds-btn-pill { display: inline-flex; align-items: center; gap: 6px; background: #00E5BE; color: #060A09; padding: 9px 14px; border: none; border-radius: 999px; font-size: 13px; font-weight: 600; cursor: pointer; } .ds-btn-pill:hover, .ds-btn-pill:active { opacity: 0.8; } .ds-btn-pill:focus-visible { outline: 2px solid #00E5BE; outline-offset: 2px; }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Overline label above a bordered field. Focus shifts the border to mint and washes the fill 4%.",
+      "html": "<div class=\"ds-field\"><label class=\"ds-field-label\" for=\"ds-email\">Email Address</label><div class=\"ds-input-box\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#637870\" stroke-width=\"2\"><rect x=\"2\" y=\"4\" width=\"20\" height=\"16\" rx=\"2\"/><path d=\"m2 7 10 6 10-6\"/></svg><input id=\"ds-email\" class=\"ds-input\" type=\"email\" placeholder=\"you@example.com\"/></div></div>",
+      "css": ".ds-field { display: flex; flex-direction: column; } .ds-field-label { color: #4A6058; font-size: 10px; font-weight: 600; letter-spacing: 1.3px; text-transform: uppercase; margin-bottom: 8px; } .ds-input-box { display: flex; align-items: center; gap: 10px; background: #0C1210; border: 1px solid #1C2822; border-radius: 12px; height: 52px; padding: 0 14px; } .ds-input-box:focus-within { border-color: #00E5BE; background: rgba(0,229,190,0.04); } .ds-input { flex: 1; background: none; border: none; outline: none; color: #EFF9F6; font-size: 15px; } .ds-input::placeholder { color: #4A6058; }"
+    },
+    {
+      "name": "Filter Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Wrapping filter grid, 8px gap. Active swaps border, fill and text only — never size, so the grid never reflows.",
+      "html": "<div class=\"ds-chip-grid\"><button class=\"ds-chip ds-chip-active\">Food</button><button class=\"ds-chip\">Travel</button><button class=\"ds-chip\">Utilities</button></div>",
+      "css": ".ds-chip-grid { display: flex; flex-wrap: wrap; gap: 8px; } .ds-chip { display: inline-flex; align-items: center; background: #131A17; color: #4A6058; padding: 7px 11px; border: 1px solid #1C2822; border-radius: 10px; font-size: 12px; cursor: pointer; } .ds-chip:hover { opacity: 0.85; } .ds-chip:focus-visible { outline: 2px solid #00E5BE; outline-offset: 2px; } .ds-chip-active { background: rgba(0,229,190,0.10); border-color: #00E5BE; color: #00E5BE; }"
+    },
+    {
+      "name": "Hero Card",
+      "kind": "card",
+      "refersTo": "card-hero",
+      "description": "The dashboard balance card. Flat, 1px hairline, 20px radius, with the display figure in monospace and a divided detail block beneath.",
+      "html": "<div class=\"ds-card-hero\"><div class=\"ds-card-hero-label\">Net Balance</div><div class=\"ds-figure-display\">+₹2,450</div><div class=\"ds-card-divider\"></div><div class=\"ds-card-hero-row\"><div><div class=\"ds-card-sub-label\">You are owed</div><div class=\"ds-figure\">₹3,200</div></div><div class=\"ds-card-sub-sep\"></div><div><div class=\"ds-card-sub-label\">You owe</div><div class=\"ds-figure ds-neg\">₹750</div></div></div></div>",
+      "css": ".ds-card-hero { background: #0C1210; border: 1px solid #1C2822; border-radius: 20px; padding: 20px; } .ds-card-hero-label { color: #637870; font-size: 11px; letter-spacing: 0.4px; text-transform: uppercase; margin-bottom: 5px; } .ds-figure-display { font-family: monospace; font-size: 32px; font-weight: 700; letter-spacing: -1.5px; color: #00E5BE; } .ds-card-divider { height: 1px; background: #1C2822; margin: 16px 0; } .ds-card-hero-row { display: flex; align-items: center; } .ds-card-hero-row > div:not(.ds-card-sub-sep) { flex: 1; } .ds-card-sub-sep { width: 1px; height: 36px; background: #1C2822; margin: 0 16px; } .ds-card-sub-label { color: #637870; font-size: 11px; margin-bottom: 5px; } .ds-figure { font-family: monospace; font-size: 18px; font-weight: 600; color: #00E5BE; } .ds-neg { color: #FF5055; }"
+    },
+    {
+      "name": "Activity Row",
+      "kind": "custom",
+      "refersTo": "list-row",
+      "description": "List row inside a row-bearing card. Icon tile at a third-of-size radius, body-face amount with tabular figures, hairline divider inset 16px.",
+      "html": "<div class=\"ds-row-card\"><div class=\"ds-row\"><div class=\"ds-row-icon\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#FF5055\" stroke-width=\"2\"><path d=\"M12 5v14M5 12h14\"/></svg></div><div class=\"ds-row-info\"><div class=\"ds-row-label\">Groceries</div><div class=\"ds-row-meta\"><span class=\"ds-row-pill\">Food</span><span class=\"ds-row-date\">28 Oct</span></div></div><div class=\"ds-row-amt\">-₹420</div></div><div class=\"ds-row-divider\"></div><div class=\"ds-row\"><div class=\"ds-row-icon ds-row-icon-pos\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#00E5BE\" stroke-width=\"2\"><path d=\"M5 12h14\"/></svg></div><div class=\"ds-row-info\"><div class=\"ds-row-label\">Stipend</div><div class=\"ds-row-meta\"><span class=\"ds-row-date\">26 Oct</span></div></div><div class=\"ds-row-amt ds-row-amt-pos\">+₹8,000</div></div></div>",
+      "css": ".ds-row-card { background: #0C1210; border: 1px solid #1C2822; border-radius: 16px; overflow: hidden; } .ds-row { display: flex; align-items: center; padding: 13px 16px; cursor: pointer; } .ds-row:hover { opacity: 0.85; } .ds-row-icon { width: 38px; height: 38px; border-radius: 12px; border: 1px solid rgba(255,80,85,0.22); background: rgba(255,80,85,0.08); display: flex; align-items: center; justify-content: center; margin-right: 12px; flex-shrink: 0; } .ds-row-icon-pos { border-color: rgba(0,229,190,0.20); background: rgba(0,229,190,0.10); } .ds-row-info { flex: 1; margin-right: 8px; } .ds-row-label { color: #EFF9F6; font-size: 14px; font-weight: 500; margin-bottom: 5px; } .ds-row-meta { display: flex; align-items: center; gap: 7px; } .ds-row-pill { background: rgba(255,80,85,0.08); color: #FF5055; font-size: 10px; font-weight: 600; letter-spacing: 0.3px; padding: 2px 7px; border-radius: 6px; } .ds-row-date { color: #4A6058; font-size: 11px; } .ds-row-amt { color: #FF5055; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; } .ds-row-amt-pos { color: #00E5BE; } .ds-row-divider { height: 1px; background: #1C2822; margin: 0 16px; }"
+    },
+    {
+      "name": "Budget Status Ring",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "The signature readout. A full 4px circle in the status colour — the colour carries the state, the paired linear bar carries the proportion.",
+      "html": "<div class=\"ds-ring-block\"><div class=\"ds-ring\"><div class=\"ds-ring-pct\">64%</div><div class=\"ds-ring-used\">used</div></div><div class=\"ds-bar-wrap\"><div class=\"ds-bar-track\"><div class=\"ds-bar-fill\"></div></div></div></div>",
+      "css": ".ds-ring-block { display: flex; align-items: center; gap: 20px; } .ds-ring { width: 76px; height: 76px; border-radius: 999px; border: 4px solid #00E5BE; display: flex; flex-direction: column; align-items: center; justify-content: center; flex-shrink: 0; } .ds-ring-pct { color: #00E5BE; font-size: 17px; font-weight: 700; } .ds-ring-used { color: #637870; font-size: 9px; margin-top: 1px; } .ds-bar-wrap { flex: 1; } .ds-bar-track { background: #1C2822; border-radius: 3px; height: 6px; overflow: hidden; } .ds-bar-fill { background: #00E5BE; border-radius: 3px; height: 6px; width: 64%; }"
+    },
+    {
+      "name": "Toast",
+      "kind": "custom",
+      "refersTo": "toast",
+      "description": "The only element in the app with a real shadow. Fill and border follow the Tinted Wash Rule for its status.",
+      "html": "<div class=\"ds-toast\"><div class=\"ds-toast-icon\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#00E5BE\" stroke-width=\"2\" stroke-linecap=\"round\"><path d=\"m5 13 4 4L19 7\"/></svg></div><div class=\"ds-toast-text\">Settlement recorded</div></div>",
+      "css": ".ds-toast { display: flex; align-items: center; gap: 10px; background: rgba(0,229,190,0.10); border: 1px solid rgba(0,229,190,0.20); border-radius: 14px; padding: 12px 14px; box-shadow: 0 6px 14px rgba(0,0,0,0.28); } .ds-toast-icon { width: 30px; height: 30px; border-radius: 10px; background: rgba(0,229,190,0.10); display: flex; align-items: center; justify-content: center; flex-shrink: 0; } .ds-toast-text { flex: 1; color: #EFF9F6; font-size: 13px; font-weight: 500; line-height: 19px; }"
+    },
+    {
+      "name": "Inline Error",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "Sits directly below the field or above the action it blocks, with 14px clearance beneath. The 3px left bar is the only solid-colour element.",
+      "html": "<div class=\"ds-error\"><div class=\"ds-error-bar\"></div><svg class=\"ds-error-icon\" width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#FF5055\" stroke-width=\"2\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M12 8v4M12 16h.01\"/></svg><div class=\"ds-error-text\">Password must be at least 8 characters</div></div>",
+      "css": ".ds-error { display: flex; align-items: center; background: rgba(255,80,85,0.08); border: 1px solid rgba(255,80,85,0.22); border-radius: 10px; overflow: hidden; } .ds-error-bar { width: 3px; align-self: stretch; background: #FF5055; flex-shrink: 0; } .ds-error-icon { margin-left: 10px; margin-right: 7px; flex-shrink: 0; } .ds-error-text { flex: 1; color: #FF5055; font-size: 13px; line-height: 18px; padding: 11px 12px 11px 0; }"
+    },
+    {
+      "name": "Bottom Tab Bar",
+      "kind": "nav",
+      "refersTo": "tab-bar",
+      "description": "Four destinations, outline icons, mint active and muted inactive. The one place the Roboto FONTS map is actually applied.",
+      "html": "<nav class=\"ds-tabbar\"><a class=\"ds-tab ds-tab-active\" href=\"#\"><svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\"><path d=\"M3 10l9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z\"/></svg><span>Dashboard</span></a><a class=\"ds-tab\" href=\"#\"><svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\"><circle cx=\"6\" cy=\"6\" r=\"3\"/><circle cx=\"6\" cy=\"18\" r=\"3\"/><path d=\"M6 9v6M9 6h6a3 3 0 0 1 3 3v3\"/></svg><span>Split</span></a><a class=\"ds-tab\" href=\"#\"><svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\"><path d=\"M7 16H3l4-4M17 8h4l-4 4\"/><path d=\"M3 16h14M21 8H7\"/></svg><span>Transactions</span></a><a class=\"ds-tab\" href=\"#\"><svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\"><circle cx=\"12\" cy=\"8\" r=\"4\"/><path d=\"M4 21c0-4 3.6-6 8-6s8 2 8 6\"/></svg><span>Profile</span></a></nav>",
+      "css": ".ds-tabbar { display: flex; background: #0C1210; border-top: 1px solid #1C2822; height: 64px; padding-top: 8px; padding-bottom: 10px; } .ds-tab { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #4A6058; text-decoration: none; font-size: 11px; font-weight: 500; } .ds-tab:hover { opacity: 0.85; } .ds-tab-active { color: #00E5BE; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Mint Terminal",
+    "overview": "PayCircle reads like a trading desk that happens to live in a student's pocket. The ground is near-black with a faint teal warmth, the structure is drawn in hairlines rather than boxes, and the numbers — the only thing anyone actually opens the app for — are set in monospace so they can be read exactly rather than approximately. A single electric mint is the one voice that rises above the dark, and it speaks only about money and action.\n\nThe system is precise, engineered and calm. Precise, because every figure is a claim about what someone owes and the typography treats it that way. Engineered, because depth comes from tonal layers and 1px rules instead of soft shadows — the construction is visible, not hidden under blur. Calm, because the palette is almost entirely neutral: three near-black surfaces, three greys of text, and one accent that is deliberately scarce. Nothing glows for decoration.\n\nDensity is high and deliberate. Type runs small (11–15px for nearly everything that isn't a figure), cards sit 12px apart, and the page keeps a constant 20px gutter so content columns never shift between screens. The effect should be an instrument panel a student trusts at a glance, not an app that performs friendliness at them.",
+    "keyCharacteristics": [
+      "Near-black teal-warm ground (#060A09) with two tonal surface steps above it",
+      "Monospace, negatively-tracked figures for every amount you stop and read",
+      "One accent (#00E5BE) that doubles as the positive/credit colour — scarcity is the point",
+      "Hairline borders (1px) and tonal steps instead of shadows",
+      "Status colour as a translucent wash, never a saturated fill",
+      "Small type, tight rhythm, constant 20px gutter"
+    ],
+    "rules": [
+      {
+        "name": "The One Signal Rule",
+        "body": "Mint is not a brand wash, it is a signal. One mint-filled control per screen, and mint text only where it means money-toward-you, an active state, or a link. If two mint fills compete on one screen, one of them is wrong.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tinted Wash Rule",
+        "body": "A status colour never fills a surface at full strength. It appears as a ~8–10% wash, a ~22–35% border of the same hue, and full-strength text or icon on top. The inline error (rgba(255,80,85,0.08) fill, rgba(255,80,85,0.22) border, negative text) is the canonical form. Saturated red or amber behind a sentence of copy is a violation.",
+        "section": "colors"
+      },
+      {
+        "name": "The Dark-On-Mint Rule",
+        "body": "Text and icons on a mint fill are always the ground colour, never white. Mint is bright enough that white-on-mint fails contrast and reads as a glow.",
+        "section": "colors"
+      },
+      {
+        "name": "The Stop-And-Read Rule",
+        "body": "Monospace is reserved for figures a user stops and reads: the display figure, card hero figures, supporting card amounts, and stat amounts. List-row amounts stay in the body face so a long list doesn't become a wall of monospace — but they carry fontVariant: ['tabular-nums'] so the column still aligns. A row amount in full monospace, or a card hero figure that isn't, are both wrong.",
+        "section": "typography"
+      },
+      {
+        "name": "The Negative Tracking Rule",
+        "body": "Figures 26px and above take negative letter-spacing (−1px at 26px, −1.5px at 32px). Monospace at display size is too airy otherwise and stops reading as one object.",
+        "section": "typography"
+      },
+      {
+        "name": "The Twenty Rule",
+        "body": "The page gutter is 20px on every screen and is not negotiated per-screen. A card that wants to bleed wider changes its own padding, never the page's.",
+        "section": "layout"
+      },
+      {
+        "name": "The Leaves-The-Stack Rule",
+        "body": "A shadow is permitted only for an element that genuinely floats free of the layer stack — a toast, a FAB, a true overlay. Cards, rows, inputs, chips, sheets and headers are flat, always, and earn their separation from tone and a hairline. If something wants a shadow to feel distinct, the fix is a tonal step or a border.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Third Rule",
+        "body": "A square icon tile's corner radius is about one third of its side: 30px→10, 34px→10, 38px→12, 44px→14, 58px→18. Avatars are the exception and go fully circular. Pick the radius from the size, don't invent one.",
+        "section": "shapes"
+      },
+      {
+        "name": "The Dashed-Empty Rule",
+        "body": "An empty container keeps its exact card geometry and switches its border to dashed. Never substitute a different fill, a lower opacity, or an illustration.",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "Do take every colour from the PC object in constants/theme.js. It is the normative source; DESIGN.md describes it rather than replacing it.",
+      "Do hold the 20px page gutter on every screen, and change a card's own padding when something needs to sit wider.",
+      "Do set figures a user stops and reads in monospace at 700/600 with negative tracking at 26px and above, and give list-row amounts fontVariant: ['tabular-nums'] instead.",
+      "Do build depth from the bg → bgCard → bgCardElevated steps plus a 1px border.",
+      "Do express every status surface as the tinted wash: ~10% fill, ~25% border, full-strength text.",
+      "Do put dark ground-coloured text on a mint fill.",
+      "Do keep an empty state on the same card geometry with a dashed border.",
+      "Do size an icon tile's radius at roughly a third of its side.",
+      "Do give every interactive control a 48dp minimum touch target, per the accessibility standard recorded in PRODUCT.md. The 38px stack back control and the 11×7-padded chips are below it today; expand the hit area rather than the visual box."
+    ],
+    "donts": [
+      "Don't hardcode #060A09 as the on-accent text colour. It appears literally in several files; it is PC.bg and should be referenced as such.",
+      "Don't add a shadow to a card, row, sheet, input or header. Shadows belong only to elements that leave the layer stack.",
+      "Don't fill a surface with saturated negative or warning — especially behind copy.",
+      "Don't introduce a second accent. Mint is the only voice, and it also means positive money; a second hue would break that reading.",
+      "Don't use textMuted (#4A6058, ~3.2:1) for body copy or any text a user must read. It is for hints and inactive states only, and it already fails the AA bar set in PRODUCT.md.",
+      "Don't apply FONTS.* to isolated styles. Mixing a named Roboto family with the numeric fontWeight used everywhere else produces inconsistent weight rendering on Android — either convert a whole surface or leave the platform face alone.",
+      "Don't use white text on mint, and don't put mint text on bgCardElevated at small sizes without checking it.",
+      "Don't change a chip's or control's dimensions on state change. Only fill, border and text colour move, so nothing reflows."
+    ]
+  }
+}
