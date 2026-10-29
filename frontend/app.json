@@ -41,6 +41,13 @@
         }
       ]
     ],
-    "experiments": {}
+    "experiments": {},
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "cf4e1966-a96d-4c20-a59d-0ed0e9d02268"
+      }
+    },
+    "owner": "shashwat_dubey"
   }
 }
