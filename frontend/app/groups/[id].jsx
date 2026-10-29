@@ -21,6 +21,7 @@ import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { PC, touchSlop } from '@/constants/theme';
+import { fmtINR, fmtAmount } from '@/utils/format';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
 import { getFriends } from '@/services/friends';
@@ -276,7 +277,7 @@ function AddExpenseModal({ visible, onClose, group, members, onAdded }) {
                 return (
                   <View key={s.userId} style={styles.splitPreviewRow}>
                     <Text style={styles.splitPreviewName}>{member?.name?.split(' ')[0]}</Text>
-                    <Text style={styles.splitPreviewAmt}>₹{s.amount.toFixed(2)}</Text>
+                    <Text style={styles.splitPreviewAmt}>₹{fmtAmount(s.amount, 2)}</Text>
                   </View>
                 );
               })}
@@ -387,10 +388,14 @@ function CustomSplitModal({ visible, onClose, members, payerId, totalAmount, onC
 
   function handleConfirm() {
     if (!isValid) return;
-    const splits = members.map(m => ({
-      userId: m.id,
-      amount: parseFloat(amounts[m.id]) || 0,
-    }));
+    // Anyone assigned nothing is left out of the split rather than sent as a
+    // zero. The server rejects any split below ₹0.01, so "Assign all to" —
+    // which sets every other member to 0 — failed every single time, as did any
+    // manual redistribution that drove someone to zero. The server does not
+    // require a split per member, only that the splits sum to the amount.
+    const splits = members
+      .map(m => ({ userId: m.id, amount: parseFloat(amounts[m.id]) || 0 }))
+      .filter(s => s.amount >= 0.01);
     onConfirm(splits);
   }
 
@@ -1185,12 +1190,12 @@ export default function GroupDetailScreen() {
         <View style={styles.balanceCard}>
           <View style={styles.balanceStat}>
             <Text style={styles.balanceStatLabel}>You paid</Text>
-            <Text style={styles.balanceStatVal}>₹{myBalance.totalPaid.toLocaleString('en-IN')}</Text>
+            <Text style={styles.balanceStatVal}>₹{fmtINR(myBalance.totalPaid)}</Text>
           </View>
           <View style={styles.balanceDivider} />
           <View style={styles.balanceStat}>
             <Text style={styles.balanceStatLabel}>Your share</Text>
-            <Text style={styles.balanceStatVal}>₹{myBalance.totalOwed.toLocaleString('en-IN')}</Text>
+            <Text style={styles.balanceStatVal}>₹{fmtINR(myBalance.totalOwed)}</Text>
           </View>
           <View style={styles.balanceDivider} />
           <View style={styles.balanceStat}>
@@ -1199,7 +1204,7 @@ export default function GroupDetailScreen() {
               styles.balanceStatVal,
               myBalance.netBalance > 0 ? { color: PC.positive } : myBalance.netBalance < 0 ? { color: PC.negative } : {},
             ]}>
-              {myBalance.netBalance > 0 ? '+' : ''}₹{myBalance.netBalance.toLocaleString('en-IN')}
+              {myBalance.netBalance > 0 ? '+' : ''}₹{fmtINR(myBalance.netBalance)}
             </Text>
           </View>
         </View>
@@ -1270,7 +1275,7 @@ export default function GroupDetailScreen() {
                             {paidByMe ? 'You' : payerFirstName} paid
                           </Text>
                           <Text style={[styles.expBubbleAmt, paidByMe ? styles.expTMine : { color: PC.textPrimary }]}>
-                            {'  '}₹{exp.amount.toLocaleString('en-IN')}
+                            {'  '}₹{fmtINR(exp.amount)}
                           </Text>
                         </View>
 
@@ -1286,7 +1291,7 @@ export default function GroupDetailScreen() {
                           <Text style={[styles.expBubbleShareLine, paidByMe ? styles.expTMineSecondary : { color: PC.textSecondary }]}>
                             {'Your Share : '}
                             <Text style={[styles.expBubbleShareAmt, paidByMe ? styles.expTMine : { color: PC.textPrimary }]}>
-                              ₹{myShare.amount.toLocaleString('en-IN')}
+                              ₹{fmtINR(myShare.amount)}
                             </Text>
                           </Text>
                         ) : null}
@@ -1339,7 +1344,7 @@ export default function GroupDetailScreen() {
                                     {[...Array(10)].map((_, di) => <View key={di} style={styles.splitLeaderDot} />)}
                                   </View>
                                   <Text style={[styles.splitAmt, isPayer ? styles.splitAmtPayer : isMe ? styles.splitAmtMe : styles.splitAmtOwer]}>
-                                    {isPayer ? '+' : '−'}₹{s.amount.toFixed(2)}
+                                    {isPayer ? '+' : '−'}₹{fmtAmount(s.amount, 2)}
                                   </Text>
                                 </View>
                               </React.Fragment>
@@ -1353,7 +1358,7 @@ export default function GroupDetailScreen() {
                               {[...Array(10)].map((_, di) => <View key={di} style={styles.splitLeaderDot} />)}
                             </View>
                             <Text style={[styles.splitTotalAmt, paidByMe ? { color: PC.positive } : { color: PC.textPrimary }]}>
-                              ₹{exp.amount.toLocaleString('en-IN')}
+                              ₹{fmtINR(exp.amount)}
                             </Text>
                           </View>
 
@@ -1422,7 +1427,7 @@ export default function GroupDetailScreen() {
                         </Text>
                       </View>
                       <Text style={[styles.debtAmount, fromMe ? { color: PC.negative } : toMe ? { color: PC.positive } : {}]}>
-                        ₹{d.amount.toLocaleString('en-IN')}
+                        ₹{fmtINR(d.amount)}
                       </Text>
                     </View>
                   );
@@ -1454,7 +1459,7 @@ export default function GroupDetailScreen() {
                   styles.memberNetBal,
                   m.netBalance > 0 ? { color: PC.positive } : m.netBalance < 0 ? { color: PC.negative } : { color: PC.textMuted },
                 ]}>
-                  {m.netBalance > 0 ? '+' : ''}₹{m.netBalance.toLocaleString('en-IN')}
+                  {m.netBalance > 0 ? '+' : ''}₹{fmtINR(m.netBalance)}
                 </Text>
               </View>
             ))}

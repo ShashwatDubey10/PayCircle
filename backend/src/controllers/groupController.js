@@ -163,6 +163,21 @@ const removeMember = asyncHandler(async (req, res) => {
   const idx = group.members.findIndex(m => m.toString() === userId);
   if (idx === -1) return res.status(404).json({ success: false, message: 'Member not found in group' });
 
+  // Their expenses and settlements stay in the ledger after they leave, so
+  // removing someone mid-balance strands money: recordSettlement refuses a
+  // non-member, which makes the amount unpayable. They have to be square first.
+  const { members: balances } = await calculateGroupBalances(group._id);
+  const leaving = balances.find(m => m.user.id === userId);
+  const net = leaving?.netBalance ?? 0;
+  if (Math.abs(net) > 0.01) {
+    return res.status(400).json({
+      success: false,
+      message: net < 0
+        ? `${leaving.user.name} still owes \u20b9${Math.abs(net).toFixed(2)} in this group. Settle up before removing them.`
+        : `${leaving.user.name} is still owed \u20b9${net.toFixed(2)} in this group. Settle up before removing them.`,
+    });
+  }
+
   group.members.splice(idx, 1);
   await group.save();
 

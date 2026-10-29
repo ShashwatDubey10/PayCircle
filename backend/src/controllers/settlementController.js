@@ -12,10 +12,20 @@ const recordSettlement = asyncHandler(async (req, res) => {
   if (!fromUserId || !toUserId || !amount || !date)
     return res.status(400).json({ success: false, message: 'fromUserId, toUserId, amount, and date are required' });
 
-  const memberIds = group.members.map(m => m.toString());
-  if (!memberIds.includes(fromUserId.toString()))
+  // Membership is checked against the group's ledger rather than its current
+  // member list. A group corrupted before removal was guarded could hold a
+  // former member still carrying money; requiring current membership made that
+  // balance permanently unpayable. calculateGroupBalances reports anyone who
+  // appears in the ledger and is not square, so they can be settled with and
+  // nobody outside the group can be.
+  const { members: ledger } = await calculateGroupBalances(group._id);
+  const ledgerIds = new Set([
+    ...group.members.map(m => m.toString()),
+    ...ledger.map(m => m.user.id),
+  ]);
+  if (!ledgerIds.has(fromUserId.toString()))
     return res.status(400).json({ success: false, message: 'Payer must be a group member' });
-  if (!memberIds.includes(toUserId.toString()))
+  if (!ledgerIds.has(toUserId.toString()))
     return res.status(400).json({ success: false, message: 'Receiver must be a group member' });
   if (fromUserId.toString() === toUserId.toString())
     return res.status(400).json({ success: false, message: 'Payer and receiver cannot be the same person' });
@@ -40,8 +50,7 @@ const recordSettlement = asyncHandler(async (req, res) => {
   // A settlement is sound whenever the payer is a net debtor and the receiver a
   // net creditor. The ceiling is the smaller of the two positions: beyond that
   // it carries one of them past zero and invents a debt the other way.
-  const { members } = await calculateGroupBalances(group._id);
-  const netOf = (id) => members.find(m => m.user.id === id.toString())?.netBalance ?? 0;
+  const netOf = (id) => ledger.find(m => m.user.id === id.toString())?.netBalance ?? 0;
   const payerOwes      = -netOf(fromUserId);
   const receiverIsOwed =  netOf(toUserId);
 

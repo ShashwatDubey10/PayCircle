@@ -13,36 +13,50 @@ const calculateGroupBalances = async (groupId) => {
   const group = await Group.findById(groupId);
   if (!group) throw new Error('Group not found');
 
-  const memberIds = group.members.map(m => m.toString());
+  const currentIds = group.members.map(m => m.toString());
+
+  const expenses    = await Expense.find({ groupId });
+  const settlements = await Settlement.find({ groupId });
+
+  // Keyed on everyone who appears in this group's ledger, not just its current
+  // members. Keying on members alone silently dropped a removed person's
+  // expenses and settlements, so the remaining balances stopped summing to
+  // zero: with A, B and C, B paying 300 split equally and B then removed, A and
+  // C were each left owing 100 to nobody, with no creditor for the debt list to
+  // pair them with and no way to settle it.
+  const ledgerIds = new Set(currentIds);
+  for (const exp of expenses) {
+    ledgerIds.add(exp.payerId.toString());
+    for (const split of exp.splits) ledgerIds.add(split.userId.toString());
+  }
+  for (const s of settlements) {
+    ledgerIds.add(s.fromUserId.toString());
+    ledgerIds.add(s.toUserId.toString());
+  }
+
+  const memberIds = [...ledgerIds];
   const credit = {}, debit = {};
   memberIds.forEach(id => { credit[id] = 0; debit[id] = 0; });
 
   // Process expenses
-  const expenses = await Expense.find({ groupId });
   for (const exp of expenses) {
-    const pid = exp.payerId.toString();
-    if (credit[pid] !== undefined) credit[pid] += exp.amount;
-    for (const split of exp.splits) {
-      const uid = split.userId.toString();
-      if (debit[uid] !== undefined) debit[uid] += split.amount;
-    }
+    credit[exp.payerId.toString()] += exp.amount;
+    for (const split of exp.splits) debit[split.userId.toString()] += split.amount;
   }
 
   // Process settlements — sender credits, receiver debits (they got paid)
-  const settlements = await Settlement.find({ groupId });
   for (const s of settlements) {
-    const from = s.fromUserId.toString();
-    const to   = s.toUserId.toString();
-    if (credit[from] !== undefined) credit[from] += s.amount;
-    if (debit[to]   !== undefined) debit[to]   += s.amount;
+    credit[s.fromUserId.toString()] += s.amount;
+    debit[s.toUserId.toString()]    += s.amount;
   }
 
   // Fetch user details
-  const users = await User.find({ _id: { $in: group.members } }).select('name email');
+  const users = await User.find({ _id: { $in: memberIds } }).select('name email');
   const userMap = {};
   users.forEach(u => { userMap[u._id.toString()] = u; });
 
   // Build member balance list
+  const currentSet = new Set(currentIds);
   const members = memberIds.map(id => {
     const net = parseFloat(((credit[id] || 0) - (debit[id] || 0)).toFixed(2));
     return {
@@ -50,8 +64,13 @@ const calculateGroupBalances = async (groupId) => {
       totalPaid: parseFloat((credit[id] || 0).toFixed(2)),
       totalOwed: parseFloat((debit[id]  || 0).toFixed(2)),
       netBalance: net,
+      isFormerMember: !currentSet.has(id),
     };
-  });
+  // A former member is only reported while they still carry money. Once they
+  // are square they drop out, so the usual case shows exactly the current
+  // members and a group corrupted by an earlier removal still shows who the
+  // outstanding amount belongs to.
+  }).filter(m => !m.isFormerMember || Math.abs(m.netBalance) > 0.005);
 
   // Simplified debt list — greedy matching of debtors to creditors
   const creditors = members.filter(m => m.netBalance > 0.005).map(m => ({ ...m }));

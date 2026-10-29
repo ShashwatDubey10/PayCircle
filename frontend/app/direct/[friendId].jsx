@@ -21,6 +21,7 @@ import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { PC, touchSlop } from '@/constants/theme';
+import { fmtINR } from '@/utils/format';
 import { useAuth } from '@/context/AuthContext';
 import { getDirectSplits, addDirectSplit, requestSettle, confirmSettle, cancelOrRejectSettle, getGroupDebtsWithFriend, updateDirectSplit } from '@/services/directSplit';
 import { getFriends } from '@/services/friends';
@@ -650,7 +651,7 @@ export default function DirectSplitScreen() {
                     </Text>
                   </View>
                   <Text style={[s.gdRowAmt, { color: item.iOwe ? PC.negative : PC.positive }]}>
-                    {item.iOwe ? '−' : '+'}₹{item.amount.toLocaleString('en-IN')}
+                    {item.iOwe ? '−' : '+'}₹{fmtINR(item.amount)}
                   </Text>
                   <Touchable
                     style={s.gdRowNavBtn}
@@ -916,7 +917,7 @@ export default function DirectSplitScreen() {
                   ) : null}
                   {groupDebts.filter(d => d.iOwe).map(d => (
                     <Text key={d.groupId} style={{ color: PC.textMuted, fontSize: 12, marginBottom: 2 }}>
-                      {d.groupName}: ₹{d.amount.toLocaleString('en-IN')} (settled now)
+                      {d.groupName}: ₹{fmtINR(d.amount)} (settled now)
                     </Text>
                   ))}
                   <Text style={{ color: PC.textPrimary, fontSize: 15, fontWeight: '700', marginTop: 4 }}>

@@ -17,4 +17,10 @@ const groupSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Group.find({ members: userId }) is the app's hottest query — the dashboard,
+// the groups list, the budget and analytics screens, the direct-chat screen and
+// the batched settlements endpoint all run it. Without this it is a full
+// collection scan every time.
+groupSchema.index({ members: 1 });
+
 module.exports = mongoose.model('Group', groupSchema);

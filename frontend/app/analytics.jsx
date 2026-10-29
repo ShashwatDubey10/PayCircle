@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
 import { PC, touchSlop } from '@/constants/theme';
+import { fmtINR } from '@/utils/format';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
 
@@ -258,7 +259,11 @@ export default function AnalyticsScreen() {
   for (const tx of transactions) {
     if (tx.type !== 'expense') continue;
     const dow = new Date(tx.date).getDay();
-    if (!isNaN(dow)) dowSpend[dow] += tx.amount;
+    // `?? 0` is not optional here: one transaction with a missing amount makes
+    // the running total NaN, then maxDow NaN, then every bar's height NaN — and
+    // under the New Architecture a NaN layout prop is a hard error, not a
+    // silently ignored one. The same loop in index.jsx already guards it.
+    if (!isNaN(dow)) dowSpend[dow] += tx.amount ?? 0;
   }
   const maxDow = Math.max(...dowSpend, 1);
 
@@ -422,7 +427,7 @@ export default function AnalyticsScreen() {
                     ].map((item, i) => (
                       <View key={i} style={ss.mSummaryItem}>
                         <Text style={ss.mSummaryLabel}>{item.label}</Text>
-                        <Text style={[ss.mSummaryAmt, { color: item.color }]}>₹{item.value.toLocaleString('en-IN')}</Text>
+                        <Text style={[ss.mSummaryAmt, { color: item.color }]}>₹{fmtINR(item.value)}</Text>
                       </View>
                     ))}
                   </View>
@@ -459,7 +464,7 @@ export default function AnalyticsScreen() {
                         </View>
                         <View style={ss.srcRight}>
                           <AnimBar pct={pct} color={src.color} height={5} delay={i * 100} />
-                          <Text style={[ss.srcAmt, { color: src.color }]}>₹{src.value.toLocaleString('en-IN')}</Text>
+                          <Text style={[ss.srcAmt, { color: src.color }]}>₹{fmtINR(src.value)}</Text>
                           <Text style={ss.srcPct}>{pct}%</Text>
                         </View>
                       </View>
@@ -482,7 +487,7 @@ export default function AnalyticsScreen() {
                       {i > 0 && <View style={ss.triDivider} />}
                       <View style={ss.triItem}>
                         <Text style={ss.triLabel}>{item.label}</Text>
-                        <Text style={[ss.triAmt, { color: item.color }]}>₹{item.value.toLocaleString('en-IN')}</Text>
+                        <Text style={[ss.triAmt, { color: item.color }]}>₹{fmtINR(item.value)}</Text>
                       </View>
                     </React.Fragment>
                   ))}
@@ -638,11 +643,11 @@ export default function AnalyticsScreen() {
                         <View style={ss.histMonthRow}>
                           <View style={ss.histMonthStat}>
                             <Text style={ss.histStatLabel}>Spent</Text>
-                            <Text style={[ss.histStatVal, { color: PC.negative }]}>₹{h.expense.toLocaleString('en-IN')}</Text>
+                            <Text style={[ss.histStatVal, { color: PC.negative }]}>₹{fmtINR(h.expense)}</Text>
                           </View>
                           <View style={ss.histMonthStat}>
                             <Text style={ss.histStatLabel}>Income</Text>
-                            <Text style={[ss.histStatVal, { color: PC.positive }]}>₹{h.income.toLocaleString('en-IN')}</Text>
+                            <Text style={[ss.histStatVal, { color: PC.positive }]}>₹{fmtINR(h.income)}</Text>
                           </View>
                           <View style={ss.histMonthStat}>
                             <Text style={ss.histStatLabel}>Net</Text>

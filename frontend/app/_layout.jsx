@@ -13,7 +13,11 @@ import {
   Roboto_700Bold,
 } from '@expo-google-fonts/roboto';
 
+import { View, StyleSheet, Platform } from 'react-native';
+
 import { PC } from '@/constants/theme';
+import { Text } from '@/components/text';
+import Touchable from '@/components/Touchable';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { BadgeProvider } from '@/context/BadgeContext';
 import { updatePushToken } from '@/services/friends';
@@ -40,6 +44,76 @@ if (!IS_EXPO_GO) {
 export const unstable_settings = {
   initialRouteName: '(tabs)',
 };
+
+// ─── Error boundary ───────────────────────────────────────────────────────────
+// expo-router renders this in place of the tree when a descendant throws during
+// render. Without it a single bad value took the whole app down — a red screen
+// in development, a blank white one in production with no way out but a
+// force-quit. `retry` remounts the subtree, which recovers anything caused by a
+// transient value rather than a persistent one.
+//
+// The copy follows the product's own rule that a failure is stated plainly
+// rather than dressed up: it says what happened, what it did not affect, and
+// what to do next.
+
+export function ErrorBoundary({ error, retry }) {
+  return (
+    <View style={eb.screen}>
+      <View style={eb.card}>
+        <Text style={eb.title}>This screen stopped working</Text>
+        <Text style={eb.body}>
+          Something went wrong while drawing this screen. Nothing you have recorded is
+          affected — your expenses, splits and balances are all still saved.
+        </Text>
+        {!!error?.message && <Text style={eb.detail} numberOfLines={4}>{error.message}</Text>}
+        <Touchable tone="accent" style={eb.button} onPress={retry}
+          accessibilityRole="button" accessibilityLabel="Try loading this screen again">
+          <Text style={eb.buttonText}>Try again</Text>
+        </Touchable>
+      </View>
+    </View>
+  );
+}
+
+const eb = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: PC.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  card: {
+    width: '100%',
+    backgroundColor: PC.bgCard,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: PC.borderLight,
+    padding: 24,
+  },
+  title: { color: PC.textPrimary, fontSize: 18, fontWeight: '700', marginBottom: 10 },
+  body:  { color: PC.textSecondary, fontSize: 14, fontWeight: '500', lineHeight: 21 },
+  detail: {
+    color: PC.textMuted,
+    fontSize: 12,
+    marginTop: 14,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: PC.bgCardElevated,
+    borderWidth: 1,
+    borderColor: PC.border,
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
+  button: {
+    marginTop: 20,
+    backgroundColor: PC.accent,
+    borderRadius: 14,
+    minHeight: 54,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonText: { color: PC.bg, fontSize: 15, fontWeight: '700', letterSpacing: 0.3 },
+});
 
 // ─── Route guard ──────────────────────────────────────────────────────────────
 // Runs on every auth state change and redirects to the right screen.

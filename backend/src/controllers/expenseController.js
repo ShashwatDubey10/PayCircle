@@ -20,7 +20,13 @@ const addExpense = asyncHandler(async (req, res) => {
   const expDate = new Date(date);
   const now = new Date();
   const oneYearAgo = new Date(); oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-  if (expDate > now)        return res.status(400).json({ success: false, message: 'Date cannot be in the future' });
+  // A day of slack, not zero. The client sends its own clock, so this compared
+  // a phone's time against the server's: in IST (UTC+5:30) every expense added
+  // between midnight and 05:30 carried a date the server still read as
+  // tomorrow, and was refused. Ordinary clock skew did the same. A 24h window
+  // accepts any timezone's today while still refusing a genuinely future date.
+  const maxDate = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  if (expDate > maxDate)    return res.status(400).json({ success: false, message: 'Date cannot be in the future' });
   if (expDate < oneYearAgo) return res.status(400).json({ success: false, message: 'Date cannot be more than 1 year in the past' });
 
   if (!VALID_CATS.includes(category))
